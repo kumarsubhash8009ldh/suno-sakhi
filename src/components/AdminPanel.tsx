@@ -30,12 +30,21 @@ import {
   ArrowLeft,
   ChevronRight,
   Clock,
-  Copy
+  Copy,
+  ShieldAlert,
+  AlertOctagon
 } from 'lucide-react';
 import { useAdmin } from '../context/AdminContext';
 import { useWallet } from '../context/WalletContext';
 import { useHost } from '../context/HostContext';
 import { HostProfile, HostPayoutRecord, RechargeRequest } from '../types';
+import {
+  getLocalNudityReports,
+  getBannedPhoneNumbers,
+  unbanPhoneNumber,
+  banPhoneNumber,
+  NudityReport
+} from '../services/safetyService';
 import {
   fetchAllRegisteredHosts,
   fetchAllRegisteredUsers,
@@ -66,13 +75,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
   const { balance } = useWallet();
   const { hostProfile } = useHost();
 
-  const [activeTab, setActiveTab] = useState<'recharges' | 'payouts' | 'hosts' | 'users' | 'analytics' | 'settings'>('recharges');
+  const [activeTab, setActiveTab] = useState<'recharges' | 'payouts' | 'hosts' | 'users' | 'analytics' | 'settings' | 'nudity'>('recharges');
 
   // Live Data States
   const [hostsList, setHostsList] = useState<HostProfile[]>([]);
   const [usersList, setUsersList] = useState<AdminUserDetails[]>([]);
   const [payoutsList, setPayoutsList] = useState<HostPayoutRecord[]>([]);
   const [rechargeRequestsList, setRechargeRequestsList] = useState<RechargeRequest[]>([]);
+  const [nudityReports, setNudityReports] = useState<NudityReport[]>([]);
+  const [bannedPhonesList, setBannedPhonesList] = useState<string[]>([]);
+  const [manualBanPhone, setManualBanPhone] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
 
@@ -132,6 +144,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
       setUsersList(u);
       setPayoutsList(p);
       setRechargeRequestsList(r);
+      setNudityReports(getLocalNudityReports());
+      setBannedPhonesList(getBannedPhoneNumbers());
       if (h.length > 0 && !directHostId) {
         setDirectHostId(h[0].id);
         setDirectUpiOrBank(h[0].upiId || `${h[0].phone}@okaxis`);
@@ -418,6 +432,33 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
     showToast('success', '✅ Platform Rates, Commission aur Official Deposit UPI ID update ho gaye!');
   };
 
+  // Handler: Unban Phone Number
+  const handleUnbanPhone = async (phone: string) => {
+    if (!window.confirm(`Kya aap number (${phone}) se NUDITY BAN hatana chahte hain?`)) return;
+    unbanPhoneNumber(phone);
+    await toggleUserBlock(phone, false);
+    setNudityReports(getLocalNudityReports());
+    setBannedPhonesList(getBannedPhoneNumbers());
+    showToast('success', `Mobile (${phone}) ko UNBAN kar diya gaya! Ab ye login kar sakte hain.`);
+  };
+
+  // Handler: Manual Ban Phone Number
+  const handleManualBan = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = manualBanPhone.replace(/\D/g, '');
+    const digits = clean.length === 12 && clean.startsWith('91') ? clean.slice(2) : clean;
+    if (!digits || digits.length < 10) {
+      showToast('error', 'Kripya valid mobile number dalein.');
+      return;
+    }
+    banPhoneNumber(digits);
+    await toggleUserBlock(digits, true);
+    setManualBanPhone('');
+    setNudityReports(getLocalNudityReports());
+    setBannedPhonesList(getBannedPhoneNumbers());
+    showToast('success', `Mobile (${digits}) ko ZERO TOLERANCE NUDITY BAN ke tahat blacklist kar diya gaya!`);
+  };
+
   const containerClasses = isModal
     ? 'fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md'
     : 'w-full min-h-screen bg-[#08020e] text-white p-2 sm:p-6';
@@ -507,6 +548,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
             },
             { id: 'hosts', label: '👩‍🦰 Host Directory', count: hostsList.length },
             { id: 'users', label: '👤 User Directory', count: usersList.length },
+            {
+              id: 'nudity',
+              label: '🚨 Nudity Ban Reports',
+              badge: nudityReports.length,
+              badgeClass: 'bg-red-600 text-white font-black animate-pulse'
+            },
             { id: 'analytics', label: '📊 Financials' },
             { id: 'settings', label: '⚙️ Settings & UPI' }
           ].map((tab) => (
@@ -1417,6 +1464,188 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
                 Save Platform Rates & UPI Config
               </button>
             </form>
+          )}
+
+          {/* ========================================================================= */}
+          {/* TAB 7: NUDITY BAN & SAFETY ENFORCEMENT */}
+          {/* ========================================================================= */}
+          {activeTab === 'nudity' && (
+            <div className="space-y-6">
+              {/* Zero Tolerance Safety Warning Banner */}
+              <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-red-950/80 via-purple-950/60 to-black/80 border border-red-500/50 shadow-2xl space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 rounded-2xl bg-red-600 text-white shadow-lg shadow-red-600/40 flex-shrink-0 animate-pulse">
+                      <ShieldAlert className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-base sm:text-lg font-black text-red-100 flex items-center gap-2">
+                        <span>ZERO TOLERANCE NUDITY BAN ENFORCEMENT</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500 text-white font-bold uppercase">
+                          ACTIVE 24/7
+                        </span>
+                      </h3>
+                      <p className="text-xs text-red-300/90 leading-relaxed mt-0.5">
+                        Any caller or host displaying nudity or sexual misconduct during live video calls is permanently banned. Their phone number & device fingerprint are blacklisted immediately.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Metric Counters */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-red-900/30 to-black/60 border border-red-500/30 space-y-1">
+                  <span className="text-[11px] text-gray-400 font-semibold uppercase tracking-wider">Reported Incidents</span>
+                  <p className="text-2xl sm:text-3xl font-black text-red-400 font-mono">{nudityReports.length}</p>
+                  <p className="text-[10px] text-red-300/70">Automatic call terminations</p>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-purple-900/30 to-black/60 border border-purple-500/30 space-y-1">
+                  <span className="text-[11px] text-gray-400 font-semibold uppercase tracking-wider">Blacklisted Numbers</span>
+                  <p className="text-2xl sm:text-3xl font-black text-purple-300 font-mono">{bannedPhonesList.length}</p>
+                  <p className="text-[10px] text-purple-300/70">Blocked from OTP & login</p>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-900/30 to-black/60 border border-emerald-500/30 space-y-1">
+                  <span className="text-[11px] text-gray-400 font-semibold uppercase tracking-wider">Active Safety Policy</span>
+                  <p className="text-lg sm:text-xl font-black text-emerald-400 flex items-center gap-1.5 mt-1">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                    <span>STRICT BAN</span>
+                  </p>
+                  <p className="text-[10px] text-emerald-300/70">Video Rate ₹15/m • Audio ₹7/m</p>
+                </div>
+              </div>
+
+              {/* Manual Phone Number Ban Box */}
+              <div className="p-4 sm:p-5 rounded-3xl bg-[#140826] border border-pink-500/20 space-y-3">
+                <h4 className="text-xs font-black uppercase text-pink-300 tracking-wider flex items-center gap-2">
+                  <AlertOctagon className="w-4 h-4 text-red-400" />
+                  <span>Manual Phone Ban / Blacklist Add</span>
+                </h4>
+                <form onSubmit={handleManualBan} className="flex flex-col sm:flex-row gap-2.5">
+                  <input
+                    type="tel"
+                    value={manualBanPhone}
+                    onChange={(e) => setManualBanPhone(e.target.value)}
+                    placeholder="Enter 10-digit mobile number to ban immediately (e.g. 9876543210)"
+                    className="flex-1 px-4 py-2.5 rounded-xl bg-black/60 border border-red-500/30 text-white font-mono text-sm placeholder:text-gray-500 focus:outline-none focus:border-red-500"
+                  />
+                  <button
+                    type="submit"
+                    className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-black text-xs transition-all flex items-center justify-center gap-2 shadow-lg shadow-red-600/30 whitespace-nowrap"
+                  >
+                    <Ban className="w-4 h-4" />
+                    <span>Ban & Blacklist Number</span>
+                  </button>
+                </form>
+                <p className="text-[10px] text-gray-400">
+                  Banning a phone prevents them from receiving OTPs, logging in, or calling any host on SunoSakhi.
+                </p>
+              </div>
+
+              {/* Blacklisted Numbers Quick Strip */}
+              {bannedPhonesList.length > 0 && (
+                <div className="p-4 rounded-3xl bg-black/40 border border-white/10 space-y-3">
+                  <h4 className="text-xs font-black text-gray-300 uppercase tracking-wider flex items-center gap-2">
+                    <Ban className="w-4 h-4 text-red-400" />
+                    <span>Currently Blacklisted Phone Numbers ({bannedPhonesList.length})</span>
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {bannedPhonesList.map((phone) => (
+                      <div
+                        key={phone}
+                        className="px-3 py-1.5 rounded-xl bg-red-950/60 border border-red-500/40 text-xs font-mono text-red-200 flex items-center gap-2"
+                      >
+                        <span>+91 {phone}</span>
+                        <button
+                          onClick={() => handleUnbanPhone(phone)}
+                          className="px-2 py-0.5 rounded-lg bg-red-800/80 hover:bg-emerald-600 text-[10px] text-white font-sans font-bold transition-all"
+                          title="Unban this phone number"
+                        >
+                          Unban
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Detailed Reports List */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-black uppercase text-pink-300 tracking-wider flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4 text-red-400" />
+                  <span>Nudity Incident Logs & Reports ({nudityReports.length})</span>
+                </h4>
+
+                {nudityReports.length === 0 ? (
+                  <div className="p-8 text-center rounded-3xl bg-black/40 border border-white/5 space-y-2">
+                    <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
+                    <p className="text-xs font-bold text-gray-300">No Nudity Incidents Reported Yet</p>
+                    <p className="text-[11px] text-gray-500">
+                      All video calls are protected by the Zero Tolerance policy and Privacy Shield.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {nudityReports.map((report) => (
+                      <div
+                        key={report.id}
+                        className="p-4 rounded-2xl bg-gradient-to-r from-red-950/40 via-[#180928] to-black/60 border border-red-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                      >
+                        <div className="space-y-1.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="px-2 py-0.5 rounded-full bg-red-600 text-white text-[10px] font-black uppercase tracking-wide">
+                              BANNED
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full bg-purple-900/60 border border-purple-500/30 text-purple-300 text-[10px] font-semibold uppercase">
+                              {report.callType.toUpperCase()} CALL
+                            </span>
+                            <span className="text-[11px] text-gray-400 font-mono">
+                              {new Date(report.timestamp).toLocaleString('en-IN', {
+                                dateStyle: 'medium',
+                                timeStyle: 'short'
+                              })}
+                            </span>
+                          </div>
+
+                          <div className="text-xs text-gray-200">
+                            <span className="text-red-300 font-bold">Offender: </span>
+                            <strong className="text-white font-mono">{report.offenderPhone || 'Hidden'}</strong>
+                            {report.offenderName && <span className="text-gray-400"> ({report.offenderName})</span>}
+                            <span className="text-gray-500 mx-1.5">•</span>
+                            <span className="text-gray-400">Role: </span>
+                            <span className="text-pink-300 uppercase font-semibold text-[10px]">{report.offenderRole}</span>
+                          </div>
+
+                          <div className="text-xs text-gray-400">
+                            <span>Reported by: </span>
+                            <span className="text-emerald-300 font-semibold">{report.reporterName || report.reporterPhone}</span>
+                            <span className="text-gray-500"> ({report.reportedByRole})</span>
+                          </div>
+
+                          <div className="text-xs text-gray-300 bg-black/40 px-3 py-1.5 rounded-xl border border-white/5 inline-block">
+                            <span className="text-gray-400 font-semibold">Reason: </span>
+                            <span className="text-red-200">{report.reason}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 self-end sm:self-center">
+                          {report.offenderPhone && (
+                            <button
+                              onClick={() => handleUnbanPhone(report.offenderPhone)}
+                              className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-emerald-600 text-gray-200 hover:text-white text-xs font-bold transition-all"
+                            >
+                              Lift Ban
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           )}
         </div>
 

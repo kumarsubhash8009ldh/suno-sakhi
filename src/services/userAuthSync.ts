@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase';
 import { getApiBaseUrl } from './apiConfig';
+import { isPhoneBanned } from './safetyService';
 
 const USER_ACCOUNTS_COLLECTION = 'user_accounts';
 const CURRENT_USER_KEY = 'sunosakhi_current_user';
@@ -226,6 +227,10 @@ export const getUserAccount = async (phone: string): Promise<UserAccount | null>
  */
 export const sendUserOtp = (phone: string): { success: boolean; otp: string } => {
   const normalized = normalizeUserPhone(phone);
+  if (isPhoneBanned(normalized)) {
+    alert('🚫 ACCOUNT BANNED: Yeh phone number Video Call Nudity & Vulgarity Policy violation ki wajah se permanently block kar diya gaya hai.');
+    return { success: false, otp: '' };
+  }
   const otp = '123456';
   userOtpStore[normalized] = {
     otp,
@@ -341,6 +346,12 @@ export const loginExistingUser = async (
   const parsed = parseUserIdentifier(phoneOrEmail);
   if (!parsed) {
     return { success: false, error: 'Kripya 10-digit valid mobile number ya Email ID dalein.' };
+  }
+  if (parsed.type === 'phone' && isPhoneBanned(parsed.value)) {
+    return {
+      success: false,
+      error: '🚫 ACCOUNT BANNED: Yeh account Video Call Nudity & Vulgarity Policy violation ki wajah se permanently block kar diya gaya hai.'
+    };
   }
   const cleanPhone = parsed.type === 'phone' ? parsed.value : '';
   const cleanEmail = parsed.type === 'email' ? parsed.value : '';

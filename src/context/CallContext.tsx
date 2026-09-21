@@ -11,6 +11,7 @@ import {
   subscribeToIncomingCallsForHost
 } from '../services/webrtcService';
 import { recordHostIncomeToCloud } from '../services/hostSync';
+import { getHostRankTier } from '../utils/hostRankTiers';
 import { streamAudioController, routeAudioOutput } from '../utils/audioOutput';
 
 const getGlobalCallAudio = (): HTMLAudioElement | null => {
@@ -127,7 +128,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Rate lookup
   const getRate = (type: CallType): number => {
-    return type === 'voice' ? 5 : 10; // ₹5 for voice, ₹10 for video
+    return type === 'voice' ? 7 : 15; // ₹7 for voice, ₹15 for video
   };
 
   // Helper to reliably detect if current user is a Host
@@ -529,17 +530,22 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Record caller expense (Caller pays)
         recordCallExpense(activeSakhi, callType, finalDuration, finalCost);
 
-        // Instantly credit host commission to cloud server (sath k sath)
-        const hostEarned = parseFloat(((finalCost * 0.6).toFixed(2)));
-        const mins = Math.ceil(finalDuration / 60);
+        // Instantly credit host commission to cloud server based on host rank tier
+        const mins = Math.max(1, Math.ceil(finalDuration / 60));
+        const tier = getHostRankTier(activeSakhi.rating || 5.0);
+        const hostEarned = callType === 'voice'
+          ? parseFloat((mins * tier.voiceEarningPerMin).toFixed(2))
+          : parseFloat((mins * tier.videoEarningPerMin).toFixed(2));
+        const effectiveShare = finalCost > 0 ? Math.round((hostEarned / finalCost) * 100) : 50;
+
         recordHostIncomeToCloud(
           activeSakhi.id,
           {
             id: `call-inc-${Date.now()}`,
             type: 'call',
-            description: `📞 ${callType === 'voice' ? 'Voice' : 'Video'} Call (${mins} min) from ${session.name || 'Caller'}`,
+            description: `📞 ${callType === 'voice' ? 'Voice' : 'Video'} Call (${mins} min) from ${session.name || 'Caller'} [${tier.badge}]`,
             grossAmount: parseFloat(finalCost.toFixed(2)),
-            hostSharePercent: 60,
+            hostSharePercent: effectiveShare,
             hostEarned,
             timestamp: Date.now()
           },

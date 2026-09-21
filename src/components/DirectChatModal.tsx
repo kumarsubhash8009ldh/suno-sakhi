@@ -113,7 +113,7 @@ export const DirectChatModal: React.FC = () => {
     if (wordCount === 0) return;
 
     if (isOverLimit) {
-      setErrorMsg(`Message 110 words se zyada nahi hona chahiye (Current: ${wordCount} words).`);
+      setErrorMsg(`Message ${MAX_MESSAGE_WORDS} words se zyada nahi hona chahiye (Current: ${wordCount} words).`);
       return;
     }
 

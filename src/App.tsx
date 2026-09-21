@@ -342,7 +342,7 @@ const MainContent: React.FC = () => {
                 <p className="text-xs text-gray-400 mt-0.5">
                   {userRole === 'host'
                     ? 'Callers ke sath chat karein (Host Account: 100% Free • ₹0 Charges)'
-                    : 'Select an online Sakhi to chat (₹2/msg • 110 words limit • 100% private)'}
+                    : 'Select an online Sakhi to chat (₹3/msg • 150 words limit • 100% private)'}
                 </p>
               </div>
               {userRole === 'host' && (
@@ -624,7 +624,7 @@ const MainContent: React.FC = () => {
                     </span>
                   </h2>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    Voice (₹5/min) • Video (₹10/min) • Sakhi Chat (₹2/msg, max 110 words) • Live Gifts
+                    Voice (₹7/min) • Video (₹15/min) • Sakhi Chat (₹3/msg, max 150 words) • Live Gifts
                   </p>
                 </div>
               </div>

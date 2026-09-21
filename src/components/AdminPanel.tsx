@@ -1323,7 +1323,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
                   <span>Platform Rate & Commission Controls</span>
                 </h4>
                 <p className="text-xs text-gray-300 mt-0.5">
-                  Rates change karne par caller rates aur host 60% earnings real-time update ho jayenge.
+                  Rates change karne par caller rates (Audio: ₹7/min, Video: ₹15/min, Chat: ₹3/msg) aur host earnings real-time update ho jayenge.
                 </p>
               </div>
 

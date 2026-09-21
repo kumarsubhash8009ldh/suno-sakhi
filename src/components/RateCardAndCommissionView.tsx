@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Phone, Video, MessageCircle, Gift, TrendingUp, ShieldCheck, ArrowRight, Zap } from 'lucide-react';
+import { Phone, Video, MessageCircle, Gift, TrendingUp, ShieldCheck, ArrowRight, Zap, Star, Award } from 'lucide-react';
+import { HOST_RANK_TIERS } from '../utils/hostRankTiers';
 import { useHost } from '../context/HostContext';
 import { useWallet } from '../context/WalletContext';
 
@@ -125,7 +126,7 @@ export const RateCardAndCommissionView: React.FC<RateCardAndCommissionViewProps>
                     </div>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <span className="text-base font-black text-pink-300">₹5.00</span>
+                    <span className="text-base font-black text-pink-300">₹7.00</span>
                     <span className="text-[10px] text-gray-400 block">/ minute</span>
                   </div>
                 </div>
@@ -142,7 +143,7 @@ export const RateCardAndCommissionView: React.FC<RateCardAndCommissionViewProps>
                     </div>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <span className="text-base font-black text-purple-300">₹10.00</span>
+                    <span className="text-base font-black text-purple-300">₹15.00</span>
                     <span className="text-[10px] text-gray-400 block">/ minute</span>
                   </div>
                 </div>
@@ -155,11 +156,11 @@ export const RateCardAndCommissionView: React.FC<RateCardAndCommissionViewProps>
                     </div>
                     <div>
                       <h4 className="text-sm font-bold text-white">Sakhi Direct Chat</h4>
-                      <p className="text-[11px] text-gray-400">Direct message with online Sakhi (110 words)</p>
+                      <p className="text-[11px] text-gray-400">Direct message with online Sakhi (150 words)</p>
                     </div>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <span className="text-base font-black text-blue-300">₹2.00</span>
+                    <span className="text-base font-black text-blue-300">₹3.00</span>
                     <span className="text-[10px] text-gray-400 block">/ message</span>
                   </div>
                 </div>
@@ -207,12 +208,12 @@ export const RateCardAndCommissionView: React.FC<RateCardAndCommissionViewProps>
                     <TrendingUp className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-black text-white">Host 60% Commission</h3>
-                    <p className="text-xs text-emerald-300/80">Host ladkiyon ke liye direct 60% kamai</p>
+                    <h3 className="text-lg font-black text-white">Host Earning & Rank Slabs</h3>
+                    <p className="text-xs text-emerald-300/80">Host ladkiyon ke liye direct kamai & Star Tiers</p>
                   </div>
                 </div>
-                <span className="px-2.5 py-1 rounded-xl bg-emerald-500 text-black font-black text-[10px] uppercase shadow">
-                  60% SHARE
+                <span className="px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 text-black font-black text-[10px] uppercase shadow">
+                  RANK 1: ₹3/MIN
                 </span>
               </div>
 
@@ -223,9 +224,9 @@ export const RateCardAndCommissionView: React.FC<RateCardAndCommissionViewProps>
                   <div>
                     <h4 className="text-sm font-bold text-white flex items-center gap-1.5">
                       <Phone className="w-4 h-4 text-emerald-400" />
-                      <span>Voice Call Income (60%)</span>
+                      <span>Voice Call Income (Rank 1)</span>
                     </h4>
-                    <p className="text-[11px] text-gray-400">Total ₹5/min ➔ Host earns ₹3.00/min</p>
+                    <p className="text-[11px] text-gray-400">Total ₹7/min ➔ Host earns ₹3.00/min (3★ - 5★)</p>
                   </div>
                   <div className="text-right">
                     <span className="text-base font-black text-emerald-300">₹3.00</span>
@@ -238,12 +239,12 @@ export const RateCardAndCommissionView: React.FC<RateCardAndCommissionViewProps>
                   <div>
                     <h4 className="text-sm font-bold text-white flex items-center gap-1.5">
                       <Video className="w-4 h-4 text-teal-400" />
-                      <span>Video Call Income (60%)</span>
+                      <span>Video Call Income (Rank 1)</span>
                     </h4>
-                    <p className="text-[11px] text-gray-400">Total ₹10/min ➔ Host earns ₹6.00/min</p>
+                    <p className="text-[11px] text-gray-400">Total ₹15/min ➔ Host earns ₹7.00/min (3★ - 5★)</p>
                   </div>
                   <div className="text-right">
-                    <span className="text-base font-black text-teal-300">₹6.00</span>
+                    <span className="text-base font-black text-teal-300">₹7.00</span>
                     <span className="text-[10px] text-gray-400 block">/ min direct</span>
                   </div>
                 </div>
@@ -253,13 +254,51 @@ export const RateCardAndCommissionView: React.FC<RateCardAndCommissionViewProps>
                   <div>
                     <h4 className="text-sm font-bold text-white flex items-center gap-1.5">
                       <MessageCircle className="w-4 h-4 text-cyan-400" />
-                      <span>Chat Message Income (60%)</span>
+                      <span>Chat Message Income</span>
                     </h4>
-                    <p className="text-[11px] text-gray-400">Total ₹2/msg ➔ Host earns ₹1.20/msg</p>
+                    <p className="text-[11px] text-gray-400">Total ₹3/msg ➔ Host earns ₹1.50/msg direct</p>
                   </div>
                   <div className="text-right">
-                    <span className="text-base font-black text-cyan-300">₹1.20</span>
+                    <span className="text-base font-black text-cyan-300">₹1.50</span>
                     <span className="text-[10px] text-gray-400 block">/ message</span>
+                  </div>
+                </div>
+
+                {/* 4. Host Star Rating & Rank Slabs Card */}
+                <div className="p-3 rounded-2xl bg-gradient-to-b from-black/60 to-emerald-950/30 border border-emerald-500/30 space-y-2">
+                  <div className="flex items-center justify-between pb-1 border-b border-white/5">
+                    <span className="text-xs font-black text-white flex items-center gap-1.5">
+                      <Award className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Host Rank & Star Rating Earning Slabs</span>
+                    </span>
+                    <span className="text-[10px] text-emerald-400 font-bold">Auto-Rank</span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {HOST_RANK_TIERS.map((tier) => (
+                      <div
+                        key={tier.rank}
+                        className={`p-2 rounded-xl flex items-center justify-between text-xs border ${tier.bgClass} ${tier.borderClass}`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-extrabold">{tier.badge}</span>
+                          <div>
+                            <div className="font-bold text-white text-[11px]">{tier.title}</div>
+                            <div className="text-[10px] text-gray-400 flex items-center gap-1">
+                              <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
+                              <span>{tier.minStars.toFixed(1)}★ - {tier.maxStars.toFixed(1)}★ Rating</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className={`font-black ${tier.colorClass} text-xs`}>
+                            Voice: ₹{tier.voiceEarningPerMin.toFixed(2)}/m
+                          </div>
+                          <div className="text-[10px] text-teal-300">
+                            Video: ₹{tier.videoEarningPerMin.toFixed(2)}/m
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>

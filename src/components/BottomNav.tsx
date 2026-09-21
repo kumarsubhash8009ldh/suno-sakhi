@@ -85,18 +85,18 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           </button>
         )}
 
-        {/* 5. Rate Card & 60% Commission */}
+        {/* 5. Rate Card & Host Earnings */}
         <button
           onClick={() => onTabChange('rates')}
           className={`flex flex-col items-center gap-0.5 py-1 px-1.5 rounded-2xl transition-all ${
             currentTab === 'rates' ? 'text-pink-400 font-black' : 'text-gray-400 hover:text-white'
           }`}
-          title="Rate Card & 60% Commission"
+          title="Rate Card & Host Earnings"
         >
           <div className={`p-1 rounded-full ${currentTab === 'rates' ? 'bg-pink-500/20 text-pink-400' : ''}`}>
             <Zap className="w-4 h-4" />
           </div>
-          <span className="text-[10px] font-bold tracking-tight">60% Rate</span>
+          <span className="text-[10px] font-bold tracking-tight">Rate Card</span>
         </button>
 
         {/* 6. Profile */}

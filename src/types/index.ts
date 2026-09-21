@@ -157,9 +157,9 @@ export interface HostAccountRecord {
 }
 
 export interface PlatformSettings {
-  voiceRatePerMin: number; // ₹5
-  videoRatePerMin: number; // ₹10
-  sakhiChatRate: number; // ₹2
+  voiceRatePerMin: number; // ₹7
+  videoRatePerMin: number; // ₹15
+  sakhiChatRate: number; // ₹3
   hostIncomePercent: number; // 60%
   supportPhone: string;
   supportWhatsApp: string;

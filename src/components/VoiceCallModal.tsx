@@ -279,7 +279,7 @@ export const VoiceCallModal: React.FC = () => {
         <p className="text-[11px] text-gray-400">
           {isHostUser
             ? '🌸 Host ID: Outgoing & Incoming Calls are 100% FREE (₹0 Charges)'
-            : 'Voice: ₹5/min • Sakhi Chat: ₹2/msg (Max 110 words) • Host earns 60%'}
+            : 'Voice: ₹7/min • Sakhi Chat: ₹3/msg (Max 150 words) • Rank 1 Host ₹3/min'}
         </p>
       </div>
 

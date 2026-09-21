@@ -302,7 +302,7 @@ export const VideoCallModal: React.FC = () => {
         <p className="text-[11px] text-gray-400 mt-2">
           {isHostUser
             ? '🌸 Host ID: Video Call is 100% FREE (₹0 Charges) • Zero Deductions'
-            : 'Video: ₹10/min • Sakhi Chat: ₹2/msg (Max 110 words) • Host earns 60%'}
+            : 'Video: ₹15/min • Sakhi Chat: ₹3/msg (Max 150 words) • Rank 1 Host ₹7/min'}
         </p>
       </div>
 

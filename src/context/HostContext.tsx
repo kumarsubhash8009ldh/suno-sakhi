@@ -13,6 +13,7 @@ import {
   Sakhi
 } from '../types';
 import { updateHostOnlineStatus } from '../services/hostSync';
+import { getHostRankTier } from '../utils/hostRankTiers';
 import { useWallet } from './WalletContext';
 import { sounds } from '../utils/soundEffects';
 import {
@@ -46,8 +47,9 @@ const HOST_STORAGE_KEY = 'sunosakhi_host_profile';
 const CHAT_STORAGE_KEY = 'sunosakhi_chat_messages';
 const PAYOUT_STORAGE_KEY = 'sunosakhi_host_payouts';
 const HOST_INCOME_PERCENT = 60; // 60% Host Share!
-export const MESSAGE_RATE = 2.0; // ₹2 per message
-export const MAX_MESSAGE_WORDS = 110; // 110 words limit
+export const MESSAGE_RATE = 3.0; // ₹3 per message
+export const MAX_MESSAGE_WORDS = 150; // 150 words limit
+export const HOST_CHAT_EARNING = 1.5; // ₹1.50 per message direct host income
 
 interface HostContextType {
   hostProfile: HostProfile;
@@ -761,14 +763,14 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     if (!isHost) {
-      // Host 60% commission = ₹1.20 per message
-      const hostEarned = parseFloat(((MESSAGE_RATE * HOST_INCOME_PERCENT) / 100).toFixed(2));
+      // Host income: ₹1.50 direct per message
+      const hostEarned = HOST_CHAT_EARNING;
       const newIncomeRecord: HostIncomeRecord = {
         id: 'msg-inc-' + Date.now(),
         type: 'message',
         description: `💬 Chat Message from ${effectiveCallerName} (${words.length} words)`,
         grossAmount: MESSAGE_RATE,
-        hostSharePercent: HOST_INCOME_PERCENT,
+        hostSharePercent: 50,
         hostEarned,
         timestamp: Date.now()
       };
@@ -846,19 +848,22 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { success: true };
   };
 
-  // Record 60% income from voice/video call duration
+  // Record host earnings from voice/video call based on star rank tier
   const recordCallIncome = (callType: CallType, durationSec: number, grossCost: number) => {
     if (grossCost <= 0) return;
 
-    const hostEarned = parseFloat(((grossCost * HOST_INCOME_PERCENT) / 100).toFixed(2));
-    const mins = Math.ceil(durationSec / 60);
+    const mins = Math.max(1, Math.ceil(durationSec / 60));
+    const tier = getHostRankTier(hostProfile.rating || 5.0);
+    const hostEarned = callType === 'voice'
+      ? parseFloat((mins * tier.voiceEarningPerMin).toFixed(2))
+      : parseFloat((mins * tier.videoEarningPerMin).toFixed(2));
 
     const newRecord: HostIncomeRecord = {
       id: 'call-inc-' + Date.now(),
       type: 'call',
-      description: `📞 ${callType === 'voice' ? 'Voice' : 'Video'} Call (${mins} min)`,
+      description: `📞 ${callType === 'voice' ? 'Voice' : 'Video'} Call (${mins} min) [${tier.badge}]`,
       grossAmount: grossCost,
-      hostSharePercent: HOST_INCOME_PERCENT,
+      hostSharePercent: Math.round((hostEarned / grossCost) * 100),
       hostEarned,
       timestamp: Date.now()
     };

@@ -21,9 +21,9 @@ interface AdminContextType {
 const SETTINGS_KEY = 'sunosakhi_platform_settings';
 
 const defaultSettings: PlatformSettings = {
-  voiceRatePerMin: 5,
-  videoRatePerMin: 10,
-  sakhiChatRate: 2,
+  voiceRatePerMin: 7,
+  videoRatePerMin: 15,
+  sakhiChatRate: 3,
   hostIncomePercent: 60,
   supportPhone: '+91 98765 43210',
   supportWhatsApp: '+91 98765 43210',

@@ -34,17 +34,17 @@ export const HostCommissionSlideModal: React.FC<HostCommissionSlideModalProps> =
   const slides = [
     {
       id: 1,
-      tag: '🔥 FLAT 60% DIRECT COMMISSION',
+      tag: '🌟 TOP HOST EARNING & STAR RANKS',
       tagColor: 'from-amber-500 to-orange-500 text-white',
-      title: '🌸 SunoSakhi Par Host Banein - 60% Direct Kamai!',
-      slogan: 'Apne Ghar Baithe Aawaz Se Kamayein ₹30,000 se ₹75,000 Har Mahine!',
+      title: '🌸 SunoSakhi Par Host Banein - Direct Cash Kamai!',
+      slogan: 'Apne Ghar Baithe Aawaz Se Kamayein ₹30,000 se ₹85,000 Har Mahine!',
       description: 'Host ladkiyon ke liye 100% FREE Registration (₹0 Fees). Dil khol kar baatein karein aur har minute ka direct cash share paayein.',
       rates: [
-        { icon: <Phone className="w-4 h-4 text-pink-400" />, label: 'Voice Call', rate: '₹3.00 / min', sub: 'Caller rate ₹5 (60% Share)' },
-        { icon: <Video className="w-4 h-4 text-purple-400" />, label: 'Video Call', rate: '₹6.00 / min', sub: 'Caller rate ₹10 (60% Share)' },
-        { icon: <Coins className="w-4 h-4 text-amber-400" />, label: 'Chat & Gifts', rate: '₹1.20 / msg + 60%', sub: 'Direct Cash Commission' }
+        { icon: <Phone className="w-4 h-4 text-pink-400" />, label: 'Voice Call', rate: '₹3.00 / min', sub: 'Rank 1 (Caller ₹7/min)' },
+        { icon: <Video className="w-4 h-4 text-purple-400" />, label: 'Video Call', rate: '₹7.00 / min', sub: 'Rank 1 (Caller ₹15/min)' },
+        { icon: <Coins className="w-4 h-4 text-amber-400" />, label: 'Chat & Gifts', rate: '₹1.50 / msg + Gifts', sub: 'Direct Cash Commission' }
       ],
-      highlight: '💰 Daily Potential: 2 ghante call = ₹700 - ₹1,500 daily earning!'
+      highlight: '💰 Daily Potential: 2 ghante call = ₹700 - ₹1,800 daily earning!'
     },
     {
       id: 2,
@@ -284,7 +284,7 @@ export const HostRecruitmentPill: React.FC<{ onClick: () => void }> = ({ onClick
       title="Host Banein - 60% Commission Payein"
     >
       <Crown className="w-4 h-4 text-amber-300 animate-spin-slow" />
-      <span className="tracking-tight">Host Banein • 60% Commission</span>
+      <span className="tracking-tight">Host Banein • ₹3/min Voice</span>
       <span className="px-1.5 py-0.5 rounded-full bg-black/40 text-[10px] text-amber-300 uppercase">
         Join Free
       </span>

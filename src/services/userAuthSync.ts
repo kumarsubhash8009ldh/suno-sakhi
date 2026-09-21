@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, onSnapshot } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase';
 import { getApiBaseUrl } from './apiConfig';
 import { isPhoneBanned } from './safetyService';
@@ -722,4 +722,127 @@ export const useActiveSession = (): ActiveSession => {
   }, []);
 
   return session;
+};
+
+/**
+ * Real-time subscription to ALL registered real Callers.
+ * Listens directly to Cloud Firestore `user_accounts` collection with LocalStorage fallback.
+ * Strictly ZERO dummy accounts: Only users registered with valid Mobile (10-digit) or Email are returned!
+ */
+export const subscribeToAllRealCallers = (
+  onUpdate: (callers: UserAccount[]) => void
+): (() => void) => {
+  let isUnsubscribed = false;
+  const callersMap = new Map<string, UserAccount>();
+
+  // 1. Initial Local Registry Cache
+  const localMap = getLocalRegisteredUsers();
+  Object.values(localMap).forEach((u) => {
+    const cleanPhone = (u.phone || '').replace(/\D/g, '');
+    const cleanEmail = (u.email || '').trim().toLowerCase();
+    if (cleanPhone.length >= 10 || (cleanEmail && cleanEmail.includes('@'))) {
+      const key = cleanPhone || cleanEmail || u.id;
+      callersMap.set(key, { ...u, phone: cleanPhone, email: cleanEmail });
+    }
+  });
+  if (callersMap.size > 0) {
+    onUpdate(Array.from(callersMap.values()));
+  }
+
+  const publish = () => {
+    if (isUnsubscribed) return;
+    const cleanList = Array.from(callersMap.values()).filter((u) => {
+      const p = (u.phone || '').replace(/\D/g, '');
+      const em = (u.email || '').trim().toLowerCase();
+      const hasPhone = p.length >= 10;
+      const hasEmail = Boolean(em && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em));
+      if (!hasPhone && !hasEmail) return false;
+      // Exclude hosts
+      if (
+        u.id?.startsWith('sakhi-user-') ||
+        u.id?.startsWith('sakhi-host-') ||
+        u.id?.startsWith('host_') ||
+        (u as any).role === 'host'
+      ) {
+        return false;
+      }
+      return true;
+    });
+    onUpdate(cleanList);
+  };
+
+  // 2. Real-Time Cloud Firestore Listener on user_accounts
+  let firestoreUnsub: (() => void) | null = null;
+  if (isFirebaseConfigured() && db) {
+    try {
+      const colRef = collection(db, USER_ACCOUNTS_COLLECTION);
+      firestoreUnsub = onSnapshot(
+        colRef,
+        (snapshot) => {
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data() as any;
+            if (data) {
+              const docId = docSnap.id;
+              const phone = data.phone || (/^\d{10}$/.test(docId) ? docId : '');
+              const email = data.email || (docId.includes('@') ? docId : '');
+              const cleanPhone = String(phone || '').replace(/\D/g, '');
+              const cleanEmail = String(email || '').trim().toLowerCase();
+              if (cleanPhone.length >= 10 || (cleanEmail && cleanEmail.includes('@'))) {
+                const user: UserAccount = {
+                  id: data.id || ('caller-' + (cleanPhone || cleanEmail.replace(/[^a-z0-9]/g, '_'))),
+                  phone: cleanPhone,
+                  email: cleanEmail,
+                  name: data.name || (cleanPhone ? `Caller ${cleanPhone.slice(-4)}` : `User ${cleanEmail.split('@')[0]}`),
+                  avatar: data.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
+                  createdAt: data.createdAt || Date.now(),
+                  lastLoginAt: data.lastLoginAt || Date.now(),
+                  referredBy: data.referredBy || '',
+                  status: data.status || 'active',
+                  balance: typeof data.balance === 'number' ? data.balance : 50.0
+                };
+                const key = cleanPhone || cleanEmail || user.id;
+                callersMap.set(key, user);
+              }
+            }
+          });
+          publish();
+        },
+        (err) => {
+          console.warn('Firestore user_accounts snapshot note:', err);
+        }
+      );
+    } catch (err) {
+      console.warn('Could not listen to Firestore user_accounts:', err);
+    }
+  }
+
+  // 3. Fallback Poll Backend Server
+  const baseUrl = getApiBaseUrl();
+  const fetchBackend = async () => {
+    if (isUnsubscribed) return;
+    try {
+      const res = await fetch(`${baseUrl}/api/users`, { signal: AbortSignal.timeout(3000) });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.users)) {
+        data.users.forEach((u: any) => {
+          const cleanPhone = String(u.phone || '').replace(/\D/g, '');
+          const cleanEmail = String(u.email || '').trim().toLowerCase();
+          if (cleanPhone.length >= 10 || cleanEmail) {
+            const key = cleanPhone || cleanEmail || u.id;
+            callersMap.set(key, { ...u, phone: cleanPhone, email: cleanEmail });
+          }
+        });
+        publish();
+      }
+    } catch {}
+  };
+
+  fetchBackend();
+  const intervalId = window.setInterval(fetchBackend, 3000);
+
+  return () => {
+    isUnsubscribed = true;
+    if (firestoreUnsub) firestoreUnsub();
+    clearInterval(intervalId);
+  };
 };

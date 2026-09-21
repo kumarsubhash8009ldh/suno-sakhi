@@ -198,7 +198,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </div>
                 <div className="ml-0.5 px-1.5 py-0.5 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 text-white text-[10px] font-semibold hidden sm:flex items-center gap-0.5 shadow-sm">
                   <Plus className="w-2.5 h-2.5" />
-                  <span>Add</span>
+                  <span>Add (+5% Free)</span>
                 </div>
               </button>
 

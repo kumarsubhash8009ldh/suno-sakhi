@@ -186,12 +186,24 @@ export const RateCardAndCommissionView: React.FC<RateCardAndCommissionViewProps>
               </div>
             </div>
 
+            <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-base">🎁</span>
+                <p className="text-xs text-amber-200">
+                  <strong className="text-amber-300">Flat 5% Extra Bonus:</strong> Har wallet recharge par 5% free bonus coins automatic credit hote hain!
+                </p>
+              </div>
+              <span className="px-2 py-0.5 rounded-full bg-amber-400 text-black text-[10px] font-black uppercase flex-shrink-0">
+                +5% Bonus
+              </span>
+            </div>
+
             <div className="pt-2">
               <button
                 onClick={openWalletModal}
                 className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-pink-600/30 transition-all"
               >
-                <span>Wallet Recharge Karein & Baat Shuru Karein</span>
+                <span>Wallet Recharge Karein & Baat Shuru Karein (+5% Bonus)</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>

@@ -184,12 +184,31 @@ export const WalletModal: React.FC = () => {
             step === 'pack' ? (
               /* STEP 1: SELECT PACK */
               <div className="space-y-4">
+                {/* Flat 5% Extra Bonus Highlight Banner */}
+                <div className="p-3 rounded-2xl bg-gradient-to-r from-amber-500/20 via-pink-500/20 to-emerald-500/20 border border-amber-500/40 flex items-center justify-between gap-2 shadow-lg">
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-2xl">🎁</span>
+                    <div>
+                      <p className="text-xs font-black text-amber-300 flex items-center gap-1.5">
+                        <span>FLAT 5% EXTRA BONUS ON EVERY RECHARGE!</span>
+                        <span className="px-1.5 py-0.2 rounded-full bg-emerald-500 text-black text-[9px] font-black uppercase">Live</span>
+                      </p>
+                      <p className="text-[10px] text-gray-300">
+                        Har recharge par flat 5% extra coins automatic aapke wallet me judenge.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-400 to-orange-400 text-black font-black text-[10px] uppercase shadow flex-shrink-0">
+                    +5% Free
+                  </span>
+                </div>
+
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-gray-300 uppercase tracking-wider">
                     Step 1: Select Top-Up Pack
                   </span>
                   <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
-                    <Zap className="w-3 h-3" /> Extra Bonus Included
+                    <Zap className="w-3 h-3" /> Flat 5% Extra Bonus Added
                   </span>
                 </div>
 
@@ -223,7 +242,7 @@ export const WalletModal: React.FC = () => {
                           <span className="text-2xl font-black text-white">₹{pack.amount}</span>
                           {pack.bonus > 0 && (
                             <span className="text-xs font-bold text-emerald-300 bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-700/40">
-                              +₹{pack.bonus} Free
+                              +5% Bonus (₹{pack.bonus})
                             </span>
                           )}
                         </div>
@@ -276,6 +295,10 @@ export const WalletModal: React.FC = () => {
                   <div>
                     <span className="text-[11px] text-gray-400">Total Payable Amount</span>
                     <p className="text-2xl font-black text-white">₹{selectedPack.amount}</p>
+                  </div>
+                  <div className="text-center px-2.5 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
+                    <span className="text-[10px] text-emerald-400 font-bold block">+5% Free Bonus</span>
+                    <span className="text-xs font-black text-emerald-300">+₹{selectedPack.bonus}</span>
                   </div>
                   <div className="text-right">
                     <span className="text-[11px] text-emerald-400">Total Coins to Receive</span>

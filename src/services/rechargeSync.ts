@@ -82,7 +82,10 @@ export const submitRechargeRequest = async (params: {
   }
 
   const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-  const totalBalance = parseFloat((params.amount + params.bonus).toFixed(2));
+  const calculatedBonus = typeof params.bonus === 'number' && params.bonus >= 0
+    ? params.bonus
+    : parseFloat((params.amount * 0.05).toFixed(2));
+  const totalBalance = parseFloat((params.amount + calculatedBonus).toFixed(2));
 
   const newRequest: RechargeRequest = {
     id: requestId,
@@ -90,7 +93,7 @@ export const submitRechargeRequest = async (params: {
     userName: params.userName || 'Caller User',
     userPhone: params.userPhone || '',
     amount: params.amount,
-    bonus: params.bonus,
+    bonus: calculatedBonus,
     totalBalance,
     utr: cleanUtr,
     paymentMethod: params.paymentMethod || 'UPI',
@@ -271,7 +274,7 @@ export const approveRechargeRequest = async (
     id: `tx-recharge-${Date.now()}`,
     type: 'credit',
     amount: updatedReq.totalBalance,
-    description: `✅ Admin Approved Recharge (₹${updatedReq.amount} + ₹${updatedReq.bonus} bonus • UTR: ${updatedReq.utr})`,
+    description: `✅ Admin Approved Recharge (₹${updatedReq.amount} + ₹${updatedReq.bonus} 5% Extra Bonus • UTR: ${updatedReq.utr})`,
     timestamp: Date.now()
   };
 

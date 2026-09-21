@@ -35,6 +35,7 @@ import { subscribeToCloudChat, markThreadAsRead } from '../services/chatSync';
 import { updateHostOnlineStatus } from '../services/hostSync';
 import { getApiBaseUrl } from '../services/apiConfig';
 import { getHostRankTier } from '../utils/hostRankTiers';
+import { subscribeToAllRealCallers } from '../services/userAuthSync';
 
 import { HostWithdrawModal } from './HostWithdrawModal';
 import { CreditCard } from 'lucide-react';
@@ -104,22 +105,14 @@ export const HostDashboard: React.FC = () => {
   const [registeredCallers, setRegisteredCallers] = useState<any[]>([]);
   const [togglingOnline, setTogglingOnline] = useState<boolean>(false);
 
-  // Poll registered callers from server
+  // Real-time subscription to ALL real callers from Cloud Firestore & LocalStorage
   useEffect(() => {
-    const fetchCallers = async () => {
-      try {
-        const baseUrl = getApiBaseUrl();
-        const res = await fetch(`${baseUrl}/api/users`);
-        const data = await res.json();
-        if (data.success && Array.isArray(data.users)) {
-          setRegisteredCallers(data.users);
-        }
-      } catch (err) {}
+    const unsub = subscribeToAllRealCallers((callers) => {
+      setRegisteredCallers(callers);
+    });
+    return () => {
+      if (unsub) unsub();
     };
-
-    fetchCallers();
-    const intervalId = window.setInterval(fetchCallers, 3000);
-    return () => clearInterval(intervalId);
   }, []);
 
   // Host calls a Caller (100% Free for Host!)

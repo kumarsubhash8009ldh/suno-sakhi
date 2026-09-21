@@ -230,8 +230,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const openWalletModal = () => setIsWalletModalOpen(true);
   const closeWalletModal = () => setIsWalletModalOpen(false);
 
-  const recharge = (amount: number, bonus: number) => {
-    const totalCredit = amount + bonus;
+  const recharge = (amount: number, bonus?: number) => {
+    const calculatedBonus = typeof bonus === 'number' && bonus >= 0 ? bonus : parseFloat((amount * 0.05).toFixed(2));
+    const totalCredit = parseFloat((amount + calculatedBonus).toFixed(2));
     const newBal = parseFloat((balance + totalCredit).toFixed(2));
     setBalance(newBal);
     sounds.playCoinSound();
@@ -240,7 +241,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       id: 'tx-' + Date.now(),
       type: 'credit',
       amount: totalCredit,
-      description: `Wallet Recharge (₹${amount} + ₹${bonus} Free Bonus)`,
+      description: `Wallet Recharge (₹${amount} + ₹${calculatedBonus} 5% Extra Bonus)`,
       timestamp: Date.now()
     };
     setTransactions((prev) => [newTx, ...prev]);
@@ -256,17 +257,18 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const submitRecharge = async (
     amount: number,
-    bonus: number,
+    bonus: number | undefined,
     utr: string,
     method = 'UPI'
   ) => {
     const caller = getCurrentUser();
+    const calculatedBonus = typeof bonus === 'number' && bonus >= 0 ? bonus : parseFloat((amount * 0.05).toFixed(2));
     return await submitRechargeRequest({
       userId,
       userName: caller?.name || 'Caller User',
       userPhone: caller?.phone || '',
       amount,
-      bonus,
+      bonus: calculatedBonus,
       utr,
       paymentMethod: method
     });

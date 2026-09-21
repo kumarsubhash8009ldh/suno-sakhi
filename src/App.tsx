@@ -32,7 +32,7 @@ import { HostProvider, useHost } from './context/HostContext';
 import { AdminProvider } from './context/AdminContext';
 import { Sakhi } from './types';
 import { subscribeToAllRealHosts, saveHostProfileToCloud } from './services/hostSync';
-import { getCurrentUser, syncUserToServer, getActiveSession, useActiveSession, UserAccount } from './services/userAuthSync';
+import { getCurrentUser, syncUserToServer, getActiveSession, useActiveSession, UserAccount, subscribeToAllRealCallers } from './services/userAuthSync';
 import { getApiBaseUrl } from './services/apiConfig';
 import { Sparkles, Phone, Video, Search, ShieldCheck, Heart, Users, MessageCircleHeart, Award, UserCheck, MessageCircle, Headphones, Shield, Shuffle, LogIn, ArrowRight, X, ShieldAlert } from 'lucide-react';
 
@@ -139,33 +139,15 @@ const MainContent: React.FC = () => {
     };
   }, []);
 
-  // Real-time synchronization of registered Callers from Backend Server
+  // Real-time synchronization of registered Callers from Cloud Firestore & LocalStorage
   useEffect(() => {
-    const fetchCallers = async () => {
-      try {
-        const baseUrl = getApiBaseUrl();
-        const res = await fetch(`${baseUrl}/api/users`);
-        const data = await res.json();
-        if (data.success && Array.isArray(data.users)) {
-          const callersOnly = data.users.filter((u: UserAccount) => {
-            if (!u || !u.phone) return false;
-            const clean = String(u.phone).replace(/\D/g, '');
-            if (clean.length < 10) return false;
-            // Exclude if belongs to a registered host
-            const isHost = realSakhis.some(
-              (h) => h.phone && String(h.phone).replace(/\D/g, '') === clean
-            );
-            return !isHost;
-          });
-          setRegisteredCallers(callersOnly);
-        }
-      } catch (err) {}
+    const unsub = subscribeToAllRealCallers((callers) => {
+      setRegisteredCallers(callers);
+    });
+    return () => {
+      if (unsub) unsub();
     };
-
-    fetchCallers();
-    const interval = setInterval(fetchCallers, 1200);
-    return () => clearInterval(interval);
-  }, [realSakhis]);
+  }, []);
 
   useEffect(() => {
     if (isLoginModalOpen) {
@@ -210,7 +192,7 @@ const MainContent: React.FC = () => {
     closeLoginModal();
   };
 
-  // Strictly ONLY verified Girl Hosts (Female) shown to Callers
+  // Strictly ONLY real verified Girl Hosts (Female) registered with Mobile or Email
   const filteredSakhis = useMemo(() => {
     const seen = new Set<string>();
     return realSakhis.filter((sakhi) => {
@@ -226,13 +208,7 @@ const MainContent: React.FC = () => {
         !sakhi.name ||
         sakhi.name.trim() === '' ||
         sakhi.name === 'Sakhi Host' ||
-        sakhi.name.toLowerCase().startsWith('caller') ||
-        sakhi.id.startsWith('host_priya') ||
-        sakhi.id.startsWith('host_ananya') ||
-        sakhi.id.startsWith('real_sakhi_') ||
-        sakhi.id === 'aarohi-1' ||
-        sakhi.name === 'Priya Sharma' ||
-        sakhi.name === 'Ananya Verma'
+        sakhi.name.toLowerCase().startsWith('caller')
       ) {
         return false;
       }
@@ -244,12 +220,6 @@ const MainContent: React.FC = () => {
       if (seen.has(uniqueKey)) return false;
       seen.add(uniqueKey);
 
-      // STRICT CALLER WINDOW RULE: ONLY ONLINE Host IDs are shown to Callers!
-      // Offline hosts are hidden from caller view completely.
-      if (sakhi.status !== 'online') {
-        return false;
-      }
-
       const matchesSearch =
         sakhi.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         sakhi.languages.some((l) => l.toLowerCase().includes(searchQuery.toLowerCase())) ||
@@ -258,6 +228,7 @@ const MainContent: React.FC = () => {
 
       if (!matchesSearch) return false;
 
+      if (activeFilter === 'online') return sakhi.status === 'online';
       if (activeFilter === 'top') return sakhi.rating >= 4.9;
       if (activeFilter === 'hindi') return sakhi.languages.includes('Hindi');
       if (activeFilter === 'punjabi') return sakhi.languages.includes('Punjabi');

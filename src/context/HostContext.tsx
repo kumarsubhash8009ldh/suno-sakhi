@@ -405,7 +405,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const cleanPhone = (hostProfile.phone || '').replace(/\D/g, '');
     if (!targetHostId && cleanPhone.length < 10) return;
 
-    const unsub = subscribeToHostProfile(targetHostId, (cloudData) => {
+    const unsub = subscribeToHostProfile(targetHostId, (cloudData: any) => {
       if (!cloudData) return;
       setHostProfile((prev) => {
         const merged = { ...prev, ...cloudData };

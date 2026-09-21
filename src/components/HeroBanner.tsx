@@ -73,7 +73,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onQuickCall, onOpenRefer
               <span>Choose Your Sakhi</span>
             </button>
             <a
-              href="https://clause-spencer-mill-searching.trycloudflare.com/suno-sakhi.apk"
+              href="/suno-sakhi.apk"
               download="suno-sakhi.apk"
               onClick={() => {
                 if (onOpenApkGuide) onOpenApkGuide();

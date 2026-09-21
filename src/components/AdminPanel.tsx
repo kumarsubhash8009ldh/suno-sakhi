@@ -1174,6 +1174,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
                         </div>
                       </div>
 
+                      {/* 20hr Weekly Long Call Incentive Status */}
+                      {(() => {
+                        const totalMins = (host.totalVoiceMinutes || 0) + (host.totalVideoMinutes || 0);
+                        const totalHrs = (totalMins / 60).toFixed(1);
+                        const is20HrReached = totalMins >= 1200;
+                        return (
+                          <div className={`px-2.5 py-1.5 rounded-xl text-[11px] flex items-center justify-between border ${
+                            is20HrReached
+                              ? 'bg-emerald-950/50 border-emerald-500/40 text-emerald-300'
+                              : 'bg-amber-950/30 border-amber-500/30 text-amber-300'
+                          }`}>
+                            <span className="font-semibold flex items-center gap-1">
+                              <span>🎁 20hr Weekly Incentive:</span>
+                              <strong>{totalHrs}h / 20h</strong>
+                            </span>
+                            <span className="font-bold">
+                              {is20HrReached ? '✅ ₹200 Eligible' : `${(Math.max(0, 20 - parseFloat(totalHrs))).toFixed(1)}h baaki`}
+                            </span>
+                          </div>
+                        );
+                      })()}
+
                       {/* Host Actions */}
                       <div className="flex items-center justify-between pt-1 gap-2">
                         <button
@@ -1427,6 +1449,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
                     onChange={(e) => setHostShare(Number(e.target.value))}
                     className="w-full px-3 py-2 rounded-xl bg-black/60 border border-pink-500/30 text-white font-mono text-sm focus:outline-none"
                   />
+                </div>
+
+                {/* Active Weekly Promotion Card */}
+                <div className="sm:col-span-2 p-3.5 rounded-2xl bg-amber-950/40 border border-amber-500/40 flex items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] uppercase font-black text-amber-400 tracking-wider">
+                      Active Host Promotion Policy
+                    </span>
+                    <h5 className="text-xs font-bold text-white">
+                      🎁 Weekly Long Call Incentive: 20hr+ Call Time = ₹200 Flat Cash Bonus
+                    </h5>
+                    <p className="text-[10px] text-gray-300">
+                      Hosts who complete 20 hours (1,200 min) weekly call time earn ₹200 extra bonus credited directly to their pending payout wallet.
+                    </p>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full bg-amber-400 text-black text-[10px] font-black uppercase whitespace-nowrap shadow">
+                    Active ₹200
+                  </span>
                 </div>
 
                 <div>

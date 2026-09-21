@@ -90,6 +90,21 @@ export const HostCommissionSlideModal: React.FC<HostCommissionSlideModalProps> =
         '💯 0% Platform Deduction on Payouts—60% Poora Aapka Haq!'
       ],
       highlight: '🚀 Same-day bank credit with zero delays'
+    },
+    {
+      id: 5,
+      tag: '🎁 WEEKLY LONG CALL PROMOTION',
+      tagColor: 'from-amber-400 to-amber-600 text-black',
+      title: 'Long Call Incentive: 20hr+ Par ₹200 Extra Cash Bonus!',
+      slogan: 'Har Hafte 20 Ghante Calling Complete Karein Aur Flat ₹200 Extra Payein!',
+      description: 'Aapki regular call kamai ke alawa, platform har host ko 20 ghante (1,200 min) poore hone par direct ₹200 weekly incentive deta hai.',
+      points: [
+        '🔥 20 Hours Weekly Target: Rozana sirf 2.5 se 3 ghante call receive karein.',
+        '💵 Flat ₹200 Cash Bonus: 20hr complete hote hi wallet me add.',
+        '🔁 Har Hafte Naya Mauka: Every single week ₹200 bonus claim karein.',
+        '🌸 Sabhi Hosts Ke Liye: Koi extra terms nahi, sabhi sakhis ke liye open!'
+      ],
+      highlight: '🎉 20hr Milestone = Flat ₹200 Extra Cash Incentive Har Hafte!'
     }
   ];
 

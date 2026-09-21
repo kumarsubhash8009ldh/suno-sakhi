@@ -14,6 +14,11 @@ import {
 } from '../types';
 import { updateHostOnlineStatus } from '../services/hostSync';
 import { getHostRankTier } from '../utils/hostRankTiers';
+import {
+  calculateWeeklyCallStats,
+  WeeklyCallIncentiveStats,
+  WEEKLY_INCENTIVE_AMOUNT
+} from '../utils/hostWeeklyIncentive';
 import { useWallet } from './WalletContext';
 import { sounds } from '../utils/soundEffects';
 import {
@@ -124,6 +129,9 @@ interface HostContextType {
   recoverPassword: (phone: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
   recoverHostAccountDetails: (phone: string) => Promise<{ success: boolean; password?: string; error?: string }>;
   logoutHost: () => void;
+  // Weekly Long Call Promotion (20hr+ -> ₹200 bonus)
+  weeklyIncentiveStats: WeeklyCallIncentiveStats;
+  claimWeeklyIncentive: () => { success: boolean; message: string; amount?: number };
 }
 
 const defaultHost: HostProfile = {
@@ -865,7 +873,8 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
       grossAmount: grossCost,
       hostSharePercent: Math.round((hostEarned / grossCost) * 100),
       hostEarned,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      durationMinutes: mins
     };
 
     setHostProfile((prev) => {
@@ -889,6 +898,64 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       return updated;
     });
+  };
+
+  // Weekly Long Call Promotion Stats (20hr+ -> ₹200 bonus)
+  const weeklyIncentiveStats = calculateWeeklyCallStats(hostProfile);
+
+  // Claim Weekly Long Call Incentive
+  const claimWeeklyIncentive = (): { success: boolean; message: string; amount?: number } => {
+    const stats = calculateWeeklyCallStats(hostProfile);
+    if (!stats.isEligible) {
+      return {
+        success: false,
+        message: `₹200 Incentive unlock karne ke liye is hafte 20 ghante call time chahiye. Aapne abhi ${stats.totalHours} ghante poore kiye hain (${stats.hoursRemaining} ghante baaki).`
+      };
+    }
+    if (stats.isClaimed) {
+      return {
+        success: false,
+        message: `Aap is hafte (${stats.weekKey}) ka ₹200 Long Call Incentive pehle hi claim kar chuke hain!`
+      };
+    }
+
+    const bonus = WEEKLY_INCENTIVE_AMOUNT;
+    const newRecord: HostIncomeRecord = {
+      id: `inc-weekly-20hr-${stats.weekKey}`,
+      type: 'incentive',
+      description: `🎁 Weekly Long Call Incentive (20+ Hours Milestone - ${stats.weekKey})`,
+      grossAmount: bonus,
+      hostSharePercent: 100,
+      hostEarned: bonus,
+      timestamp: Date.now(),
+      durationMinutes: 0,
+      details: stats.weekKey
+    };
+
+    setHostProfile((prev) => {
+      const updated = {
+        ...prev,
+        netIncome: parseFloat((prev.netIncome + bonus).toFixed(2)),
+        pendingPayout: parseFloat((prev.pendingPayout + bonus).toFixed(2)),
+        incomeHistory: [newRecord, ...prev.incomeHistory]
+      };
+      recordHostIncomeToCloud(prev.id, newRecord, {
+        grossRevenue: updated.grossRevenue,
+        netIncome: updated.netIncome,
+        pendingPayout: updated.pendingPayout
+      }, {
+        hostPhone: prev.phone,
+        callType: 'incentive'
+      });
+      return updated;
+    });
+
+    sounds.playCoinSound();
+    return {
+      success: true,
+      message: `🎉 Badhai ho! ₹${bonus} Weekly Long Call Incentive aapke pending payout wallet me credit ho gaya hai!`,
+      amount: bonus
+    };
   };
 
   const updateHostPhoto = (photoUrl: string) => {
@@ -1035,7 +1102,9 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
         registerHost,
         recoverPassword,
         recoverHostAccountDetails,
-        logoutHost
+        logoutHost,
+        weeklyIncentiveStats,
+        claimWeeklyIncentive
       }}
     >
       {children}

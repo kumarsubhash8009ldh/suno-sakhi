@@ -73,12 +73,13 @@ export interface ActiveGiftAnimation {
 
 export interface HostIncomeRecord {
   id: string;
-  type: 'call' | 'gift' | 'message';
+  type: 'call' | 'gift' | 'message' | 'incentive';
   description: string;
   grossAmount: number;
   hostSharePercent: number; // 60%
   hostEarned: number;
   timestamp: number;
+  durationMinutes?: number;
   details?: string;
 }
 

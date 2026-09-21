@@ -301,6 +301,31 @@ export const RateCardAndCommissionView: React.FC<RateCardAndCommissionViewProps>
                     ))}
                   </div>
                 </div>
+
+                {/* 5. Special Promotion: Weekly Long Call Incentive */}
+                <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-950/60 via-purple-950/40 to-black/60 border border-amber-500/40 space-y-2">
+                  <div className="flex items-center justify-between pb-1 border-b border-amber-500/20">
+                    <div className="flex items-center gap-1.5 text-xs font-black text-amber-300">
+                      <Zap className="w-4 h-4 text-amber-400 fill-amber-400" />
+                      <span>🎁 SPECIAL PROMOTION: WEEKLY LONG CALL INCENTIVE</span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full bg-amber-400 text-black font-black text-[9px] uppercase">
+                      ₹200 CASH
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-bold text-white">20 Hours Plus Call Time = ₹200 Extra Bonus</p>
+                      <p className="text-[10px] text-gray-300 mt-0.5">
+                        Har hafte agar aap total 20 ghante (1,200 min) calls receive karti hain, toh normal rate ke alawa <strong>₹200 flat bonus</strong> direct wallet me credit hota hai!
+                      </p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <span className="text-base font-black text-amber-300 font-mono">+₹200</span>
+                      <span className="text-[9px] text-amber-200/80 block">/ week bonus</span>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Withdrawal Rules & Payout Policy */}

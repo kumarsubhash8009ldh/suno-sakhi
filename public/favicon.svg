@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff2e93" />
+      <stop offset="100%" stop-color="#9d4edd" />
+    </linearGradient>
+  </defs>
+  <!-- Outer glowing heart -->
+  <path d="M50 85 C20 60 5 40 5 25 A18 18 0 0 1 42 18 L50 26 L58 18 A18 18 0 0 1 95 25 C95 40 80 60 50 85 Z" stroke="url(#grad)" stroke-width="5" fill="#150d24" />
+  <!-- Mic body inside heart -->
+  <rect x="42" y="32" width="16" height="28" rx="8" fill="url(#grad)" />
+  <path d="M34 46 C34 56 42 64 50 64 C58 64 66 56 66 46" stroke="#ffffff" stroke-width="3" stroke-linecap="round" fill="none" />
+  <line x1="50" y1="64" x2="50" y2="72" stroke="#ffffff" stroke-width="3" stroke-linecap="round" />
+  <line x1="42" y1="72" x2="58" y2="72" stroke="#ffffff" stroke-width="3" stroke-linecap="round" />
+  <!-- Sound wave accents -->
+  <path d="M22 40 Q18 48 22 56" stroke="#ff2e93" stroke-width="3" stroke-linecap="round" fill="none" />
+  <path d="M78 40 Q82 48 78 56" stroke="#9d4edd" stroke-width="3" stroke-linecap="round" fill="none" />
+</svg>

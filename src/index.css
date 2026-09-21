@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: #090511;
+    color: #f8fafc;
+    overflow-x: hidden;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0d0818;
+}
+::-webkit-scrollbar-thumb {
+  background: #2f1a4e;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #ff2e93;
+}
+
+/* Neon glow helper classes */
+.glow-pink {
+  box-shadow: 0 0 25px rgba(255, 46, 147, 0.4);
+}
+
+.glow-purple {
+  box-shadow: 0 0 25px rgba(157, 78, 221, 0.4);
+}
+
+.glow-btn {
+  box-shadow: 0 4px 20px rgba(255, 46, 147, 0.35);
+  transition: all 0.25s ease;
+}
+.glow-btn:hover {
+  box-shadow: 0 6px 28px rgba(255, 46, 147, 0.6);
+  transform: translateY(-1px);
+}
+
+.glass-panel {
+  background: rgba(22, 13, 38, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-card {
+  background: linear-gradient(135deg, rgba(30, 18, 51, 0.8) 0%, rgba(18, 10, 31, 0.9) 100%);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 46, 147, 0.15);
+}
+
+.glass-card:hover {
+  border-color: rgba(255, 46, 147, 0.4);
+}
+
+/* Pulse waves for live voice calls */
+@keyframes wavePulse {
+  0% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.25); opacity: 0.3; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+.animate-wave-pulse {
+  animation: wavePulse 2s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+}

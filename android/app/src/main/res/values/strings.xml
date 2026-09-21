@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Suno Sakhi</string>
+    <string name="title_activity_main">Suno Sakhi</string>
+    <string name="package_name">com.sunosakhi.app</string>
+    <string name="custom_url_scheme">com.sunosakhi.app</string>
+</resources>

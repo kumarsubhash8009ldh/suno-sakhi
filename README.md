@@ -4,6 +4,14 @@
 
 ---
 
+## 🌐 Live Links
+
+- **Live Web App (Firebase)**: [https://suno-sakhi-63040.web.app](https://suno-sakhi-63040.web.app)
+- **Firebase Console**: [https://console.firebase.google.com/project/suno-sakhi-63040/overview](https://console.firebase.google.com/project/suno-sakhi-63040/overview)
+- **GitHub Repository**: [https://github.com/kumarsubhash8009ldh/suno-sakhi](https://github.com/kumarsubhash8009ldh/suno-sakhi)
+
+---
+
 ## 📱 Features
 
 - **Real-Time Voice & Video Calling**: WebRTC-powered audio and video calls with dynamic call timers and volume controls.

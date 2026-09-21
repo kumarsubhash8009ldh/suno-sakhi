@@ -82,6 +82,7 @@ interface HostContextType {
     amount: number;
     method: 'upi' | 'bank';
     upiId?: string;
+    panNumber?: string;
     bankDetails?: any;
   }) => Promise<{ success: boolean; message: string; record?: HostPayoutRecord }>;
   // Chat & Messaging
@@ -1010,10 +1011,28 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
     amount: number;
     method: 'upi' | 'bank';
     upiId?: string;
+    panNumber?: string;
     bankDetails?: any;
   }): Promise<{ success: boolean; message: string; record?: HostPayoutRecord }> => {
-    if (params.amount < 100) {
-      return { success: false, message: 'Minimum withdrawal amount ₹100 hai.' };
+    // 1. Mandatory PAN Card Requirement for Host Withdrawal
+    const effectivePan = (params.panNumber || hostProfile.verification?.panNumber || (hostProfile as any).panNumber || '').trim().toUpperCase();
+    if (!effectivePan) {
+      return {
+        success: false,
+        message: '⚠️ PAN Card Compulsory: Payout withdrawal request lagane ke liye PAN Card number hona anivarya hai.'
+      };
+    }
+    const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
+    if (!PAN_REGEX.test(effectivePan)) {
+      return {
+        success: false,
+        message: '⚠️ Kripya valid 10-character PAN Card number darj karein (e.g. ABCDE1234F).'
+      };
+    }
+
+    // 2. Minimum Withdrawal Limit: ₹500
+    if (params.amount < 500) {
+      return { success: false, message: 'Minimum withdrawal amount ₹500 hona anivarya hai.' };
     }
     if (params.amount > hostProfile.pendingPayout) {
       return { success: false, message: `Aapka pending balance sirf ₹${hostProfile.pendingPayout.toFixed(2)} hai.` };
@@ -1026,6 +1045,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
       amount: params.amount,
       method: params.method,
       upiId: params.upiId,
+      panNumber: effectivePan,
       bankDetails: params.bankDetails,
       status: 'completed',
       timestamp: Date.now(),
@@ -1036,13 +1056,17 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setPayoutHistory(updatedHistory);
     localStorage.setItem(PAYOUT_STORAGE_KEY, JSON.stringify(updatedHistory));
 
-    // Deduct from pending payout
+    // Deduct from pending payout & save verified PAN to host profile
     const updatedPending = parseFloat((hostProfile.pendingPayout - params.amount).toFixed(2));
     setHostProfile((prev) => {
       const u = {
         ...prev,
         pendingPayout: updatedPending,
-        upiId: params.upiId || prev.upiId
+        upiId: params.upiId || prev.upiId,
+        verification: {
+          ...prev.verification,
+          panNumber: effectivePan
+        }
       };
       saveHostProfileToCloud(u);
       return u;
@@ -1050,7 +1074,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return {
       success: true,
-      message: `₹${params.amount.toFixed(2)} ka payout successfully process ho gaya! Reference: ${refId}`,
+      message: `₹${params.amount.toFixed(2)} ka payout Google Pay/Paytm/PhonePe par successfully process ho gaya! Reference: ${refId}`,
       record: newRecord
     };
   };

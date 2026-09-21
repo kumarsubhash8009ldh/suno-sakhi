@@ -334,10 +334,11 @@ export const RateCardAndCommissionView: React.FC<RateCardAndCommissionViewProps>
                   <ShieldCheck className="w-4 h-4" />
                   <span>Daily UPI & Bank Payout Rules</span>
                 </div>
-                <ul className="text-[11px] text-gray-300 space-y-1 pl-4 list-disc">
-                  <li><strong>Minimum Payout:</strong> Sirf ₹100 kamaane par instant withdrawal request karein.</li>
-                  <li><strong>Supported Methods:</strong> PhonePe, Google Pay, Paytm UPI ya direct Bank Account.</li>
-                  <li><strong>Admin Release:</strong> Withdrawal request lagte hi UTR number ke sath payment release hota hai.</li>
+                <ul className="text-[11px] text-gray-300 space-y-1.5 pl-4 list-disc">
+                  <li><strong>Minimum Payout:</strong> Minimum withdrawal limit <strong>₹500</strong> per day.</li>
+                  <li><strong>PAN Card Compulsory:</strong> Withdrawal ke liye host ka valid <strong>PAN Card number hona anivarya (compulsory)</strong> hai.</li>
+                  <li><strong>Supported Channels:</strong> Payment transfer <strong>Google Pay, Paytm, PhonePe</strong> UPI ya direct Bank Account par hogi.</li>
+                  <li><strong>Admin Release:</strong> Withdrawal request lagte hi UTR number ke sath safe settlement hoti hai.</li>
                 </ul>
               </div>
             </div>

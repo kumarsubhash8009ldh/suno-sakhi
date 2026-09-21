@@ -1023,6 +1023,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
                               </div>
                               <p className="text-xs text-gray-300 mt-0.5">
                                 Mode: <strong className="text-white uppercase">{p.method}</strong> • Detail: <strong className="font-mono text-pink-200">{p.upiId || 'Bank Transfer'}</strong>
+                                {(p.panNumber || hostMatch?.verification?.panNumber) && (
+                                  <span> • PAN: <strong className="font-mono text-amber-300">{p.panNumber || hostMatch?.verification?.panNumber}</strong></span>
+                                )}
                               </p>
                               <div className="flex items-center gap-3 mt-1 text-[11px] text-gray-400">
                                 <span>Date: {new Date(p.timestamp).toLocaleString('en-IN')}</span>

@@ -17,10 +17,10 @@ import { useHost } from '../context/HostContext';
 import { HostPayoutRecord } from '../types';
 
 const UPI_APPS = [
-  { name: 'PhonePe', icon: '🟣', handle: '@ybl' },
-  { name: 'Google Pay', icon: '🔵', handle: '@okhdfcbank' },
+  { name: 'Google Pay (GPay)', icon: '🔵', handle: '@okhdfcbank' },
   { name: 'Paytm', icon: '🟦', handle: '@paytm' },
-  { name: 'BHIM / Other', icon: '🇮🇳', handle: '@upi' }
+  { name: 'PhonePe', icon: '🟣', handle: '@ybl' },
+  { name: 'BHIM / Other UPI', icon: '🇮🇳', handle: '@upi' }
 ];
 
 export const HostWithdrawModal: React.FC = () => {
@@ -36,6 +36,9 @@ export const HostWithdrawModal: React.FC = () => {
   const [method, setMethod] = useState<'upi' | 'bank'>('upi');
   const [amount, setAmount] = useState<string>('500');
   const [upiId, setUpiId] = useState<string>(hostProfile.upiId || '');
+  const [panNumber, setPanNumber] = useState<string>(
+    hostProfile.verification?.panNumber || (hostProfile as any).panNumber || ''
+  );
 
   // Bank Form State
   const [accountHolder, setAccountHolder] = useState<string>(hostProfile.name || '');
@@ -64,9 +67,22 @@ export const HostWithdrawModal: React.FC = () => {
     e.preventDefault();
     setErrorMsg(null);
 
+    // 1. Mandatory PAN Card Validation
+    const cleanPan = panNumber.trim().toUpperCase();
+    if (!cleanPan) {
+      setErrorMsg('⚠️ PAN Card Compulsory: Payout withdrawal ke liye PAN Card number darj karna anivarya hai.');
+      return;
+    }
+    const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
+    if (!PAN_REGEX.test(cleanPan)) {
+      setErrorMsg('⚠️ Invalid PAN Card format. Sahi 10-character PAN dalein (e.g. ABCDE1234F).');
+      return;
+    }
+
+    // 2. Minimum Amount: ₹500
     const numAmount = parseFloat(amount);
-    if (isNaN(numAmount) || numAmount < 100) {
-      setErrorMsg('Minimum withdrawal amount ₹100 hona chahiye.');
+    if (isNaN(numAmount) || numAmount < 500) {
+      setErrorMsg('Minimum withdrawal amount ₹500 hona anivarya hai.');
       return;
     }
     if (numAmount > availableBalance) {
@@ -76,7 +92,7 @@ export const HostWithdrawModal: React.FC = () => {
 
     if (method === 'upi') {
       if (!upiId || !upiId.includes('@')) {
-        setErrorMsg('Kripya valid UPI ID darj karein (e.g. yourname@okhdfcbank).');
+        setErrorMsg('Kripya valid UPI ID darj karein (e.g. 9876543210@paytm ya yourname@okhdfcbank).');
         return;
       }
     } else {
@@ -103,6 +119,7 @@ export const HostWithdrawModal: React.FC = () => {
       amount: numAmount,
       method,
       upiId: method === 'upi' ? upiId : undefined,
+      panNumber: cleanPan,
       bankDetails:
         method === 'bank'
           ? {
@@ -223,6 +240,12 @@ export const HostWithdrawModal: React.FC = () => {
                   <span>Method:</span>
                   <span className="font-bold text-white uppercase">{successRecord.method}</span>
                 </div>
+                {successRecord.panNumber && (
+                  <div className="flex justify-between text-gray-400">
+                    <span>PAN Number:</span>
+                    <span className="font-mono font-bold text-amber-300">{successRecord.panNumber} (Verified ✅)</span>
+                  </div>
+                )}
                 {successRecord.upiId && (
                   <div className="flex justify-between text-gray-400">
                     <span>UPI ID:</span>
@@ -250,6 +273,7 @@ export const HostWithdrawModal: React.FC = () => {
             /* Withdrawal Form */
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* Amount Selection */}
+              {/* Amount Selection */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-semibold text-gray-300">
@@ -268,18 +292,18 @@ export const HostWithdrawModal: React.FC = () => {
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-lg font-bold text-pink-400">₹</span>
                   <input
                     type="number"
-                    min="100"
+                    min="500"
                     max={availableBalance}
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
-                    placeholder="Enter amount (Min ₹100)"
+                    placeholder="Enter amount (Min ₹500)"
                     className="w-full pl-9 pr-4 py-3 rounded-2xl bg-black/60 border border-pink-500/30 text-white font-mono text-lg font-bold focus:outline-none focus:border-pink-500 shadow-inner"
                   />
                 </div>
 
                 {/* Quick Chips */}
                 <div className="flex items-center gap-2 mt-2">
-                  {[200, 500, 1000, 2000].map((chip) => (
+                  {[500, 1000, 2000, 5000].map((chip) => (
                     <button
                       key={chip}
                       type="button"
@@ -294,12 +318,48 @@ export const HostWithdrawModal: React.FC = () => {
                     </button>
                   ))}
                 </div>
+                <p className="text-[10px] text-amber-300/80 mt-1">
+                  * Minimum withdrawal limit: ₹500 per day.
+                </p>
               </div>
 
-              {/* Method Selector: UPI vs Bank */}
+              {/* MANDATORY PAN CARD SECTION */}
+              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-950/40 via-purple-950/30 to-black/60 border border-amber-500/40 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-amber-400" />
+                    <span>Host PAN Card (अनिवार्य / Compulsory)</span>
+                  </label>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-600 text-white font-black uppercase tracking-wider">
+                    COMPULSORY
+                  </span>
+                </div>
+
+                <div className="relative">
+                  <input
+                    type="text"
+                    maxLength={10}
+                    value={panNumber}
+                    onChange={(e) => setPanNumber(e.target.value.toUpperCase())}
+                    placeholder="Enter 10-digit PAN (e.g. ABCDE1234F)"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-black/70 border border-amber-500/40 text-white font-mono text-sm uppercase tracking-wider focus:outline-none focus:border-amber-400 shadow-inner"
+                  />
+                  {panNumber && /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(panNumber.trim().toUpperCase()) && (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-400 text-xs font-bold flex items-center gap-1">
+                      <CheckCircle2 className="w-4 h-4" /> Valid PAN
+                    </span>
+                  )}
+                </div>
+
+                <p className="text-[10px] text-gray-300 leading-relaxed">
+                  * Tax Compliance aur safe payout ke liye PAN Card compulsory hai. Koi bhi host withdrawal kare, unka PAN hona anivarya hai.
+                </p>
+              </div>
+
+              {/* Method Selector: UPI (Google Pay, Paytm, PhonePe) vs Bank */}
               <div>
                 <label className="text-xs font-semibold text-gray-300 block mb-1.5">
-                  Payout Method Chunein
+                  Payout Transfer App Chunein (Google Pay / Paytm / PhonePe)
                 </label>
                 <div className="grid grid-cols-2 gap-2.5">
                   <button
@@ -313,8 +373,8 @@ export const HostWithdrawModal: React.FC = () => {
                   >
                     <Smartphone className="w-5 h-5 text-pink-400" />
                     <div>
-                      <span className="block text-xs font-bold text-white">Instant UPI</span>
-                      <span className="block text-[10px] text-pink-300">GPay, PhonePe, Paytm</span>
+                      <span className="block text-xs font-bold text-white">Instant UPI Transfer</span>
+                      <span className="block text-[10px] text-emerald-300 font-bold">GPay, Paytm, PhonePe</span>
                     </div>
                   </button>
 
@@ -329,7 +389,7 @@ export const HostWithdrawModal: React.FC = () => {
                   >
                     <Building2 className="w-5 h-5 text-emerald-400" />
                     <div>
-                      <span className="block text-xs font-bold text-white">Bank Transfer</span>
+                      <span className="block text-xs font-bold text-white">Bank Account</span>
                       <span className="block text-[10px] text-emerald-300">NEFT / IMPS</span>
                     </div>
                   </button>
@@ -444,15 +504,15 @@ export const HostWithdrawModal: React.FC = () => {
 
               <button
                 type="submit"
-                disabled={loading || availableBalance < 100}
+                disabled={loading || availableBalance < 500}
                 className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 text-white font-black text-sm shadow-xl shadow-emerald-900/40 flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-                <span>Confirm & Withdraw ₹{amount}</span>
+                <span>Confirm & Withdraw ₹{amount} (Min ₹500)</span>
               </button>
 
               <p className="text-[10px] text-gray-400 text-center">
-                100% Safe & Encrypted • 0% Transaction Charges • Direct Bank Settlement
+                Transfer via Google Pay, Paytm, PhonePe UPI • PAN Card Verified Settlement • 0% Platform Fee
               </p>
             </form>
           ) : (

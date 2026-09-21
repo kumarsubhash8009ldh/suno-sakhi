@@ -796,7 +796,7 @@ export const HostDashboard: React.FC = () => {
                   className="mt-2 w-full py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs shadow-md transition-all flex items-center justify-center gap-1.5 active:scale-95"
                 >
                   <CreditCard className="w-3.5 h-3.5" />
-                  <span>Withdraw (UPI / Bank)</span>
+                  <span>Withdraw (Min ₹500)</span>
                 </button>
               </div>
             </div>

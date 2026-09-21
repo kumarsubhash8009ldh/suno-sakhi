@@ -189,6 +189,7 @@ export interface HostPayoutRecord {
   amount: number;
   method: 'upi' | 'bank';
   upiId?: string;
+  panNumber?: string;
   bankDetails?: {
     accountHolder: string;
     accountNumber: string;

@@ -44,7 +44,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onQuickCall, onOpenRefer
                 <span className="text-xs uppercase font-bold tracking-wider">Voice Call</span>
               </div>
               <div className="flex items-baseline gap-1">
-                <span className="text-2xl sm:text-3xl font-black text-white">₹5</span>
+                <span className="text-2xl sm:text-3xl font-black text-white">₹7</span>
                 <span className="text-xs text-pink-200/80 font-medium">/ minute</span>
               </div>
               <p className="text-[11px] text-pink-300/60 mt-0.5">Talk Freely & Privately</p>
@@ -56,7 +56,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onQuickCall, onOpenRefer
                 <span className="text-xs uppercase font-bold tracking-wider">Video Call</span>
               </div>
               <div className="flex items-baseline gap-1">
-                <span className="text-2xl sm:text-3xl font-black text-white">₹10</span>
+                <span className="text-2xl sm:text-3xl font-black text-white">₹15</span>
                 <span className="text-xs text-purple-200/80 font-medium">/ minute</span>
               </div>
               <p className="text-[11px] text-purple-300/60 mt-0.5">Face-to-Face Live Chat</p>

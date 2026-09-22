@@ -11,7 +11,7 @@ const STORAGE_KEY_USER_ID = 'sunosakhi_user_id';
 
 // Automatic purge of all old user and host IDs (Strict real accounts only)
 if (typeof window !== 'undefined') {
-  if (localStorage.getItem('sunosakhi_v9_clean_wipe') !== 'true') {
+  if (localStorage.getItem('sunosakhi_v11_clean_wipe') !== 'true') {
     const toRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
@@ -20,8 +20,8 @@ if (typeof window !== 'undefined') {
       }
     }
     toRemove.forEach((k) => localStorage.removeItem(k));
-    localStorage.setItem('sunosakhi_v9_clean_wipe', 'true');
-    console.log('🧹 [STORAGE CLEANUP v9] All legacy user & host data cleared. Only genuine registered accounts will exist.');
+    localStorage.setItem('sunosakhi_v11_clean_wipe', 'true');
+    console.log('🧹 [STORAGE CLEANUP v11] All legacy user & host data cleared. Only fresh registered accounts will exist.');
   }
 }
 
@@ -54,7 +54,8 @@ export interface UserAccount {
   createdAt: number;
   lastLoginAt: number;
   referredBy?: string;
-  status?: 'active' | 'blocked';
+  status?: 'active' | 'blocked' | 'online' | 'offline';
+  isOnline?: boolean;
   balance?: number;
   sessionToken?: string;
 }
@@ -779,6 +780,8 @@ export const subscribeToAllRealCallers = (
       firestoreUnsub = onSnapshot(
         colRef,
         (snapshot) => {
+          // Fresh map for each snapshot so deleted/purged callers vanish immediately
+          const currentSnapshotMap = new Map<string, UserAccount>();
           snapshot.forEach((docSnap) => {
             const data = docSnap.data() as any;
             if (data) {
@@ -797,15 +800,42 @@ export const subscribeToAllRealCallers = (
                   createdAt: data.createdAt || Date.now(),
                   lastLoginAt: data.lastLoginAt || Date.now(),
                   referredBy: data.referredBy || '',
-                  status: data.status || 'active',
+                  status: data.status || 'online',
                   balance: typeof data.balance === 'number' ? data.balance : 50.0
                 };
                 const key = cleanPhone || cleanEmail || user.id;
-                callersMap.set(key, user);
+                currentSnapshotMap.set(key, user);
               }
             }
           });
-          publish();
+
+          const cleanList = Array.from(currentSnapshotMap.values()).filter((u) => {
+            const p = (u.phone || '').replace(/\D/g, '');
+            const em = (u.email || '').trim().toLowerCase();
+            const hasPhone = p.length >= 10;
+            const hasEmail = Boolean(em && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em));
+            if (!hasPhone && !hasEmail) return false;
+            // Exclude hosts
+            if (
+              u.id?.startsWith('sakhi-user-') ||
+              u.id?.startsWith('sakhi-host-') ||
+              u.id?.startsWith('host_') ||
+              (u as any).role === 'host'
+            ) {
+              return false;
+            }
+            return true;
+          });
+
+          try {
+            const cacheObj: Record<string, UserAccount> = {};
+            cleanList.forEach((u) => { cacheObj[u.id] = u; });
+            localStorage.setItem(ALL_USERS_KEY, JSON.stringify(cacheObj));
+          } catch {}
+
+          if (!isUnsubscribed) {
+            onUpdate(cleanList);
+          }
         },
         (err) => {
           console.warn('Firestore user_accounts snapshot note:', err);

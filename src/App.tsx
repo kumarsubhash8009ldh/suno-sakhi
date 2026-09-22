@@ -228,7 +228,9 @@ const MainContent: React.FC = () => {
 
       if (!matchesSearch) return false;
 
-      if (activeFilter === 'online') return sakhi.status === 'online';
+      // Callers only see real hosts who are currently Online
+      if (sakhi.status !== 'online') return false;
+
       if (activeFilter === 'top') return sakhi.rating >= 4.9;
       if (activeFilter === 'hindi') return sakhi.languages.includes('Hindi');
       if (activeFilter === 'punjabi') return sakhi.languages.includes('Punjabi');
@@ -237,12 +239,19 @@ const MainContent: React.FC = () => {
     });
   }, [realSakhis, activeFilter, searchQuery]);
 
-  // Filtered Callers for Host View
+  // Filtered Callers for Host View (Show Real Online Callers)
   const filteredCallers = useMemo(() => {
     return registeredCallers.filter((caller) => {
+      const cleanPhone = String(caller.phone || '').replace(/\D/g, '');
+      const hasValidPhone = cleanPhone.length >= 10;
+      const hasValidEmail = Boolean(caller.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(caller.email));
+      if (!hasValidPhone && !hasValidEmail) return false;
+
+      // Only show online / active callers
+      if (caller.status === 'offline') return false;
+
       const q = searchQuery.toLowerCase().trim();
       if (!q) return true;
-      const cleanPhone = String(caller.phone || '').replace(/\D/g, '');
       const matchesName = (caller.name || '').toLowerCase().includes(q);
       const matchesPhone = cleanPhone.includes(q);
       return matchesName || matchesPhone;

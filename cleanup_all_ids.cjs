@@ -1,7 +1,7 @@
 const https = require('https');
 
 const PROJECT_ID = 'suno-sakhi-63040';
-const COLLECTIONS = ['hosts', 'host_accounts', 'user_accounts'];
+const COLLECTIONS = ['hosts', 'host_accounts', 'user_accounts', 'users', 'calls', 'conversations'];
 
 function request(url, options = {}) {
   return new Promise((resolve, reject) => {

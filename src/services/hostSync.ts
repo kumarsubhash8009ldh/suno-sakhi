@@ -98,6 +98,8 @@ export const subscribeToAllRealHosts = (
       firestoreUnsub = onSnapshot(
         colRef,
         (snapshot) => {
+          // Fresh map for current snapshot so deleted/purged hosts vanish immediately
+          const currentSnapshotMap = new Map<string, Sakhi>();
           snapshot.forEach((docSnap) => {
             const data = docSnap.data() as any;
             if (data && isRealHostAccount({ ...data, id: docSnap.id })) {
@@ -123,10 +125,18 @@ export const subscribeToAllRealHosts = (
                 isVerified: true
               };
               const key = sakhi.phone || sakhi.email || sakhi.id;
-              mergedHostsMap.set(key, sakhi);
+              currentSnapshotMap.set(key, sakhi);
             }
           });
-          publish();
+
+          const clean = Array.from(currentSnapshotMap.values()).filter(isRealHostAccount);
+          const unique = deduplicateHosts(clean);
+          try {
+            localStorage.setItem(LOCAL_HOSTS_KEY, JSON.stringify(unique));
+          } catch {}
+          if (!isUnsubscribed) {
+            onUpdate(unique);
+          }
         },
         (err) => {
           console.warn('Firestore hosts subscription note:', err);

@@ -978,16 +978,19 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const submitVerification = (verification: HostVerificationData) => {
     setHostProfile((prev) => {
       const isApproved = verification.status === 'verified';
-      const updated = {
+      const updated: HostProfile = {
         ...prev,
         isVerified: isApproved,
-        status: isApproved ? prev.status : 'offline',
-        verification
+        status: isApproved ? 'online' : prev.status,
+        verification: {
+          ...verification,
+          status: isApproved ? 'verified' : (verification.status || 'verified'),
+          verifiedAt: Date.now()
+        }
       };
       saveHostProfileToCloud(updated);
       return updated;
     });
-    setIsVerificationModalOpen(false);
   };
 
   const requestPayout = (): { success: boolean; message: string } => {

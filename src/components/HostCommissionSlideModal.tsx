@@ -82,10 +82,10 @@ export const HostCommissionSlideModal: React.FC<HostCommissionSlideModalProps> =
       tagColor: 'from-purple-500 to-indigo-600 text-white',
       title: 'Rozana Kamai, Rozana Direct Bank / UPI Mein Payout!',
       slogan: 'Aaj Ki Kamai Aaj Hi Apne UPI (Google Pay / Paytm / PhonePe) Mein Payein!',
-      description: 'Call khatam hote hi commission aapke wallet balance mein live add hoti hai aur minimum ₹500 hote hi PAN card ke sath turant withdraw ho sakti hai.',
+      description: 'Call khatam hote hi commission aapke wallet balance mein live add hoti hai aur minimum ₹500 hote hi Aadhaar verified host turant withdraw kar sakti hai.',
       points: [
         '⚡ Instant UPI Transfer: Google Pay, Paytm, PhonePe ya Bank Account.',
-        '💵 Minimum ₹500 per day direct withdrawal (PAN Card Compulsory).',
+        '💵 Minimum ₹500 per day direct withdrawal (Aadhaar Card Verified).',
         '📊 Real-Time Dashboard: Har call ki second-by-second kamai live dekhein.',
         '💯 0% Platform Deduction on Payouts—60% Poora Aapka Haq!'
       ],

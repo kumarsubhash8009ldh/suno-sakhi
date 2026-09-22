@@ -815,14 +815,14 @@ export const HostDashboard: React.FC = () => {
               <div>
                 <div className="flex items-center gap-2">
                   <h4 className="text-sm font-bold text-white">
-                    Government ID & Live Selfie Verification
+                    Aadhaar Card Verification
                   </h4>
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30">
-                    ACTIVE ✅
+                  <span className={`px-2 py-0.5 rounded-full ${hostProfile.isVerified || hostProfile.verification?.status === 'verified' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border-amber-500/30'} text-[10px] font-bold border`}>
+                    {hostProfile.isVerified || hostProfile.verification?.status === 'verified' ? 'VERIFIED ✅' : 'PENDING ⚠️'}
                   </span>
                 </div>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  PAN: {hostProfile.verification?.panNumber || 'Verified'} • {hostProfile.verification?.residentIdType ? hostProfile.verification.residentIdType.toUpperCase() : (hostProfile.verification?.idType ? hostProfile.verification.idType.toUpperCase() : 'RESIDENT ID')} ({hostProfile.verification?.residentIdNumber || hostProfile.verification?.idNumber || 'Verified'}) • Female 🌸
+                  Aadhaar Card: {hostProfile.verification?.residentIdNumber || hostProfile.verification?.idNumber ? `XXXX-XXXX-${String(hostProfile.verification?.residentIdNumber || hostProfile.verification?.idNumber).slice(-4)}` : 'Aadhaar Auto-Verified'} • 18+ Female 🌸
                 </p>
               </div>
             </div>
@@ -831,7 +831,7 @@ export const HostDashboard: React.FC = () => {
               onClick={openVerificationModal}
               className="px-4 py-2 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold transition-colors whitespace-nowrap"
             >
-              View Verification Details
+              {hostProfile.isVerified || hostProfile.verification?.status === 'verified' ? 'View Aadhaar Details' : 'Verify Aadhaar Now'}
             </button>
           </div>
 

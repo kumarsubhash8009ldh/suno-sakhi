@@ -26,6 +26,7 @@ if %ERRORLEVEL% NEQ 0 (
 
 echo [3/4] Compiling Android APK with Gradle...
 cd /d "C:\Users\Subhash\.gemini\antigravity\scratch\suno-sakhi\android"
+if exist "app\build\outputs\apk\debug\app-debug.apk" del /f /q "app\build\outputs\apk\debug\app-debug.apk"
 call gradlew.bat assembleDebug
 if %ERRORLEVEL% NEQ 0 (
     echo [ERROR] Gradle build failed!

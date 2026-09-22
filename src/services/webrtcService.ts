@@ -1,3 +1,15 @@
+import {
+  collection,
+  doc,
+  setDoc,
+  updateDoc,
+  onSnapshot,
+  arrayUnion,
+  getDocs,
+  query,
+  where
+} from 'firebase/firestore';
+import { db, isFirebaseConfigured } from './firebase';
 import { CallType, Sakhi } from '../types';
 import { getApiBaseUrl } from './apiConfig';
 
@@ -7,15 +19,20 @@ export interface CallSessionDoc {
   callerName: string;
   callerPhone?: string;
   sakhiId: string;
+  sakhiPhone?: string;
   sakhiName: string;
   sakhiAvatar?: string;
   callType: CallType;
   status: 'ringing' | 'connected' | 'rejected' | 'ended' | 'busy';
   offer?: any;
   answer?: any;
+  callerCandidates?: any[];
+  calleeCandidates?: any[];
   createdAt: number;
   connectedAt?: number;
   endedAt?: number;
+  durationSeconds?: number;
+  cost?: number;
 }
 
 const ICE_SERVERS: RTCConfiguration = {
@@ -35,6 +52,7 @@ export class WebRTCService {
   private localStream: MediaStream | null = null;
   private remoteStream: MediaStream | null = null;
   private activeCallId: string | null = null;
+  private unsubscribers: (() => void)[] = [];
   private intervals: number[] = [];
   private currentFacingMode: 'user' | 'environment' = 'user';
 
@@ -130,7 +148,6 @@ export class WebRTCService {
       }
     } catch (err) {
       console.warn('Microphone/Camera permission not available:', err);
-      // Fallback: try audio-only if video failed
       if (callType === 'video') {
         try {
           const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
@@ -146,7 +163,7 @@ export class WebRTCService {
   }
 
   /**
-   * Start Outbound Call as Caller
+   * Start Outbound Call as Caller (Cloud Firestore Signaling)
    */
   public async startOutboundCall(
     caller: { id: string; name: string; phone?: string },
@@ -194,20 +211,21 @@ export class WebRTCService {
       }
     };
 
-    // Buffer ICE candidates until callId is established on backend
+    // Buffer ICE candidates until call doc is created
     const queuedCandidates: any[] = [];
-    let isCallStartedOnServer = false;
-    const baseUrl = getApiBaseUrl();
+    let isDocCreated = false;
 
-    pc.onicecandidate = (event) => {
+    pc.onicecandidate = async (event) => {
       if (event.candidate) {
         const cJson = event.candidate.toJSON();
-        if (isCallStartedOnServer) {
-          fetch(`${baseUrl}/api/calls/candidate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ callId, role: 'caller', candidate: cJson })
-          }).catch(() => {});
+        if (isDocCreated && isFirebaseConfigured() && db) {
+          try {
+            await updateDoc(doc(db, 'calls', callId), {
+              callerCandidates: arrayUnion(cJson)
+            });
+          } catch (e) {
+            console.warn('Caller ICE candidate error:', e);
+          }
         } else {
           queuedCandidates.push(cJson);
         }
@@ -231,7 +249,7 @@ export class WebRTCService {
           }
         }
       } else if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-        console.warn('WebRTC connection dropped/failed');
+        console.warn('WebRTC connection failed or disconnected');
       }
     };
 
@@ -242,12 +260,16 @@ export class WebRTCService {
     });
     await pc.setLocalDescription(offer);
 
+    const cleanHostPhone = String(sakhi.phone || sakhi.id || '').replace(/\D/g, '').slice(-10);
+    const cleanCallerPhone = String(caller.phone || caller.id || '').replace(/\D/g, '').slice(-10);
+
     const callSessionDoc: CallSessionDoc = {
       id: callId,
       callerId: caller.id,
       callerName: caller.name,
-      callerPhone: caller.phone || '',
+      callerPhone: cleanCallerPhone,
       sakhiId: sakhi.id,
+      sakhiPhone: cleanHostPhone,
       sakhiName: sakhi.name,
       sakhiAvatar: sakhi.avatar,
       callType,
@@ -256,94 +278,72 @@ export class WebRTCService {
         type: offer.type,
         sdp: offer.sdp
       },
+      callerCandidates: queuedCandidates,
+      calleeCandidates: [],
       createdAt: Date.now()
     };
 
-    // 4. Save call session to Server
-    try {
-      await fetch(`${baseUrl}/api/calls/start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(callSessionDoc)
-      });
-      isCallStartedOnServer = true;
-
-      // Flush any ICE candidates gathered while saving session
-      if (queuedCandidates.length > 0) {
-        for (const candidate of queuedCandidates) {
-          fetch(`${baseUrl}/api/calls/candidate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ callId, role: 'caller', candidate })
-          }).catch(() => {});
-        }
-        queuedCandidates.length = 0;
-      }
-    } catch (err) {
-      console.warn('Error starting call on server:', err);
-    }
-
-    // 5. Poll server for Answer & Call status
-    let isConnected = false;
-    const addedCandidates = new Set<string>();
-    const pollInterval = window.setInterval(async () => {
+    // 4. Save call session to Cloud Firestore
+    if (isFirebaseConfigured() && db) {
       try {
-        const res = await fetch(`${baseUrl}/api/calls/session?callId=${callId}`);
-        const data = await res.json();
-        if (!data.success || !data.session) return;
+        await setDoc(doc(db, 'calls', callId), callSessionDoc);
+        isDocCreated = true;
+        console.log('✅ [WebRTC] Call Session published to Cloud Firestore:', callId);
+      } catch (err) {
+        console.warn('Error saving call session in Firestore:', err);
+      }
 
-        const session: CallSessionDoc = data.session;
+      // 5. Listen to Call Session Doc for Answer & ICE Candidates
+      const addedCalleeCandidates = new Set<string>();
+      const unsub = onSnapshot(doc(db, 'calls', callId), async (docSnap) => {
+        if (!docSnap.exists()) return;
+        const session = docSnap.data() as CallSessionDoc;
+
+        // Callee Answered
         if (session.status === 'connected' && session.answer) {
-          if (!pc.currentRemoteDescription && pc.signalingState === 'have-local-offer') {
+          if (pc.signalingState === 'have-local-offer' && !pc.currentRemoteDescription) {
             try {
               await pc.setRemoteDescription(new RTCSessionDescription(session.answer));
+              console.log('📡 [WebRTC] Remote Answer description set successfully on Caller!');
+              if (this.onCallConnected) this.onCallConnected();
             } catch (sdpErr) {
-              console.warn('Remote description error:', sdpErr);
+              console.warn('Caller set remote description error:', sdpErr);
             }
           }
+        }
 
-          // Fetch Callee ICE candidates only when remote description is set
-          if (pc.remoteDescription) {
-            const cRes = await fetch(`${baseUrl}/api/calls/candidates?callId=${callId}&forRole=caller`);
-            const cData = await cRes.json();
-            if (cData.candidates && Array.isArray(cData.candidates)) {
-              for (const c of cData.candidates) {
-                const cStr = JSON.stringify(c);
-                if (!addedCandidates.has(cStr)) {
-                  addedCandidates.add(cStr);
-                  try {
-                    await pc.addIceCandidate(new RTCIceCandidate(c));
-                  } catch (iceErr) {}
-                }
-              }
+        // Callee ICE Candidates
+        if (Array.isArray(session.calleeCandidates)) {
+          for (const c of session.calleeCandidates) {
+            const key = JSON.stringify(c);
+            if (!addedCalleeCandidates.has(key)) {
+              addedCalleeCandidates.add(key);
+              try {
+                await pc.addIceCandidate(new RTCIceCandidate(c));
+              } catch (e) {}
             }
           }
+        }
 
-          if (!isConnected) {
-            isConnected = true;
-            if (this.onCallConnected) {
-              this.onCallConnected();
-            }
-          }
-        } else if (session.status === 'rejected') {
-          clearInterval(pollInterval);
+        // Rejected
+        if (session.status === 'rejected' || session.status === 'busy') {
           if (this.onCallRejected) {
-            this.onCallRejected('Sakhi ne call reject kar diya ya busy hain.');
+            this.onCallRejected('Sakhi ne call decline kar di ya wo abhi busy hain.');
           }
           this.cleanup();
-        } else if (session.status === 'ended') {
-          clearInterval(pollInterval);
+        }
+
+        // Ended
+        if (session.status === 'ended') {
           if (this.onCallEnded) {
             this.onCallEnded();
           }
           this.cleanup();
         }
-      } catch (err) {
-        console.warn('Call session poll error:', err);
-      }
-    }, 700);
+      });
 
-    this.intervals.push(pollInterval);
+      this.unsubscribers.push(unsub);
+    }
 
     return callId;
   }
@@ -360,40 +360,6 @@ export class WebRTCService {
 
     const pc = new RTCPeerConnection(ICE_SERVERS);
     this.peerConnection = pc;
-
-    const baseUrl = getApiBaseUrl();
-
-    // Immediately capture Callee ICE Candidates
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        fetch(`${baseUrl}/api/calls/candidate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ callId: callSession.id, role: 'callee', candidate: event.candidate.toJSON() })
-        }).catch(() => {});
-      }
-    };
-
-    pc.onconnectionstatechange = () => {
-      console.log('📡 [WebRTC] Callee Connection State:', pc.connectionState);
-      if (pc.connectionState === 'connected') {
-        if (this.onCallConnected) this.onCallConnected();
-        const receivers = pc.getReceivers();
-        const tracks = receivers.map((r) => r.track).filter(Boolean) as MediaStreamTrack[];
-        if (tracks.length > 0) {
-          tracks.forEach((t) => {
-            t.enabled = true;
-          });
-          const stream = new MediaStream(tracks);
-          this.remoteStream = stream;
-          if (this.onRemoteStreamAvailable) {
-            this.onRemoteStreamAvailable(stream);
-          }
-        }
-      } else if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-        console.warn('Callee connection state failed/disconnected');
-      }
-    };
 
     if (localStream) {
       localStream.getTracks().forEach((track) => {
@@ -424,12 +390,45 @@ export class WebRTCService {
       }
     };
 
+    // Capture Callee ICE Candidates and push to Firestore
+    pc.onicecandidate = async (event) => {
+      if (event.candidate && isFirebaseConfigured() && db) {
+        try {
+          await updateDoc(doc(db, 'calls', callSession.id), {
+            calleeCandidates: arrayUnion(event.candidate.toJSON())
+          });
+        } catch (e) {}
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      console.log('📡 [WebRTC] Callee Connection State:', pc.connectionState);
+      if (pc.connectionState === 'connected') {
+        if (this.onCallConnected) this.onCallConnected();
+        const receivers = pc.getReceivers();
+        const tracks = receivers.map((r) => r.track).filter(Boolean) as MediaStreamTrack[];
+        if (tracks.length > 0) {
+          tracks.forEach((t) => {
+            t.enabled = true;
+          });
+          const stream = new MediaStream(tracks);
+          this.remoteStream = stream;
+          if (this.onRemoteStreamAvailable) {
+            this.onRemoteStreamAvailable(stream);
+          }
+        }
+      } else if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+        console.warn('Callee connection state failed/disconnected');
+      }
+    };
+
     // 1. Set Remote Description from Offer
     if (callSession.offer) {
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(callSession.offer));
+        console.log('📡 [WebRTC] Callee set remote offer description');
       } catch (err) {
-        console.warn('Remote offer set error:', err);
+        console.warn('Remote offer set error on callee:', err);
       }
     }
 
@@ -437,48 +436,46 @@ export class WebRTCService {
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
 
-    // 3. Post Answer to Server
-    try {
-      await fetch(`${baseUrl}/api/calls/answer`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          callId: callSession.id,
-          answer: { type: answer.type, sdp: answer.sdp }
-        })
-      });
-    } catch (err) {
-      console.warn('Error answering call on server:', err);
-    }
-
-    // 5. Poll for caller ICE candidates & call termination
-    const addedCallerCandidates = new Set<string>();
-    const hostPollInterval = window.setInterval(async () => {
+    // 3. Post Answer to Cloud Firestore
+    if (isFirebaseConfigured() && db) {
       try {
-        const res = await fetch(`${baseUrl}/api/calls/session?callId=${callSession.id}`);
-        const data = await res.json();
-        if (data.session && data.session.status === 'ended') {
-          clearInterval(hostPollInterval);
+        await updateDoc(doc(db, 'calls', callSession.id), {
+          status: 'connected',
+          answer: { type: answer.type, sdp: answer.sdp },
+          connectedAt: Date.now()
+        });
+        console.log('✅ [WebRTC] Call Answer published to Firestore');
+      } catch (err) {
+        console.warn('Error answering call on Firestore:', err);
+      }
+
+      // 4. Listen for Caller ICE Candidates and Call End
+      const addedCallerCandidates = new Set<string>();
+      const unsub = onSnapshot(doc(db, 'calls', callSession.id), async (docSnap) => {
+        if (!docSnap.exists()) return;
+        const data = docSnap.data() as CallSessionDoc;
+
+        if (data.status === 'ended') {
           if (this.onCallEnded) this.onCallEnded();
           this.cleanup();
           return;
         }
 
-        const cRes = await fetch(`${baseUrl}/api/calls/candidates?callId=${callSession.id}&forRole=callee`);
-        const cData = await cRes.json();
-        if (cData.candidates && pc.remoteDescription) {
-          for (const c of cData.candidates) {
-            const cStr = JSON.stringify(c);
-            if (!addedCallerCandidates.has(cStr)) {
-              addedCallerCandidates.add(cStr);
-              await pc.addIceCandidate(new RTCIceCandidate(c)).catch(() => {});
+        if (Array.isArray(data.callerCandidates)) {
+          for (const c of data.callerCandidates) {
+            const cKey = JSON.stringify(c);
+            if (!addedCallerCandidates.has(cKey)) {
+              addedCallerCandidates.add(cKey);
+              try {
+                await pc.addIceCandidate(new RTCIceCandidate(c));
+              } catch (e) {}
             }
           }
         }
-      } catch (err) {}
-    }, 800);
+      });
 
-    this.intervals.push(hostPollInterval);
+      this.unsubscribers.push(unsub);
+    }
 
     if (this.onCallConnected) {
       this.onCallConnected();
@@ -491,14 +488,14 @@ export class WebRTCService {
    * Reject Incoming Call
    */
   public async rejectIncomingCall(callId: string): Promise<void> {
-    const baseUrl = getApiBaseUrl();
-    try {
-      await fetch(`${baseUrl}/api/calls/end`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ callId, reason: 'rejected' })
-      });
-    } catch (err) {}
+    if (callId && isFirebaseConfigured() && db) {
+      try {
+        await updateDoc(doc(db, 'calls', callId), {
+          status: 'rejected',
+          endedAt: Date.now()
+        });
+      } catch (err) {}
+    }
     this.cleanup();
   }
 
@@ -510,22 +507,12 @@ export class WebRTCService {
     details?: { durationSeconds?: number; cost?: number; hostId?: string; hostPhone?: string; callerName?: string; callType?: string }
   ): Promise<void> {
     const id = callId || this.activeCallId;
-    if (id) {
-      const baseUrl = getApiBaseUrl();
+    if (id && isFirebaseConfigured() && db) {
       try {
-        await fetch(`${baseUrl}/api/calls/end`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            callId: id,
-            reason: 'ended',
-            durationSeconds: details?.durationSeconds,
-            cost: details?.cost,
-            hostId: details?.hostId,
-            hostPhone: details?.hostPhone,
-            callerName: details?.callerName,
-            callType: details?.callType
-          })
+        await updateDoc(doc(db, 'calls', id), {
+          status: 'ended',
+          endedAt: Date.now(),
+          ...(details || {})
         });
       } catch (err) {}
     }
@@ -559,9 +546,16 @@ export class WebRTCService {
   }
 
   /**
-   * Full cleanup of peer connection, streams and polling intervals
+   * Full cleanup of peer connection, streams and polling/listeners
    */
   public cleanup(): void {
+    this.unsubscribers.forEach((unsub) => {
+      try {
+        unsub();
+      } catch {}
+    });
+    this.unsubscribers = [];
+
     this.intervals.forEach((intervalId) => {
       try {
         clearInterval(intervalId);
@@ -595,19 +589,7 @@ if (typeof window !== 'undefined') {
   const handlePageUnload = () => {
     const activeCallId = webrtcService.getActiveCallId();
     if (activeCallId) {
-      const baseUrl = getApiBaseUrl();
-      const payload = JSON.stringify({ callId: activeCallId, reason: 'ended' });
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon(`${baseUrl}/api/calls/end`, new Blob([payload], { type: 'application/json' }));
-      } else {
-        fetch(`${baseUrl}/api/calls/end`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: payload,
-          keepalive: true
-        }).catch(() => {});
-      }
-      webrtcService.cleanup();
+      webrtcService.endActiveCall(activeCallId);
     }
   };
   window.addEventListener('beforeunload', handlePageUnload);
@@ -615,35 +597,73 @@ if (typeof window !== 'undefined') {
 }
 
 /**
- * Real-time listener for incoming calls for a logged-in Host (Sakhi).
+ * Real-time listener for incoming calls for a logged-in Host or Caller.
+ * Listens directly to Cloud Firestore `calls` collection.
  */
 export const subscribeToIncomingCallsForHost = (
-  hostId: string,
+  receiverId: string,
   onIncomingCall: (call: CallSessionDoc | null) => void
 ): (() => void) => {
-  if (!hostId) return () => {};
+  if (!receiverId) return () => {};
 
-  const baseUrl = getApiBaseUrl();
-  let lastReceivedCallId = '';
+  const cleanReceiverDigits = String(receiverId).replace(/\D/g, '').slice(-10);
 
-  const intervalId = window.setInterval(async () => {
+  if (isFirebaseConfigured() && db) {
     try {
-      const res = await fetch(`${baseUrl}/api/calls/incoming?hostId=${encodeURIComponent(hostId)}`);
-      const data = await res.json();
-      if (data.success) {
-        if (data.call && data.call.id !== lastReceivedCallId) {
-          lastReceivedCallId = data.call.id;
-          onIncomingCall(data.call);
-        } else if (!data.call && lastReceivedCallId) {
-          // Caller ended or cancelled the call before answer
-          lastReceivedCallId = '';
-          onIncomingCall(null);
-        }
-      }
-    } catch (err) {}
-  }, 750);
+      const callsCol = collection(db, 'calls');
+      let currentCallId = '';
 
-  return () => {
-    clearInterval(intervalId);
-  };
+      const unsub = onSnapshot(
+        callsCol,
+        (snapshot) => {
+          let activeIncoming: CallSessionDoc | null = null;
+          const now = Date.now();
+
+          snapshot.forEach((docSnap) => {
+            const call = docSnap.data() as CallSessionDoc;
+            if (!call || call.status !== 'ringing') return;
+            // Only trigger if initiated in the last 45 seconds
+            if (call.createdAt && now - call.createdAt > 45000) return;
+
+            const callHostDigits = String(call.sakhiPhone || call.sakhiId || '').replace(/\D/g, '').slice(-10);
+            const callSakhiId = String(call.sakhiId || '');
+            const callCallerDigits = String(call.callerPhone || call.callerId || '').replace(/\D/g, '').slice(-10);
+
+            // Match host receiver (standard incoming call) or caller receiver
+            const isMatch = (
+              callSakhiId === receiverId ||
+              (cleanReceiverDigits && callHostDigits === cleanReceiverDigits) ||
+              (cleanReceiverDigits && callSakhiId.includes(cleanReceiverDigits)) ||
+              (cleanReceiverDigits && callCallerDigits === cleanReceiverDigits)
+            );
+
+            if (isMatch) {
+              activeIncoming = { ...call, id: docSnap.id };
+            }
+          });
+
+          if (activeIncoming) {
+            if (currentCallId !== (activeIncoming as CallSessionDoc).id) {
+              currentCallId = (activeIncoming as CallSessionDoc).id;
+              onIncomingCall(activeIncoming);
+            }
+          } else {
+            if (currentCallId) {
+              currentCallId = '';
+              onIncomingCall(null);
+            }
+          }
+        },
+        (err) => {
+          console.warn('Firestore incoming calls listener notice:', err);
+        }
+      );
+
+      return unsub;
+    } catch (err) {
+      console.warn('Error subscribing to incoming calls in Firestore:', err);
+    }
+  }
+
+  return () => {};
 };

@@ -1,7 +1,7 @@
 /**
  * Global API Base URL Configuration for Web & Capacitor Android
  */
-export const LIVE_SERVER_URL = 'https://backup-you-scanners-crystal.trycloudflare.com';
+export const LIVE_SERVER_URL = '';
 
 export const getApiBaseUrl = (): string => {
   if (typeof window !== 'undefined') {
@@ -18,27 +18,21 @@ export const getApiBaseUrl = (): string => {
     );
 
     if (isCapacitor) {
-      // In native Android app, connect to live backend tunnel
       return LIVE_SERVER_URL;
     }
 
-    // 3. Running in Firebase Hosting or external domain
+    // 3. Running on local node server or custom port
     if (
       window.location.origin &&
       window.location.origin !== 'null' &&
-      !window.location.origin.includes('localhost') &&
       !window.location.origin.includes('web.app') &&
-      !window.location.origin.includes('firebaseapp.com')
+      !window.location.origin.includes('firebaseapp.com') &&
+      !window.location.origin.includes('capacitor:')
     ) {
       return window.location.origin.replace(/\/$/, '');
     }
 
-    // 4. Fallback for browser or Firebase hosting
-    if (window.location.origin?.includes('web.app') || window.location.origin?.includes('firebaseapp.com')) {
-      return LIVE_SERVER_URL;
-    }
-    return window.location.origin || LIVE_SERVER_URL;
+    return LIVE_SERVER_URL;
   }
   return LIVE_SERVER_URL;
 };
-

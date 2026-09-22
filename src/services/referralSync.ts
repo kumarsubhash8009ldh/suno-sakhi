@@ -32,7 +32,7 @@ export const getMyReferralCode = (userIdOrPhone?: string): string => {
 export const getReferralShareUrl = (refCode: string): string => {
   const base = typeof window !== 'undefined' && window.location.origin && !window.location.origin.includes('localhost')
     ? window.location.origin
-    : 'https://selective-scenarios-discuss-proposition.trycloudflare.com';
+    : 'https://suno-sakhi-63040.web.app';
   return `${base.replace(/\/$/, '')}/download?ref=${refCode}`;
 };
 

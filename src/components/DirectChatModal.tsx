@@ -45,7 +45,9 @@ export const DirectChatModal: React.FC = () => {
     session.role === 'host' ||
     userRole === 'host' ||
     isHostLoggedIn ||
-    localStorage.getItem('sunosakhi_host_logged_in') === 'true'
+    localStorage.getItem('sunosakhi_host_logged_in') === 'true' ||
+    localStorage.getItem('sunosakhi_active_role') === 'host' ||
+    (hostProfile?.phone && String(hostProfile.phone).replace(/\D/g, '').length >= 10)
   );
   const isLoggedIn = session.isLoggedIn;
 
@@ -340,11 +342,11 @@ export const DirectChatModal: React.FC = () => {
               {isHostViewer ? (
                 <span className="text-emerald-400 font-bold flex items-center gap-1">
                   <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>Host Account: 100% Free (Zero Charges)</span>
+                  <span>🌸 Host Account: 100% Free (Zero Charges)</span>
                 </span>
               ) : (
                 <span className="text-gray-400">
-                  Wallet Balance: <strong className="text-white">₹{((balance ?? 0) || 0).toFixed(2)}</strong>
+                  Wallet Balance: <strong className="text-white">₹{((balance ?? 0) || 0).toFixed(2)}</strong> (₹{MESSAGE_RATE}/msg)
                 </span>
               )}
               <span
@@ -359,6 +361,20 @@ export const DirectChatModal: React.FC = () => {
                 {wordCount} / {MAX_MESSAGE_WORDS} words
               </span>
             </div>
+
+            {/* Low balance alert for caller with direct recharge */}
+            {!isHostViewer && balance < MESSAGE_RATE && (
+              <div className="flex items-center justify-between p-2 px-3 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[11px] font-bold animate-pulse">
+                <span>⚠️ Message bhejne ke liye ₹{MESSAGE_RATE.toFixed(2)} balance hona chahiye.</span>
+                <button
+                  type="button"
+                  onClick={openWalletModal}
+                  className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-black text-[10px] shrink-0 transition-transform active:scale-95"
+                >
+                  Recharge
+                </button>
+              </div>
+            )}
 
             <div className="flex items-center gap-2">
               <input

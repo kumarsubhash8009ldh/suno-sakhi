@@ -36,7 +36,7 @@ const renderWhatsAppStatusTick = (status?: 'sent' | 'delivered' | 'read') => {
 
 export const InCallChatDrawer: React.FC<InCallChatDrawerProps> = ({ sakhi, isOpen, onClose }) => {
   const { messages, sendMessage, userRole, isHostLoggedIn, hostProfile } = useHost();
-  const { balance } = useWallet();
+  const { balance, openWalletModal } = useWallet();
   const [inputText, setInputText] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -47,7 +47,9 @@ export const InCallChatDrawer: React.FC<InCallChatDrawerProps> = ({ sakhi, isOpe
     session.role === 'host' ||
     userRole === 'host' ||
     isHostLoggedIn ||
-    localStorage.getItem('sunosakhi_host_logged_in') === 'true'
+    localStorage.getItem('sunosakhi_host_logged_in') === 'true' ||
+    localStorage.getItem('sunosakhi_active_role') === 'host' ||
+    (hostProfile?.phone && String(hostProfile.phone).replace(/\D/g, '').length >= 10)
   );
   const isLoggedIn = session.isLoggedIn;
 
@@ -238,11 +240,11 @@ export const InCallChatDrawer: React.FC<InCallChatDrawerProps> = ({ sakhi, isOpe
           <div className="flex items-center justify-between text-[10px]">
             {isHostViewer ? (
               <span className="text-emerald-400 font-bold">
-                Host ID: 100% Free (Zero Charges)
+                🌸 Host ID: 100% Free (Zero Charges)
               </span>
             ) : (
               <span className="text-gray-400">
-                Wallet: <strong className="text-white">₹{((balance ?? 0) || 0).toFixed(2)}</strong>
+                Wallet: <strong className="text-white">₹{((balance ?? 0) || 0).toFixed(2)}</strong> (₹{MESSAGE_RATE}/msg)
               </span>
             )}
             <span
@@ -257,6 +259,20 @@ export const InCallChatDrawer: React.FC<InCallChatDrawerProps> = ({ sakhi, isOpe
               {wordCount} / {MAX_MESSAGE_WORDS} words
             </span>
           </div>
+
+          {/* Caller low balance alert */}
+          {!isHostViewer && balance < MESSAGE_RATE && (
+            <div className="flex items-center justify-between p-1.5 px-2.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-bold animate-pulse">
+              <span>⚠️ Chat ke liye ₹{MESSAGE_RATE.toFixed(2)} balance hona chahiye.</span>
+              <button
+                type="button"
+                onClick={openWalletModal}
+                className="px-2 py-0.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-black text-[9px] shrink-0"
+              >
+                Recharge
+              </button>
+            </div>
+          )}
 
           <div className="flex items-center gap-2">
             <input

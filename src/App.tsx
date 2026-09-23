@@ -821,8 +821,8 @@ const MainContent: React.FC = () => {
             <span>Voice Connects Hearts ♡</span>
           </div>
           <p className="max-w-md text-gray-500">
-            Dil se baat sirf SunoSakhi ke saath. Voice: ₹5/min • Video: ₹8/min • Sakhi Chat: ₹2/msg.
-            Host Direct Income. 100% Secure, Confidential, and Private.
+            Dil se baat sirf SunoSakhi ke saath. Voice: ₹7/min • Video: ₹15/min • Sakhi Chat: ₹3/msg.
+            Girls Host: 100% Free (Audio, Video & Messages) • Host Direct Instant Income. 100% Secure & Private.
           </p>
           <div className="flex items-center gap-4 text-xs font-semibold">
             <button

@@ -119,10 +119,10 @@ export const SakhiCard: React.FC<SakhiCardProps> = ({ sakhi }) => {
           onClick={() => startCall(sakhi, 'voice')}
           disabled={!isOnline}
           className="flex-1 py-2.5 px-3 rounded-2xl bg-gradient-to-r from-purple-700 via-indigo-700 to-pink-600 hover:from-purple-600 hover:to-pink-500 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-purple-950/50 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-          title={isHostViewer ? 'Free Voice Call (Host Account)' : 'Live Voice Call'}
+          title={isHostViewer ? 'Free Voice Call (Host Account)' : 'Live Voice Call (₹7.00/min)'}
         >
           <Coins className="w-4 h-4 text-amber-300" />
-          <span>{isHostViewer ? 'Free Call' : `${sakhi.voiceRatePerMin || 5}/min`}</span>
+          <span>{isHostViewer ? 'Free Call' : '₹7/min'}</span>
           <Phone className="w-4 h-4 text-white" />
         </button>
 
@@ -131,10 +131,11 @@ export const SakhiCard: React.FC<SakhiCardProps> = ({ sakhi }) => {
           type="button"
           onClick={() => startCall(sakhi, 'video')}
           disabled={!isOnline}
-          className="p-2.5 rounded-2xl bg-pink-600/30 hover:bg-pink-600/50 border border-pink-500/40 text-pink-300 hover:text-white transition-all active:scale-95 disabled:opacity-50"
-          title={isHostViewer ? 'Free Video Call (Host Account)' : 'Video Call (₹10/min)'}
+          className="p-2.5 rounded-2xl bg-pink-600/30 hover:bg-pink-600/50 border border-pink-500/40 text-pink-300 hover:text-white transition-all active:scale-95 disabled:opacity-50 flex items-center gap-1"
+          title={isHostViewer ? 'Free Video Call (Host Account)' : 'Video Call (₹15.00/min)'}
         >
           <Video className="w-4 h-4" />
+          <span className="text-[10px] font-bold sm:inline">{isHostViewer ? 'Free' : '₹15'}</span>
         </button>
       </div>
     </div>

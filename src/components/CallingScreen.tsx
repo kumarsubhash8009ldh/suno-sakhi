@@ -47,7 +47,7 @@ export const CallingScreen: React.FC = () => {
 
   if (callStatus !== 'calling' || !activeSakhi) return null;
 
-  const rate = callType === 'voice' ? 5 : 10;
+  const rate = callType === 'voice' ? 7 : 15;
 
   return (
     <div
@@ -68,12 +68,12 @@ export const CallingScreen: React.FC = () => {
           ) : callType === 'voice' ? (
             <>
               <Mic className="w-3.5 h-3.5 text-pink-400" />
-              <span>Voice Call • ₹5 / min</span>
+              <span>Voice Call • ₹7 / min</span>
             </>
           ) : (
             <>
               <Video className="w-3.5 h-3.5 text-purple-400" />
-              <span>Video Call • ₹10 / min</span>
+              <span>Video Call • ₹15 / min</span>
             </>
           )}
         </div>

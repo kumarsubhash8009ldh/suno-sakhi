@@ -737,19 +737,27 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
     }
 
-    // Check if current user is Host (Host is NEVER charged for messages! 100% Free)
-    const isHost = userRole === 'host';
+    // STRICT RULE: Host is NEVER charged for messages! 100% FREE for Female/Girl Hosts.
+    // Callers are charged MESSAGE_RATE (₹3.00/msg) deducted from wallet.
+    const isHost = Boolean(
+      userRole === 'host' ||
+      isHostLoggedIn ||
+      session.role === 'host' ||
+      localStorage.getItem('sunosakhi_host_logged_in') === 'true' ||
+      localStorage.getItem('sunosakhi_active_role') === 'host' ||
+      (hostProfile?.phone && String(hostProfile.phone).replace(/\D/g, '').length >= 10)
+    );
     let messageCost = 0;
 
     if (!isHost) {
-      // Check caller balance
+      // Check caller balance (Must have at least ₹3.00)
       if (balance < MESSAGE_RATE) {
-        alert(`⚠️ Message bhejne ke liye ₹${MESSAGE_RATE} balance hona chahiye. Kripya recharge karein.`);
+        alert(`⚠️ Message bhejne ke liye ₹${MESSAGE_RATE.toFixed(2)} balance hona chahiye. Kripya apna wallet recharge karein.`);
         openWalletModal();
         return { success: false, error: 'Insufficient balance' };
       }
 
-      // Deduct ₹2 from caller's wallet (Host pays ₹0.00)
+      // Deduct ₹3.00 from caller's wallet (Host pays ₹0.00 Free!)
       const deducted = deductLiveAmount(MESSAGE_RATE);
       if (!deducted) return { success: false, error: 'Failed to deduct balance' };
       messageCost = MESSAGE_RATE;

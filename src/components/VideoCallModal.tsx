@@ -355,10 +355,10 @@ export const VideoCallModal: React.FC = () => {
                 ? 'bg-pink-600 text-white'
                 : 'bg-white/15 hover:bg-white/25 text-pink-300'
             }`}
-            title="Sakhi Chat (₹3/msg)"
+            title={isHostUser ? 'Sakhi Chat (100% Free)' : 'Sakhi Chat (₹3/msg)'}
           >
             <MessageCircle className="w-4 h-4 sm:w-5 sm:h-5" />
-            <span className="text-[11px] font-bold">Chat (₹3)</span>
+            <span className="text-[11px] font-bold">{isHostUser ? 'Chat (Free)' : 'Chat (₹3)'}</span>
           </button>
 
           {/* Privacy Blur Shield */}

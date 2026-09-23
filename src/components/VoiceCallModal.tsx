@@ -151,7 +151,7 @@ export const VoiceCallModal: React.FC = () => {
             )
           ) : (
             <span className="text-[11px] font-semibold text-pink-400">
-              ₹5/min • Balance: ₹{balance.toFixed(2)}
+              Voice: ₹7/min • Balance: ₹{balance.toFixed(2)}
             </span>
           )}
         </div>
@@ -238,10 +238,10 @@ export const VoiceCallModal: React.FC = () => {
                 ? 'bg-pink-600 text-white'
                 : 'bg-white/10 hover:bg-white/20 text-pink-300'
             }`}
-            title="Sakhi Chat (₹2/msg)"
+            title={isHostUser ? 'Sakhi Chat (100% Free)' : 'Sakhi Chat (₹3/msg)'}
           >
             <MessageCircle className="w-5 h-5" />
-            <span className="text-[11px] font-bold">Sakhi Chat (₹2)</span>
+            <span className="text-[11px] font-bold">{isHostUser ? 'Chat (Free)' : 'Chat (₹3)'}</span>
           </button>
 
           {/* Send Gift Button */}

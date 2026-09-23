@@ -120,6 +120,8 @@ export interface ConversationItem {
   callerId: string;
   callerName: string;
   callerPhone?: string;
+  callerAvatar?: string;
+  hostPhone?: string;
   lastMessage: string;
   lastSender: 'user' | 'sakhi';
   updatedAt: number;

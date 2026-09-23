@@ -1,4 +1,4 @@
-import { collection, doc, setDoc, onSnapshot, getDocs } from 'firebase/firestore';
+import { collection, doc, setDoc, onSnapshot, getDocs, increment } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase';
 import { ChatMessage, ConversationItem } from '../types';
 import { getApiBaseUrl } from './apiConfig';
@@ -141,8 +141,8 @@ export const sendCloudChatMessage = async (
   // 2. Direct Cloud Firestore Storage (Syncs to all devices in <100ms)
   if (isFirebaseConfigured() && db) {
     try {
-      const hostDigits = String(_conversationMeta?.sakhiId || threadId).replace(/\D/g, '').slice(-10);
-      const callerDigits = String(_conversationMeta?.callerPhone || _conversationMeta?.callerId || threadId).replace(/\D/g, '').slice(-10);
+      const hostDigits = String((_conversationMeta as any)?.hostPhone || _conversationMeta?.sakhiId || threadId).replace(/\D/g, '').slice(-10);
+      const callerDigits = String((_conversationMeta as any)?.callerPhone || _conversationMeta?.callerId || threadId).replace(/\D/g, '').slice(-10);
 
       // Save individual message to subcollection
       await setDoc(
@@ -150,7 +150,7 @@ export const sendCloudChatMessage = async (
         enrichedMessage
       );
 
-      // Update conversation overview document
+      // Update conversation overview document with atomic unread count increment
       await setDoc(
         doc(db, CONVERSATIONS_COLLECTION, threadId),
         {
@@ -160,7 +160,8 @@ export const sendCloudChatMessage = async (
           callerPhone: callerDigits,
           lastMessage: enrichedMessage.text,
           lastSender: enrichedMessage.sender,
-          updatedAt: enrichedMessage.timestamp || Date.now()
+          updatedAt: enrichedMessage.timestamp || Date.now(),
+          unreadCount: increment(1)
         },
         { merge: true }
       );
@@ -287,7 +288,8 @@ export const subscribeToHostConversations = (
             const isMatch = (
               c.sakhiId === hostId ||
               (cleanHost && itemHostDigits === cleanHost) ||
-              (cleanHost && String(c.threadId || '').includes(cleanHost))
+              (cleanHost && String(c.threadId || '').includes(cleanHost)) ||
+              (cleanHost && String(c.hostPhone || '').includes(cleanHost))
             );
 
             if (isMatch) {
@@ -299,6 +301,7 @@ export const subscribeToHostConversations = (
                 callerId: c.callerId || '',
                 callerName: c.callerName || 'Caller',
                 callerPhone: c.callerPhone || '',
+                callerAvatar: c.callerAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
                 lastMessage: c.lastMessage || '',
                 lastSender: c.lastSender || 'user',
                 updatedAt: c.updatedAt || Date.now(),

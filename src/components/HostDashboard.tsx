@@ -180,15 +180,31 @@ export const HostDashboard: React.FC = () => {
 
   // Jump to specific conversation thread if selected from notification toast
   useEffect(() => {
-    if (activeMessageThreadId && hostConversations.length > 0) {
-      const match = hostConversations.find((c) => c.threadId === activeMessageThreadId);
-      if (match) {
-        setSelectedConv(match);
-        setActiveTab('messages');
-        setActiveMessageThreadId(null);
+    if (activeMessageThreadId) {
+      setActiveTab('messages');
+      if (hostConversations.length > 0) {
+        const match = hostConversations.find((c) => c.threadId === activeMessageThreadId);
+        if (match) {
+          setSelectedConv(match);
+          setActiveMessageThreadId(null);
+        }
       }
     }
   }, [activeMessageThreadId, hostConversations]);
+
+  // Filter out host account from registered callers list
+  const myHostPhone = String(hostProfile?.phone || '').replace(/\D/g, '').slice(-10);
+  const myHostId = hostProfile?.id || '';
+  const myHostEmail = (hostProfile?.email || '').toLowerCase().trim();
+
+  const filteredCallersList = registeredCallers.filter((c) => {
+    const cp = String(c.phone || c.id || '').replace(/\D/g, '').slice(-10);
+    const ce = (c.email || '').toLowerCase().trim();
+    if (myHostPhone && cp === myHostPhone) return false;
+    if (myHostId && (c.id === myHostId || c.id === `caller-${myHostPhone}`)) return false;
+    if (myHostEmail && ce === myHostEmail) return false;
+    return true;
+  });
 
   // Subscribe to messages of the currently selected conversation
   useEffect(() => {
@@ -558,9 +574,9 @@ export const HostDashboard: React.FC = () => {
         >
           <Users className="w-4 h-4 text-emerald-400" />
           <span>👥 Registered Callers</span>
-          {registeredCallers.length > 0 && (
+          {filteredCallersList.length > 0 && (
             <span className="px-2 py-0.5 rounded-full bg-emerald-500 text-white text-[10px] font-black">
-              {registeredCallers.length}
+              {filteredCallersList.length}
             </span>
           )}
         </button>
@@ -894,7 +910,7 @@ export const HostDashboard: React.FC = () => {
             <div>
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
                 <Users className="w-5 h-5 text-emerald-400" />
-                <span>Active Callers ({registeredCallers.length})</span>
+                <span>Active Callers ({filteredCallersList.length})</span>
                 <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">
                   100% FREE for Host
                 </span>
@@ -908,7 +924,7 @@ export const HostDashboard: React.FC = () => {
             </span>
           </div>
 
-          {registeredCallers.length === 0 ? (
+          {filteredCallersList.length === 0 ? (
             <div className="p-12 text-center rounded-3xl bg-[#140826]/90 border border-pink-500/30 shadow-2xl">
               <div className="w-16 h-16 rounded-full bg-pink-600/20 border border-pink-500/40 flex items-center justify-center mx-auto mb-4 text-pink-400">
                 <Users className="w-8 h-8" />
@@ -920,7 +936,7 @@ export const HostDashboard: React.FC = () => {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {registeredCallers.map((caller) => {
+              {filteredCallersList.map((caller) => {
                 const cleanPhone = String(caller.phone || '').replace(/\D/g, '');
                 return (
                   <div

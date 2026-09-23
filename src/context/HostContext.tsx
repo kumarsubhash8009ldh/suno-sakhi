@@ -471,6 +471,29 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
           prevConvsRef.current[c.threadId] = { updatedAt: c.updatedAt, text: c.lastMessage };
         });
         isInitialConvLoad.current = false;
+
+        // Check if there are active unread incoming messages from the last 30 minutes
+        for (const c of convs) {
+          const isIncomingToMe = (role === 'host' && c.lastSender === 'user') || (role === 'caller' && c.lastSender === 'sakhi');
+          const isRecent = Date.now() - (c.updatedAt || 0) < 30 * 60 * 1000;
+          if (isIncomingToMe && ((c.unreadCount && c.unreadCount > 0) || isRecent)) {
+            const senderName = role === 'host' ? (c.callerName || 'Caller') : (c.sakhiName || 'Sakhi');
+            setIncomingMessageNotification({
+              id: 'notif-' + Date.now(),
+              callerId: c.callerId,
+              callerName: c.callerName || 'Caller',
+              callerPhone: c.callerPhone || '',
+              sakhiId: c.sakhiId,
+              sakhiName: c.sakhiName || 'Sakhi',
+              senderRole: c.lastSender,
+              senderAvatar: c.sakhiAvatar || (c as any).callerAvatar,
+              threadId: c.threadId,
+              text: c.lastMessage,
+              timestamp: c.updatedAt
+            });
+            break;
+          }
+        }
         return;
       }
 
@@ -485,7 +508,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Caller gets notified if Sakhi sent a message ('sakhi')
         const isIncomingToMe = (role === 'host' && c.lastSender === 'user') || (role === 'caller' && c.lastSender === 'sakhi');
 
-        if (isIncomingToMe && isNewer && isDifferent) {
+        if (isIncomingToMe && (isNewer || isDifferent)) {
           // 1. Play ringing chime notification
           try {
             sounds.playMessageReceived();
@@ -509,7 +532,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
             sakhiId: c.sakhiId,
             sakhiName: c.sakhiName || 'Sakhi',
             senderRole: c.lastSender,
-            senderAvatar: c.sakhiAvatar,
+            senderAvatar: c.sakhiAvatar || (c as any).callerAvatar,
             threadId: c.threadId,
             text: c.lastMessage,
             timestamp: c.updatedAt
@@ -774,6 +797,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
       callerId: effectiveCallerId,
       callerName: effectiveCallerName,
       callerPhone,
+      hostPhone,
       lastMessage: trimmed,
       lastSender: senderRole,
       updatedAt: Date.now()
@@ -850,6 +874,9 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
       [hostProfile.id]: [...(prev[hostProfile.id] || []), replyMsg]
     }));
 
+    const cleanHostPhone = String(hostProfile.phone || hostProfile.id || '').replace(/\D/g, '').slice(-10);
+    const cleanCallerPhone = String(callerId || threadId).replace(/\D/g, '').slice(-10);
+
     // Send to Firestore
     await sendCloudChatMessage(threadId, replyMsg, {
       threadId,
@@ -857,6 +884,8 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
       sakhiName: hostProfile.name,
       callerId,
       callerName,
+      callerPhone: cleanCallerPhone,
+      hostPhone: cleanHostPhone,
       lastMessage: trimmed,
       lastSender: 'sakhi',
       updatedAt: Date.now()

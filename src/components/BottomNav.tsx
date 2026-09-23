@@ -15,8 +15,9 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   onTabChange,
   onOpenReferral
 }) => {
-  const { userRole } = useHost();
+  const { userRole, hostConversations } = useHost();
   const isHost = userRole === 'host';
+  const unreadCount = hostConversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 sm:hidden bg-[#10061d]/95 backdrop-blur-xl border-t border-pink-500/20 px-1 py-1.5 shadow-2xl">
@@ -57,13 +58,18 @@ export const BottomNav: React.FC<BottomNavProps> = ({
         {/* 3. Chats */}
         <button
           onClick={() => onTabChange('chats')}
-          className={`flex flex-col items-center gap-0.5 py-1 px-1.5 rounded-2xl transition-all ${
+          className={`flex flex-col items-center gap-0.5 py-1 px-1.5 rounded-2xl transition-all relative ${
             currentTab === 'chats' ? 'text-pink-400 font-black' : 'text-gray-400 hover:text-white'
           }`}
           title="Direct Chats"
         >
-          <div className={`p-1 rounded-full ${currentTab === 'chats' ? 'bg-pink-500/20 text-pink-400' : ''}`}>
+          <div className={`relative p-1 rounded-full ${currentTab === 'chats' ? 'bg-pink-500/20 text-pink-400' : ''}`}>
             <MessageCircle className="w-4 h-4" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 px-1.5 py-0.2 rounded-full bg-pink-500 text-white text-[9px] font-black animate-pulse">
+                {unreadCount}
+              </span>
+            )}
           </div>
           <span className="text-[10px] font-bold tracking-tight">Chats</span>
         </button>

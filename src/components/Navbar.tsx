@@ -19,8 +19,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSelectTab
 }) => {
   const { balance, openWalletModal } = useWallet();
-  const { userRole, setUserRole, hostProfile, isHostLoggedIn, openLoginModal, logoutHost } = useHost();
+  const { userRole, setUserRole, hostProfile, isHostLoggedIn, openLoginModal, logoutHost, hostConversations } = useHost();
   const session = useActiveSession();
+  const unreadCount = hostConversations ? hostConversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0) : 0;
 
   return (
     <header className="sticky top-0 z-40 w-full glass-panel border-b border-pink-500/20 px-3 py-2.5 sm:px-6 sm:py-3">
@@ -83,13 +84,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
             <button
               onClick={() => onSelectTab('chats')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 ${
                 currentTab === 'chats'
                   ? 'bg-gradient-to-r from-pink-600 to-purple-600 text-white shadow'
                   : 'text-gray-300 hover:text-white'
               }`}
             >
-              💬 Chats
+              <span>💬 Chats</span>
+              {unreadCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-pink-500 text-white text-[9px] font-black animate-pulse">
+                  {unreadCount}
+                </span>
+              )}
             </button>
             <button
               onClick={() => onSelectTab('rates')}

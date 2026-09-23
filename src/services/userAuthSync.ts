@@ -345,7 +345,8 @@ export const registerNewUser = async (
     createdAt: Date.now(),
     lastLoginAt: Date.now(),
     referredBy: referredBy || undefined,
-    status: 'active',
+    status: 'online',
+    isOnline: true,
     balance: 50.0
   };
 
@@ -981,20 +982,6 @@ export const subscribeToAllRealCallers = (
       ) {
         return false;
       }
-      try {
-        const rawHosts = localStorage.getItem('sunosakhi_registered_hosts');
-        if (rawHosts) {
-          const list = JSON.parse(rawHosts);
-          if (Array.isArray(list)) {
-            const isHost = list.some((h: any) => {
-              const hp = String(h.phone || h.id || '').replace(/\D/g, '').slice(-10);
-              const he = (h.email || '').trim().toLowerCase();
-              return (hasPhone && hp === p.slice(-10)) || (hasEmail && he === em);
-            });
-            if (isHost) return false;
-          }
-        }
-      } catch {}
       return true;
     });
     onUpdate(cleanList);
@@ -1056,13 +1043,39 @@ export const subscribeToAllRealCallers = (
             }
           } catch {}
 
+          // Also merge any real caller from conversations collection (e.g. callers who sent messages)
+          try {
+            const rawConvs = localStorage.getItem('sunosakhi_conversations_cache');
+            if (rawConvs) {
+              const cList = JSON.parse(rawConvs);
+              if (Array.isArray(cList)) {
+                cList.forEach((c: any) => {
+                  const cp = String(c.callerPhone || c.callerId || '').replace(/\D/g, '').slice(-10);
+                  if (cp.length === 10 && !currentSnapshotMap.has(cp)) {
+                    currentSnapshotMap.set(cp, {
+                      id: c.callerId || `caller-${cp}`,
+                      phone: cp,
+                      name: c.callerName && c.callerName !== 'Caller' ? c.callerName : `Caller ${cp.slice(-4)}`,
+                      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
+                      createdAt: c.updatedAt || Date.now(),
+                      lastLoginAt: c.updatedAt || Date.now(),
+                      status: 'online',
+                      isOnline: true,
+                      balance: 50.0
+                    });
+                  }
+                });
+              }
+            }
+          } catch {}
+
           const cleanList = Array.from(currentSnapshotMap.values()).filter((u) => {
             const p = (u.phone || '').replace(/\D/g, '');
             const em = (u.email || '').trim().toLowerCase();
             const hasPhone = p.length >= 10;
             const hasEmail = Boolean(em && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em));
             if (!hasPhone && !hasEmail) return false;
-            // Exclude hosts
+            // Exclude explicit host IDs
             if (
               u.id?.startsWith('sakhi-user-') ||
               u.id?.startsWith('sakhi-host-') ||
@@ -1071,20 +1084,6 @@ export const subscribeToAllRealCallers = (
             ) {
               return false;
             }
-            try {
-              const rawHosts = localStorage.getItem('sunosakhi_registered_hosts');
-              if (rawHosts) {
-                const list = JSON.parse(rawHosts);
-                if (Array.isArray(list)) {
-                  const isHost = list.some((h: any) => {
-                    const hp = String(h.phone || h.id || '').replace(/\D/g, '').slice(-10);
-                    const he = (h.email || '').trim().toLowerCase();
-                    return (hasPhone && hp === p.slice(-10)) || (hasEmail && he === em);
-                  });
-                  if (isHost) return false;
-                }
-              }
-            } catch {}
             return true;
           });
 
@@ -1105,6 +1104,36 @@ export const subscribeToAllRealCallers = (
     } catch (err) {
       console.warn('Could not listen to Firestore user_accounts:', err);
     }
+  }
+
+  // Also listen to conversations collection to discover any callers who sent messages
+  let convUnsub: (() => void) | null = null;
+  if (isFirebaseConfigured() && db) {
+    try {
+      convUnsub = onSnapshot(collection(db, 'conversations'), (snap) => {
+        snap.forEach((docSnap) => {
+          const c = docSnap.data() as any;
+          if (c) {
+            const cp = String(c.callerPhone || c.callerId || '').replace(/\D/g, '').slice(-10);
+            if (cp.length === 10) {
+              const callerName = c.callerName && c.callerName !== 'Caller' ? c.callerName : `Caller ${cp.slice(-4)}`;
+              // Ensure in user_accounts in firestore
+              setDoc(doc(db!, USER_ACCOUNTS_COLLECTION, cp), {
+                id: c.callerId || `caller-${cp}`,
+                phone: cp,
+                name: callerName,
+                avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
+                status: 'online',
+                isOnline: true,
+                lastLoginAt: c.updatedAt || Date.now(),
+                lastActiveAt: c.updatedAt || Date.now(),
+                balance: 50.0
+              }, { merge: true }).catch(() => {});
+            }
+          }
+        });
+      });
+    } catch {}
   }
 
   // 3. Fallback Poll Backend Server
@@ -1134,6 +1163,7 @@ export const subscribeToAllRealCallers = (
   return () => {
     isUnsubscribed = true;
     if (firestoreUnsub) firestoreUnsub();
+    if (convUnsub) convUnsub();
     clearInterval(intervalId);
   };
 };

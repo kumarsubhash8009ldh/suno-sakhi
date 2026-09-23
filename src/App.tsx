@@ -85,7 +85,8 @@ const MainContent: React.FC = () => {
     incomingMessageNotification,
     dismissMessageNotification,
     setActiveMessageThreadId,
-    openDirectChat
+    openDirectChat,
+    hostConversations
   } = useHost();
 
   const [isHostSlideOpen, setIsHostSlideOpen] = useState<boolean>(false);
@@ -185,15 +186,20 @@ const MainContent: React.FC = () => {
 
   // Strictly ONLY real verified Girl Hosts (Female) registered with Mobile or Email
   const filteredSakhis = useMemo(() => {
+    const myCallerPhone = String(session.phone || getCurrentUser()?.phone || '').replace(/\D/g, '').slice(-10);
+    const myCallerEmail = (session.email || getCurrentUser()?.email || '').toLowerCase().trim();
+
     const seen = new Set<string>();
     const list = realSakhis.filter((sakhi) => {
-      // Must NOT be a caller
-      if (sakhi.id?.startsWith('caller-') || (sakhi as any).role === 'caller') return false;
+      // Must NOT be the caller themselves
+      const pDigits = String(sakhi.phone || sakhi.id || '').replace(/\D/g, '').slice(-10);
+      const sEmail = (sakhi.email || '').toLowerCase().trim();
+      if (myCallerPhone && pDigits === myCallerPhone) return false;
+      if (myCallerEmail && sEmail === myCallerEmail) return false;
 
       // Must be female girl host
       if (sakhi.gender && sakhi.gender !== 'female') return false;
 
-      const pDigits = String(sakhi.phone || sakhi.id || '').replace(/\D/g, '').slice(-10);
       const hasValidPhone = pDigits.length === 10;
       const hasValidEmail = Boolean(sakhi.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sakhi.email));
       if (!hasValidPhone && !hasValidEmail) return false;
@@ -227,36 +233,22 @@ const MainContent: React.FC = () => {
       if (a.status !== 'online' && b.status === 'online') return 1;
       return 0;
     });
-  }, [realSakhis, activeFilter, searchQuery]);
+  }, [realSakhis, session.phone, session.email, activeFilter, searchQuery]);
 
-  // Filtered Callers for Host View (Strictly ONLY real Callers, NEVER Hosts)
+  // Filtered Callers for Host View (Strictly real online & active callers, excluding current host)
   const filteredCallers = useMemo(() => {
-    // Build set of all host phones and IDs so no host can ever appear in callers list
-    const hostIdentifierSet = new Set<string>();
-    realSakhis.forEach((s) => {
-      const p = String(s.phone || s.id || '').replace(/\D/g, '').slice(-10);
-      if (p.length === 10) hostIdentifierSet.add(p);
-      if (s.id) hostIdentifierSet.add(s.id);
-      if (s.email) hostIdentifierSet.add(s.email.toLowerCase().trim());
-    });
+    const myHostPhone = String(hostProfile?.phone || session.phone || '').replace(/\D/g, '').slice(-10);
+    const myHostId = hostProfile?.id || session.id || '';
+    const myHostEmail = (hostProfile?.email || session.email || '').toLowerCase().trim();
 
     const list = registeredCallers.filter((caller) => {
-      // Must NOT be a host
-      if (
-        caller.id?.startsWith('sakhi-user-') ||
-        caller.id?.startsWith('sakhi-host-') ||
-        caller.id?.startsWith('host_') ||
-        (caller as any).role === 'host'
-      ) {
-        return false;
-      }
-
       const cleanPhone = String(caller.phone || caller.id || '').replace(/\D/g, '').slice(-10);
       const cleanEmail = caller.email ? caller.email.toLowerCase().trim() : '';
 
-      if (cleanPhone && hostIdentifierSet.has(cleanPhone)) return false;
-      if (caller.id && hostIdentifierSet.has(caller.id)) return false;
-      if (cleanEmail && hostIdentifierSet.has(cleanEmail)) return false;
+      // Don't show the current host to herself
+      if (myHostPhone && cleanPhone === myHostPhone) return false;
+      if (myHostId && (caller.id === myHostId || caller.id === `caller-${myHostPhone}`)) return false;
+      if (myHostEmail && cleanEmail === myHostEmail) return false;
 
       const hasValidPhone = cleanPhone.length === 10;
       const hasValidEmail = Boolean(cleanEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail));
@@ -277,7 +269,7 @@ const MainContent: React.FC = () => {
       if (!aOnline && bOnline) return 1;
       return (b.lastLoginAt || 0) - (a.lastLoginAt || 0);
     });
-  }, [registeredCallers, realSakhis, searchQuery]);
+  }, [registeredCallers, hostProfile?.phone, hostProfile?.id, hostProfile?.email, session.phone, session.id, session.email, searchQuery]);
 
   const handleScrollToSakhis = () => {
     const el = document.getElementById('sakhis-feed');
@@ -358,17 +350,154 @@ const MainContent: React.FC = () => {
             </div>
 
             {userRole === 'host' ? (
-              filteredCallers.length === 0 ? (
-                <div className="p-8 text-center rounded-3xl bg-black/40 border border-emerald-500/30">
-                  <p className="text-sm text-gray-300">Abhi koi caller registered nahi hai.</p>
+              <div className="space-y-6 max-w-2xl mx-auto">
+                {/* 1. Live Incoming Caller Conversations (Inbox) */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-base sm:text-lg font-extrabold text-white flex items-center gap-2">
+                      <MessageCircle className="w-5 h-5 text-emerald-400" />
+                      <span>Caller Inbox ({hostConversations.length})</span>
+                      {hostConversations.some((c) => (c.unreadCount || 0) > 0) && (
+                        <span className="px-2 py-0.5 rounded-full bg-pink-500 text-white text-[10px] font-black animate-pulse">
+                          New Messages
+                        </span>
+                      )}
+                    </h3>
+                    <span className="text-[11px] text-emerald-400 font-semibold">
+                      Manual Host Replies: 100% Free
+                    </span>
+                  </div>
+
+                  {hostConversations.length === 0 ? (
+                    <div className="p-6 text-center rounded-3xl bg-black/40 border border-emerald-500/20 mb-4">
+                      <MessageCircle className="w-8 h-8 text-emerald-400/40 mx-auto mb-2" />
+                      <p className="text-xs text-gray-300 font-semibold">Abhi koi incoming message nahi aaya hai.</p>
+                      <p className="text-[11px] text-gray-400 mt-1">
+                        Callers jab aapko message bhejenge, toh unki chat yahan sabse upar show hogi.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-2.5 mb-6">
+                      {hostConversations.map((conv) => {
+                        const cleanPhone = String(conv.callerPhone || conv.callerId || '').replace(/\D/g, '').slice(-10);
+                        const callerName = conv.callerName && conv.callerName !== 'Caller' ? conv.callerName : `Caller ${cleanPhone.slice(-4) || ''}`;
+                        const callerCompanion: Sakhi = {
+                          id: conv.callerId || `caller-${cleanPhone}`,
+                          name: callerName,
+                          phone: cleanPhone,
+                          avatar: conv.callerAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
+                          videoPoster: conv.callerAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
+                          age: 24,
+                          city: 'India',
+                          status: 'online',
+                          rating: 5.0,
+                          totalCalls: 1,
+                          languages: ['Hindi'],
+                          bio: 'SunoSakhi Caller',
+                          interests: ['Friendly Chat'],
+                          voiceRatePerMin: 5,
+                          videoRatePerMin: 10,
+                          audioSnippet: '',
+                          tagline: 'Active Caller',
+                          isVerified: true
+                        };
+
+                        return (
+                          <div
+                            key={conv.threadId}
+                            className="p-3.5 sm:p-4 rounded-3xl bg-gradient-to-r from-[#190a2e]/95 via-[#230e3d]/90 to-[#120522]/95 border-2 border-emerald-500/40 shadow-xl flex items-center justify-between gap-3 hover:border-emerald-500/70 transition-all"
+                          >
+                            <div
+                              className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer"
+                              onClick={() => openDirectChat(callerCompanion)}
+                            >
+                              <div className="relative flex-shrink-0">
+                                <div className="w-12 h-12 rounded-2xl overflow-hidden border-2 border-emerald-500/60 p-0.5 bg-black">
+                                  <img
+                                    src={conv.callerAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80'}
+                                    alt={callerName}
+                                    className="w-full h-full object-cover rounded-[12px]"
+                                  />
+                                </div>
+                                <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-[#120522] animate-pulse"></span>
+                              </div>
+
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center justify-between gap-2">
+                                  <h4 className="text-xs sm:text-sm font-extrabold text-white truncate">
+                                    {callerName}
+                                  </h4>
+                                  <span className="text-[10px] text-gray-400 flex-shrink-0">
+                                    {new Date(conv.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-gray-300 truncate mt-0.5">
+                                  {conv.lastSender === 'sakhi' ? <span className="text-emerald-400 font-bold">You: </span> : ''}
+                                  {conv.lastMessage}
+                                </p>
+                                {(conv.unreadCount || 0) > 0 && (
+                                  <span className="inline-block mt-1 px-2 py-0.5 rounded-full bg-pink-600 text-white text-[9px] font-black animate-pulse">
+                                    {conv.unreadCount} naya message
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Action Buttons: Chat / Reply, Voice Call, Video Call */}
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              <button
+                                onClick={() => openDirectChat(callerCompanion)}
+                                className="px-3 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white font-extrabold text-xs shadow-md shadow-emerald-950/40 flex items-center gap-1 active:scale-95 transition-all"
+                                title="Reply / Chat (100% Free for Host)"
+                              >
+                                <MessageCircle className="w-3.5 h-3.5" />
+                                <span>Reply</span>
+                              </button>
+                              <button
+                                onClick={() => startCall(callerCompanion, 'voice')}
+                                className="p-2 rounded-xl bg-pink-600 hover:bg-pink-500 text-white shadow-md shadow-pink-950/40 active:scale-95 transition-all"
+                                title="Voice Call (100% Free)"
+                              >
+                                <Phone className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => startCall(callerCompanion, 'video')}
+                                className="p-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white shadow-md shadow-purple-950/40 active:scale-95 transition-all"
+                                title="Video Call (100% Free)"
+                              >
+                                <Video className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="max-w-2xl mx-auto flex flex-col gap-3.5">
-                  {filteredCallers.map((caller) => (
-                    <CallerCard key={caller.id || caller.phone} caller={caller} />
-                  ))}
+
+                {/* 2. Registered Online Callers */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-base sm:text-lg font-extrabold text-white flex items-center gap-2">
+                      <Users className="w-5 h-5 text-emerald-400" />
+                      <span>Online Registered Callers ({filteredCallers.length})</span>
+                    </h3>
+                    <span className="text-[11px] text-gray-400">1-Tap Free Call / Chat</span>
+                  </div>
+
+                  {filteredCallers.length === 0 ? (
+                    <div className="p-8 text-center rounded-3xl bg-black/40 border border-emerald-500/30">
+                      <p className="text-sm text-gray-300">Abhi koi caller registered nahi hai.</p>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      {filteredCallers.map((caller) => (
+                        <CallerCard key={caller.id || caller.phone} caller={caller} />
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )
+              </div>
             ) : (
               filteredSakhis.length === 0 ? (
                 <div className="p-8 text-center rounded-3xl bg-black/40 border border-pink-500/30">
@@ -745,7 +874,26 @@ const MainContent: React.FC = () => {
           } else {
             setUserRole('host');
             setActiveMessageThreadId(notif.threadId);
-            setCurrentTab('host');
+            const cleanPhone = String(notif.callerPhone || notif.callerId || '').replace(/\D/g, '').slice(-10);
+            openDirectChat({
+              id: notif.callerId || `caller-${cleanPhone}`,
+              name: notif.callerName || `Caller ${cleanPhone.slice(-4) || ''}`,
+              age: 24,
+              city: 'India',
+              avatar: notif.senderAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
+              videoPoster: notif.senderAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=800&auto=format&fit=crop&q=80',
+              status: 'online',
+              rating: 5,
+              totalCalls: 1,
+              languages: ['Hindi'],
+              bio: 'SunoSakhi Caller',
+              interests: ['Friendly Chat'],
+              voiceRatePerMin: 5,
+              videoRatePerMin: 10,
+              audioSnippet: '',
+              tagline: 'Active Caller',
+              phone: cleanPhone
+            });
           }
         }}
       />

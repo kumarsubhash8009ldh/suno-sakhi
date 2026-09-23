@@ -3,8 +3,11 @@ import { doc, getDoc, setDoc, collection, onSnapshot } from 'firebase/firestore'
 import { db, isFirebaseConfigured } from './firebase';
 import { getApiBaseUrl } from './apiConfig';
 import { isPhoneBanned } from './safetyService';
+import { HostProfile, Sakhi } from '../types';
 
 const USER_ACCOUNTS_COLLECTION = 'user_accounts';
+const HOSTS_COLLECTION = 'hosts';
+const HOST_ACCOUNTS_COLLECTION = 'host_accounts';
 const CURRENT_USER_KEY = 'sunosakhi_current_user';
 const ALL_USERS_KEY = 'sunosakhi_registered_users';
 const STORAGE_KEY_USER_ID = 'sunosakhi_user_id';
@@ -383,12 +386,103 @@ export const registerNewUser = async (
 };
 
 /**
- * Login existing caller user with phone number or email.
+ * Search and resolve Host account across Firestore, LocalStorage and Backend
+ */
+export const findHostAccount = async (identifier: string): Promise<any | null> => {
+  const parsed = parseUserIdentifier(identifier);
+  if (!parsed) return null;
+  const cleanPhone = parsed.type === 'phone' ? parsed.value : '';
+  const cleanEmail = parsed.type === 'email' ? parsed.value : '';
+
+  // 1. Check local storage registered hosts
+  try {
+    const rawHosts = localStorage.getItem('sunosakhi_registered_hosts');
+    if (rawHosts) {
+      const list = JSON.parse(rawHosts);
+      if (Array.isArray(list)) {
+        const found = list.find((h: any) =>
+          cleanPhone
+            ? (h.phone && normalizeUserPhone(h.phone) === cleanPhone) || (h.id && h.id.includes(cleanPhone))
+            : (h.email && h.email.toLowerCase() === cleanEmail)
+        );
+        if (found) return found;
+      }
+    }
+  } catch {}
+
+  // 2. Check local storage host accounts store
+  try {
+    const rawStore = localStorage.getItem('sunosakhi_host_accounts_store');
+    if (rawStore) {
+      const store = JSON.parse(rawStore);
+      if (cleanPhone && store[cleanPhone]) return store[cleanPhone];
+      if (cleanEmail && store[cleanEmail]) return store[cleanEmail];
+    }
+  } catch {}
+
+  // 3. Check Firestore 'hosts' and 'host_accounts' collection
+  if (isFirebaseConfigured() && db) {
+    try {
+      const candidates = [
+        cleanPhone ? `sakhi-user-${cleanPhone}` : '',
+        cleanPhone,
+        cleanEmail ? `sakhi-host-${cleanEmail.replace(/[^a-z0-9]/g, '_')}` : '',
+        cleanEmail ? cleanEmail.replace(/[^a-z0-9]/g, '_') : ''
+      ].filter(Boolean);
+
+      for (const docId of candidates) {
+        const snap = await getDoc(doc(db, HOSTS_COLLECTION, docId));
+        if (snap.exists()) {
+          const data = snap.data();
+          return { id: snap.id, ...data };
+        }
+      }
+
+      for (const docId of candidates) {
+        const snap = await getDoc(doc(db, HOST_ACCOUNTS_COLLECTION, docId));
+        if (snap.exists()) {
+          const acc = snap.data() as any;
+          if (acc.hostId) {
+            const hSnap = await getDoc(doc(db, HOSTS_COLLECTION, acc.hostId));
+            if (hSnap.exists()) {
+              return { id: hSnap.id, ...hSnap.data() };
+            }
+          }
+          return acc;
+        }
+      }
+    } catch (err) {
+      console.warn('Firestore host check note:', err);
+    }
+  }
+
+  // 4. Check backend API
+  try {
+    const baseUrl = getApiBaseUrl();
+    const res = await fetch(`${baseUrl}/api/hosts`, { signal: AbortSignal.timeout(3000) });
+    const data = await res.json();
+    if (data.success && Array.isArray(data.hosts)) {
+      const found = data.hosts.find((h: any) =>
+        cleanPhone
+          ? (h.phone && normalizeUserPhone(h.phone) === cleanPhone)
+          : (h.email && h.email.toLowerCase() === cleanEmail)
+      );
+      if (found) return found;
+    }
+  } catch {}
+
+  return null;
+};
+
+/**
+ * Login existing user (Caller OR Host) with phone number or email.
+ * Automatically detects whether the account is a Host or Caller,
+ * and seamlessly restores that exact session & interface.
  */
 export const loginExistingUser = async (
   phoneOrEmail: string,
   name?: string
-): Promise<{ success: boolean; user?: UserAccount; isHost?: boolean; host?: any; error?: string }> => {
+): Promise<{ success: boolean; user?: UserAccount; isHost?: boolean; host?: any; notRegistered?: boolean; error?: string }> => {
   const parsed = parseUserIdentifier(phoneOrEmail);
   if (!parsed) {
     return { success: false, error: 'Kripya 10-digit valid mobile number ya Email ID dalein.' };
@@ -438,7 +532,74 @@ export const loginExistingUser = async (
     }
   } catch (err) {}
 
-  // 2. Check local registry
+  // 2. Check if this account is registered as a Sakhi HOST in Cloud / Local
+  const hostMatch = await findHostAccount(phoneOrEmail);
+  if (hostMatch) {
+    const pDigits = hostMatch.phone ? String(hostMatch.phone).replace(/\D/g, '').slice(-10) : cleanPhone;
+    const hostProfile: HostProfile = {
+      id: hostMatch.id || (pDigits ? `sakhi-user-${pDigits}` : `sakhi-host-${cleanEmail.replace(/[^a-z0-9]/g, '_')}`),
+      name: hostMatch.name && hostMatch.name !== 'Sakhi Host' ? hostMatch.name : (pDigits ? `Sakhi ${pDigits.slice(-4)}` : 'Sakhi Host'),
+      gender: 'female',
+      age: hostMatch.age || 22,
+      city: hostMatch.city || 'India',
+      avatar: hostMatch.avatar || hostMatch.selfieUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=80',
+      videoPoster: hostMatch.videoPoster || hostMatch.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=80',
+      status: 'online',
+      rating: typeof hostMatch.rating === 'number' ? hostMatch.rating : 5.0,
+      totalCalls: hostMatch.totalCalls || 0,
+      languages: Array.isArray(hostMatch.languages) && hostMatch.languages.length > 0 ? hostMatch.languages : ['Hindi', 'English'],
+      bio: hostMatch.bio || 'Namaste! Main SunoSakhi par aapse baatein karne ke liye available hoon.',
+      interests: hostMatch.interests || ['Friendly Chat', 'Life Talk'],
+      voiceRatePerMin: 5,
+      videoRatePerMin: 10,
+      audioSnippet: hostMatch.audioSnippet || '',
+      tagline: hostMatch.tagline || '🌸 Verified Sakhi Host',
+      totalVoiceMinutes: hostMatch.totalVoiceMinutes || 0,
+      totalVideoMinutes: hostMatch.totalVideoMinutes || 0,
+      totalGiftsReceived: hostMatch.totalGiftsReceived || 0,
+      totalMessagesReceived: hostMatch.totalMessagesReceived || 0,
+      grossRevenue: hostMatch.grossRevenue || 0,
+      netIncome: hostMatch.netIncome || 0,
+      pendingPayout: hostMatch.pendingPayout || 0,
+      upiId: hostMatch.upiId || '',
+      phone: pDigits,
+      email: hostMatch.email || cleanEmail || undefined,
+      isVerified: true,
+      verification: hostMatch.verification || {
+        panNumber: 'DIRECT_ACTIVE',
+        residentIdType: 'aadhaar',
+        residentIdNumber: 'DIRECT_ACTIVE',
+        selfieUrl: hostMatch.avatar || '',
+        gender: 'female',
+        status: 'verified',
+        idType: 'aadhaar',
+        idNumber: 'DIRECT_ACTIVE'
+      },
+      incomeHistory: Array.isArray(hostMatch.incomeHistory) ? hostMatch.incomeHistory : []
+    };
+
+    localStorage.setItem('sunosakhi_host_profile', JSON.stringify(hostProfile));
+    localStorage.setItem('sunosakhi_host_logged_in', 'true');
+    localStorage.removeItem(CURRENT_USER_KEY);
+    localStorage.removeItem(STORAGE_KEY_USER_ID);
+    setActiveRole('host');
+
+    // Update Firestore status to online
+    if (isFirebaseConfigured() && db && hostProfile.id) {
+      try {
+        await setDoc(doc(db, HOSTS_COLLECTION, hostProfile.id), {
+          ...hostProfile,
+          status: 'online',
+          lastActiveAt: Date.now()
+        }, { merge: true });
+      } catch {}
+    }
+
+    broadcastAuthChange();
+    return { success: true, isHost: true, host: hostProfile };
+  }
+
+  // 3. Check if this account is registered as a CALLER in Cloud / Local registry
   const existing = await getUserAccount(parsed.value);
   if (existing) {
     existing.lastLoginAt = Date.now();
@@ -459,8 +620,12 @@ export const loginExistingUser = async (
     return { success: true, isHost: false, user: existing };
   }
 
-  // 3. Auto-create caller account if not found
-  return registerNewUser(phoneOrEmail, name);
+  // 4. Not found in either Host or Caller accounts -> Prompt user to Sign Up with role choice
+  return {
+    success: false,
+    notRegistered: true,
+    error: '⚠️ Yeh mobile number/email registered nahi hai! Kripya "Sign Up" par click karein aur Caller ya Host chunein.'
+  };
 };
 
 /**
@@ -816,6 +981,20 @@ export const subscribeToAllRealCallers = (
       ) {
         return false;
       }
+      try {
+        const rawHosts = localStorage.getItem('sunosakhi_registered_hosts');
+        if (rawHosts) {
+          const list = JSON.parse(rawHosts);
+          if (Array.isArray(list)) {
+            const isHost = list.some((h: any) => {
+              const hp = String(h.phone || h.id || '').replace(/\D/g, '').slice(-10);
+              const he = (h.email || '').trim().toLowerCase();
+              return (hasPhone && hp === p.slice(-10)) || (hasEmail && he === em);
+            });
+            if (isHost) return false;
+          }
+        }
+      } catch {}
       return true;
     });
     onUpdate(cleanList);
@@ -892,6 +1071,20 @@ export const subscribeToAllRealCallers = (
             ) {
               return false;
             }
+            try {
+              const rawHosts = localStorage.getItem('sunosakhi_registered_hosts');
+              if (rawHosts) {
+                const list = JSON.parse(rawHosts);
+                if (Array.isArray(list)) {
+                  const isHost = list.some((h: any) => {
+                    const hp = String(h.phone || h.id || '').replace(/\D/g, '').slice(-10);
+                    const he = (h.email || '').trim().toLowerCase();
+                    return (hasPhone && hp === p.slice(-10)) || (hasEmail && he === em);
+                  });
+                  if (isHost) return false;
+                }
+              }
+            } catch {}
             return true;
           });
 

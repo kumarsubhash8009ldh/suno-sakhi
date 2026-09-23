@@ -35,14 +35,18 @@ interface AuthModalProps {
 export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
   onClose,
+  defaultFocus = 'user',
   isForcedGate = false
 }) => {
-  const { loginWithPassword, loginWithOtp, logoutHost, openLoginModal } = useHost();
+  const { registerHost, setUserRole, logoutHost, openLoginModal } = useHost();
   const { creditLoginBonus } = useWallet();
   const session = getActiveSession();
 
-  // ONLY 2 OPTIONS: 'signin' or 'signup'
+  // ONLY 2 MAIN TABS: 'signin' or 'signup'
   const [activeTab, setActiveTab] = useState<'signin' | 'signup'>('signin');
+  // First-time signup role choice: 'caller' or 'host'
+  const [signupRole, setSignupRole] = useState<'caller' | 'host'>(defaultFocus === 'host' ? 'host' : 'caller');
+  const [userName, setUserName] = useState('');
   const [identifier, setIdentifier] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -52,8 +56,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     if (isOpen) {
       setErrorMessage(null);
       setSuccessMessage(null);
+      if (defaultFocus === 'host') {
+        setSignupRole('host');
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, defaultFocus]);
 
   if (!isOpen) return null;
 
@@ -77,7 +84,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   // -------------------------------------------------------------
-  // SIGN IN HANDLER (BY MOBILE NUMBER OR EMAIL)
+  // SIGN IN HANDLER (AUTO-DETECTS CALLER VS HOST)
   // -------------------------------------------------------------
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -97,30 +104,30 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setLoading(true);
 
     try {
-      // Direct login: recognizes both Host and Caller automatically
+      // Direct login: automatically detects whether this account is Host or Caller!
       const res = await loginExistingUser(clean);
       if (res.success) {
         if (res.isHost) {
-          setSuccessMessage(`🌸 Welcome back ${res.host?.name || 'Host'}! Host Studio login ho gaya.`);
+          setUserRole('host');
+          setSuccessMessage(`🌸 Welcome back ${res.host?.name || 'Host'}! Host Studio khul gaya.`);
         } else {
+          setUserRole('caller');
           creditLoginBonus(res.user?.phone || res.user?.email || clean, false, false);
-          setSuccessMessage(`✅ Sign In Successful! Welcome to SunoSakhi`);
+          setSuccessMessage(`✅ Sign In Successful! Welcome back ${res.user?.name || 'Caller'}.`);
         }
         broadcastAuthChange();
-        setTimeout(closeAndNotify, 500);
+        setTimeout(closeAndNotify, 650);
         return;
       }
 
-      // If not found, auto-register as Caller
-      const regRes = await registerNewUser(clean);
-      if (regRes.success && regRes.user) {
-        creditLoginBonus(regRes.user.phone || regRes.user.email || clean, true, false);
-        setSuccessMessage('🎉 Welcome to SunoSakhi! Sign In Successful.');
-        broadcastAuthChange();
-        setTimeout(closeAndNotify, 500);
-      } else {
-        setErrorMessage(regRes.error || 'Sign In me samasya aayi.');
+      if (res.notRegistered) {
+        setErrorMessage(
+          '⚠️ Yeh mobile number/email registered nahi hai! Kripya upar "Sign Up" par click karein aur Caller ya Host chunein.'
+        );
+        return;
       }
+
+      setErrorMessage(res.error || 'Sign In me samasya aayi.');
     } catch (err: any) {
       setErrorMessage(err?.message || 'Sign In me samasya aayi.');
     } finally {
@@ -129,7 +136,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   // -------------------------------------------------------------
-  // SIGN UP HANDLER (BY MOBILE NUMBER OR EMAIL)
+  // SIGN UP HANDLER (CREATES SELECTED ROLE: CALLER OR HOST)
   // -------------------------------------------------------------
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -149,28 +156,65 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setLoading(true);
 
     try {
-      const referredBy = getSavedReferredBy();
-      const res = await registerNewUser(clean, undefined, referredBy || undefined);
+      if (signupRole === 'host') {
+        // Register brand new Sakhi Host
+        const hostName = userName.trim() || (isEmail ? 'Sakhi Host' : `Sakhi ${clean.slice(-4)}`);
+        const regHostRes = await registerHost({
+          phone: clean,
+          name: hostName,
+          password: 'sakhi' + (clean.length >= 4 ? clean.slice(-4) : '123'),
+          city: 'India',
+          languages: ['Hindi', 'English'],
+          age: 22,
+          bio: 'Namaste! Main SunoSakhi par aapse baatein karne ke liye available hoon.'
+        });
 
-      if (res.success && res.user) {
-        creditLoginBonus(res.user.phone || res.user.email || clean, true, Boolean(referredBy));
-        setSuccessMessage('🎉 Welcome to SunoSakhi! Sign Up Successful.');
-        broadcastAuthChange();
-        setTimeout(closeAndNotify, 500);
-      } else {
-        // If already registered, smoothly sign them in!
-        const loginRes = await loginExistingUser(clean);
-        if (loginRes.success) {
-          if (loginRes.isHost) {
-            setSuccessMessage(`🌸 Welcome back ${loginRes.host?.name || 'Host'}! Host Studio login ho gaya.`);
-          } else {
-            creditLoginBonus(loginRes.user?.phone || loginRes.user?.email || clean, false, false);
-            setSuccessMessage('✅ Sign In Successful! Welcome Back.');
-          }
+        if (regHostRes.success) {
+          setUserRole('host');
+          setSuccessMessage(`🌸 Welcome ${hostName}! Aapka Sakhi Host account ban gaya hai. Host Studio khul gaya.`);
           broadcastAuthChange();
-          setTimeout(closeAndNotify, 500);
+          setTimeout(closeAndNotify, 700);
         } else {
-          setErrorMessage(res.error || 'Sign Up me samasya aayi.');
+          // If already registered, smoothly login as host
+          const loginRes = await loginExistingUser(clean);
+          if (loginRes.success && loginRes.isHost) {
+            setUserRole('host');
+            setSuccessMessage(`🌸 Welcome back ${loginRes.host?.name || 'Host'}! Host Studio khul gaya.`);
+            broadcastAuthChange();
+            setTimeout(closeAndNotify, 700);
+          } else {
+            setErrorMessage(regHostRes.error || 'Host account banane me samasya aayi.');
+          }
+        }
+      } else {
+        // Register brand new Caller
+        const referredBy = getSavedReferredBy();
+        const callerName = userName.trim() || undefined;
+        const res = await registerNewUser(clean, callerName, referredBy || undefined);
+
+        if (res.success && res.user) {
+          setUserRole('caller');
+          creditLoginBonus(res.user.phone || res.user.email || clean, true, Boolean(referredBy));
+          setSuccessMessage('🎉 Welcome to SunoSakhi! Aapka Caller account ban gaya hai. ₹50 Free Coins add ho gaye!');
+          broadcastAuthChange();
+          setTimeout(closeAndNotify, 700);
+        } else {
+          // If already registered, sign in smoothly
+          const loginRes = await loginExistingUser(clean);
+          if (loginRes.success) {
+            if (loginRes.isHost) {
+              setUserRole('host');
+              setSuccessMessage(`🌸 Welcome back ${loginRes.host?.name || 'Host'}! Host Studio khul gaya.`);
+            } else {
+              setUserRole('caller');
+              creditLoginBonus(loginRes.user?.phone || loginRes.user?.email || clean, false, false);
+              setSuccessMessage('✅ Sign In Successful! Welcome Back.');
+            }
+            broadcastAuthChange();
+            setTimeout(closeAndNotify, 700);
+          } else {
+            setErrorMessage(res.error || 'Sign Up me samasya aayi.');
+          }
         }
       }
     } catch (err: any) {
@@ -184,7 +228,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
       <div className="relative w-full max-w-sm rounded-[32px] bg-[#1e0e33] border-2 border-pink-500 shadow-2xl shadow-pink-600/40 p-6 text-white my-auto">
 
-        {/* Close Button: Always available so user can explore app */}
+        {/* Close Button */}
         <button
           onClick={closeAndNotify}
           className="absolute top-4 right-4 z-20 p-2 rounded-full bg-black/60 hover:bg-black/80 text-gray-300 hover:text-white border border-white/10"
@@ -207,7 +251,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             Dil Se Dil Ki Baat • 100% Private & Safe
           </p>
 
-          {/* EXACTLY 2 OPTIONS: SIGN IN vs SIGN UP (NO OTHER LABELS) */}
+          {/* EXACTLY 2 OPTIONS: SIGN IN vs SIGN UP */}
           <div className="mt-4 flex p-1 rounded-2xl bg-black/70 border border-pink-500/30">
             <button
               type="button"
@@ -308,8 +352,95 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </button>
           </div>
         ) : (
-          /* Form Body: MOBILE NUMBER OR EMAIL INPUT */
+          /* Form Body: SIGN IN OR SIGN UP */
           <form onSubmit={activeTab === 'signin' ? handleSignIn : handleSignUp} className="space-y-4">
+            
+            {/* SIGN UP ROLE SELECTION CARDS (CALLER VS SAKHI HOST) */}
+            {activeTab === 'signup' && (
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-pink-200 block">
+                  Aap kya banna chahte hain? (Select Your Role)
+                </label>
+                <div className="grid grid-cols-2 gap-2.5">
+                  {/* Option A: Caller */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSignupRole('caller');
+                      setErrorMessage(null);
+                    }}
+                    className={`p-3 rounded-2xl border text-left transition-all relative overflow-hidden flex flex-col justify-between ${
+                      signupRole === 'caller'
+                        ? 'bg-gradient-to-br from-emerald-950/90 to-teal-900/70 border-emerald-400 text-white shadow-lg shadow-emerald-950/50 ring-2 ring-emerald-500/50 scale-[1.02]'
+                        : 'bg-black/50 border-white/10 text-gray-400 hover:border-white/30'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xl">📞</span>
+                        {signupRole === 'caller' && (
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-emerald-300/40 animate-pulse"></span>
+                        )}
+                      </div>
+                      <p className="text-xs font-black text-white">Caller</p>
+                      <p className="text-[10px] text-emerald-300 font-medium">बात करने वाला</p>
+                    </div>
+                    <span className="mt-2 inline-block text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/25 text-emerald-300 font-black border border-emerald-500/30">
+                      ₹50 Free Coins 🎁
+                    </span>
+                  </button>
+
+                  {/* Option B: Host */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSignupRole('host');
+                      setErrorMessage(null);
+                    }}
+                    className={`p-3 rounded-2xl border text-left transition-all relative overflow-hidden flex flex-col justify-between ${
+                      signupRole === 'host'
+                        ? 'bg-gradient-to-br from-pink-950/90 to-purple-900/70 border-pink-400 text-white shadow-lg shadow-pink-950/50 ring-2 ring-pink-500/50 scale-[1.02]'
+                        : 'bg-black/50 border-white/10 text-gray-400 hover:border-white/30'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xl">🌸</span>
+                        {signupRole === 'host' && (
+                          <span className="w-2.5 h-2.5 rounded-full bg-pink-400 ring-2 ring-pink-300/40 animate-pulse"></span>
+                        )}
+                      </div>
+                      <p className="text-xs font-black text-white">Sakhi Host</p>
+                      <p className="text-[10px] text-pink-300 font-medium">सखी होस्ट</p>
+                    </div>
+                    <span className="mt-2 inline-block text-[9px] px-2 py-0.5 rounded-full bg-pink-500/25 text-pink-300 font-black border border-pink-500/30">
+                      60% Kamai Share 👑
+                    </span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Optional Name Input (During Sign Up) */}
+            {activeTab === 'signup' && (
+              <div>
+                <label className="text-xs font-semibold text-gray-300 block mb-1.5 flex items-center justify-between">
+                  <span>Aapka Naam (Optional)</span>
+                  <span className="text-[10px] text-gray-400">
+                    {signupRole === 'host' ? 'Sakhi Name' : 'Caller Name'}
+                  </span>
+                </label>
+                <input
+                  type="text"
+                  value={userName}
+                  onChange={(e) => setUserName(e.target.value)}
+                  placeholder={signupRole === 'host' ? 'e.g. Pallavi / Priya' : 'e.g. Rahul / Aman'}
+                  className="w-full px-4 py-2.5 rounded-2xl bg-black/60 border border-pink-500/30 text-white text-xs placeholder-gray-500 focus:outline-none focus:border-pink-500"
+                />
+              </div>
+            )}
+
+            {/* Mobile Number or Email Input */}
             <div>
               <label className="text-xs font-semibold text-gray-300 block mb-1.5 flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
@@ -338,7 +469,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 />
               </div>
               <p className="text-[10px] text-gray-400 mt-1">
-                🔒 Apna 10-digit mobile number ya email enter karke aage badhein.
+                {activeTab === 'signin'
+                  ? '🔒 Apna registered mobile number ya email enter karein (Auto Role Detect).'
+                  : signupRole === 'host'
+                  ? '🌸 Host account banate hi aapko 60% kamai aur free calls access mil jayega.'
+                  : '🎁 Caller banne par aapko ₹50 free bonus coins milenge.'}
               </p>
             </div>
 
@@ -349,7 +484,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               className={`w-full py-3.5 px-4 rounded-2xl font-black text-sm shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${
                 activeTab === 'signin'
                   ? 'bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 text-black shadow-emerald-900/40 hover:from-emerald-400'
-                  : 'bg-gradient-to-r from-pink-600 via-rose-600 to-purple-600 text-white shadow-pink-900/40 hover:from-pink-500'
+                  : signupRole === 'host'
+                  ? 'bg-gradient-to-r from-pink-600 via-rose-600 to-purple-600 text-white shadow-pink-900/40 hover:from-pink-500'
+                  : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 text-white shadow-teal-900/40 hover:from-emerald-500'
               }`}
             >
               {loading ? (
@@ -357,35 +494,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               ) : (
                 <ArrowRight className="w-4 h-4" />
               )}
-              <span>{activeTab === 'signin' ? 'Sign In' : 'Sign Up'}</span>
+              <span>
+                {activeTab === 'signin'
+                  ? 'Sign In (Login Karein)'
+                  : signupRole === 'host'
+                  ? '🌸 Sign Up As Sakhi Host (सखी होस्ट)'
+                  : '📞 Sign Up As Caller (बात करने वाले)'}
+              </span>
             </button>
 
-            {/* Explore first / Skip button */}
-            <div className="pt-2 space-y-2 text-center">
+            {/* Skip / Explore button */}
+            <div className="pt-2 text-center">
               <button
                 type="button"
                 onClick={closeAndNotify}
                 className="w-full py-2.5 text-center text-xs text-gray-400 hover:text-white transition-colors flex items-center justify-center gap-1.5"
               >
                 <span>Pehle App Explore Karein (Skip) ➔</span>
-              </button>
-
-              <div className="relative py-1 flex items-center justify-center">
-                <div className="border-t border-white/10 w-full"></div>
-                <span className="bg-[#1e0e33] px-2 text-[10px] text-gray-500 uppercase font-bold">ya</span>
-                <div className="border-t border-white/10 w-full"></div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  closeAndNotify();
-                  openLoginModal();
-                }}
-                className="w-full py-2.5 rounded-2xl bg-pink-500/10 hover:bg-pink-500/20 border border-pink-500/30 text-pink-300 hover:text-white text-xs font-bold flex items-center justify-center gap-2 transition-all"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-pink-400" />
-                <span>🌸 Host Portal (Host ID Login / Nayi Registration)</span>
               </button>
             </div>
           </form>
@@ -395,3 +520,4 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     </div>
   );
 };
+

@@ -187,6 +187,9 @@ const MainContent: React.FC = () => {
   const filteredSakhis = useMemo(() => {
     const seen = new Set<string>();
     const list = realSakhis.filter((sakhi) => {
+      // Must NOT be a caller
+      if (sakhi.id?.startsWith('caller-') || (sakhi as any).role === 'caller') return false;
+
       // Must be female girl host
       if (sakhi.gender && sakhi.gender !== 'female') return false;
 
@@ -226,12 +229,37 @@ const MainContent: React.FC = () => {
     });
   }, [realSakhis, activeFilter, searchQuery]);
 
-  // Filtered Callers for Host View (Show Real Online / Active Callers)
+  // Filtered Callers for Host View (Strictly ONLY real Callers, NEVER Hosts)
   const filteredCallers = useMemo(() => {
+    // Build set of all host phones and IDs so no host can ever appear in callers list
+    const hostIdentifierSet = new Set<string>();
+    realSakhis.forEach((s) => {
+      const p = String(s.phone || s.id || '').replace(/\D/g, '').slice(-10);
+      if (p.length === 10) hostIdentifierSet.add(p);
+      if (s.id) hostIdentifierSet.add(s.id);
+      if (s.email) hostIdentifierSet.add(s.email.toLowerCase().trim());
+    });
+
     const list = registeredCallers.filter((caller) => {
+      // Must NOT be a host
+      if (
+        caller.id?.startsWith('sakhi-user-') ||
+        caller.id?.startsWith('sakhi-host-') ||
+        caller.id?.startsWith('host_') ||
+        (caller as any).role === 'host'
+      ) {
+        return false;
+      }
+
       const cleanPhone = String(caller.phone || caller.id || '').replace(/\D/g, '').slice(-10);
+      const cleanEmail = caller.email ? caller.email.toLowerCase().trim() : '';
+
+      if (cleanPhone && hostIdentifierSet.has(cleanPhone)) return false;
+      if (caller.id && hostIdentifierSet.has(caller.id)) return false;
+      if (cleanEmail && hostIdentifierSet.has(cleanEmail)) return false;
+
       const hasValidPhone = cleanPhone.length === 10;
-      const hasValidEmail = Boolean(caller.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(caller.email));
+      const hasValidEmail = Boolean(cleanEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail));
       if (!hasValidPhone && !hasValidEmail) return false;
 
       const q = searchQuery.toLowerCase().trim();
@@ -249,7 +277,7 @@ const MainContent: React.FC = () => {
       if (!aOnline && bOnline) return 1;
       return (b.lastLoginAt || 0) - (a.lastLoginAt || 0);
     });
-  }, [registeredCallers, searchQuery]);
+  }, [registeredCallers, realSakhis, searchQuery]);
 
   const handleScrollToSakhis = () => {
     const el = document.getElementById('sakhis-feed');

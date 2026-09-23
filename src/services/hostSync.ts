@@ -29,6 +29,14 @@ export const deduplicateHosts = (hosts: Sakhi[]): Sakhi[] => {
  */
 export const isRealHostAccount = (h: any): boolean => {
   if (!h || !h.id) return false;
+  // Exclude callers
+  if (typeof h.id === 'string' && (h.id.startsWith('caller-') || h.id.startsWith('user-'))) {
+    return false;
+  }
+  if ((h as any).role === 'caller') {
+    return false;
+  }
+
   let p = h.phone ? String(h.phone).replace(/\D/g, '') : '';
   if (!p && typeof h.id === 'string') {
     const digits = h.id.replace(/\D/g, '');

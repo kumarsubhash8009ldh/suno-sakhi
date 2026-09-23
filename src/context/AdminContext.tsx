@@ -29,7 +29,13 @@ const defaultSettings: PlatformSettings = {
   supportWhatsApp: '+91 98765 43210',
   adminUpiId: 'sunosakhi@okaxis',
   adminUpiName: 'Suno Sakhi Official',
-  adminQrCodeUrl: ''
+  adminQrCodeUrl: '',
+  callHelplines: [
+    { id: 'call-1', title: '24x7 Direct Phone Helpline', number: '+91 98765 43210', type: 'call', isPrimary: true }
+  ],
+  whatsappHelplines: [
+    { id: 'wa-1', title: '24x7 WhatsApp Chat Support', number: '+91 98765 43210', type: 'whatsapp', isPrimary: true }
+  ]
 };
 
 const AdminContext = createContext<AdminContextType | undefined>(undefined);
@@ -45,7 +51,13 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const saved = localStorage.getItem(SETTINGS_KEY);
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        return {
+          ...defaultSettings,
+          ...parsed,
+          callHelplines: parsed.callHelplines || defaultSettings.callHelplines,
+          whatsappHelplines: parsed.whatsappHelplines || defaultSettings.whatsappHelplines
+        };
       } catch {
         // fallback
       }
@@ -57,7 +69,12 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     if (!isFirebaseConfigured()) return;
     const unsub = subscribeToCloudSettings((cloudSettings) => {
-      setSettings(cloudSettings);
+      setSettings((prev) => ({
+        ...prev,
+        ...cloudSettings,
+        callHelplines: cloudSettings.callHelplines || prev.callHelplines || defaultSettings.callHelplines,
+        whatsappHelplines: cloudSettings.whatsappHelplines || prev.whatsappHelplines || defaultSettings.whatsappHelplines
+      }));
     });
     return () => {
       if (unsub) unsub();

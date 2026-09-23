@@ -47,7 +47,7 @@ import {
 import { useAdmin } from '../context/AdminContext';
 import { useWallet } from '../context/WalletContext';
 import { useHost } from '../context/HostContext';
-import { HostProfile, HostPayoutRecord, RechargeRequest } from '../types';
+import { HostProfile, HostPayoutRecord, RechargeRequest, HelplineContact } from '../types';
 import {
   getLocalNudityReports,
   getBannedPhoneNumbers,
@@ -166,6 +166,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
   const [showScannerModal, setShowScannerModal] = useState<boolean>(false);
   const [showDirectDepositModal, setShowDirectDepositModal] = useState<boolean>(false);
 
+  // Helpline State
+  const [callHelplines, setCallHelplines] = useState<HelplineContact[]>(
+    settings.callHelplines || [
+      { id: 'call-1', title: '24x7 Direct Phone Helpline', number: settings.supportPhone || '+91 98765 43210', type: 'call', isPrimary: true }
+    ]
+  );
+  const [whatsappHelplines, setWhatsappHelplines] = useState<HelplineContact[]>(
+    settings.whatsappHelplines || [
+      { id: 'wa-1', title: '24x7 WhatsApp Chat Support', number: settings.supportWhatsApp || '+91 98765 43210', type: 'whatsapp', isPrimary: true }
+    ]
+  );
+  const [newCallTitle, setNewCallTitle] = useState('');
+  const [newCallNumber, setNewCallNumber] = useState('');
+  const [newWaTitle, setNewWaTitle] = useState('');
+  const [newWaNumber, setNewWaNumber] = useState('');
+
   // Direct Deposit Form States
   const [depositTargetRole, setDepositTargetRole] = useState<'caller' | 'host'>('caller');
   const [depositTargetId, setDepositTargetId] = useState<string>('');
@@ -236,6 +252,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
     if (settings.adminUpiId) setAdminUpiIdInput(settings.adminUpiId);
     if (settings.adminUpiName) setAdminUpiNameInput(settings.adminUpiName);
     if (settings.adminQrCodeUrl !== undefined) setAdminQrCodeUrlInput(settings.adminQrCodeUrl || '');
+    if (settings.callHelplines) setCallHelplines(settings.callHelplines);
+    if (settings.whatsappHelplines) setWhatsappHelplines(settings.whatsappHelplines);
   }, [settings]);
 
   // Filtered lists
@@ -596,9 +614,114 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
       hostIncomePercent: Number(hostShare),
       adminUpiId: adminUpiIdInput.trim(),
       adminUpiName: adminUpiNameInput.trim(),
-      adminQrCodeUrl: adminQrCodeUrlInput.trim()
+      adminQrCodeUrl: adminQrCodeUrlInput.trim(),
+      callHelplines,
+      whatsappHelplines,
+      supportPhone: callHelplines.find((c) => c.isPrimary)?.number || callHelplines[0]?.number || settings.supportPhone || '+91 98765 43210',
+      supportWhatsApp: whatsappHelplines.find((w) => w.isPrimary)?.number || whatsappHelplines[0]?.number || settings.supportWhatsApp || '+91 98765 43210'
     });
-    showToast('success', '✅ Platform Rates, Commission, Deposit UPI aur Scanner update ho gaye!');
+    showToast('success', '✅ Platform Rates, Commission, Deposit UPI, Scanner aur Helpline Numbers update ho gaye!');
+  };
+
+  // Handlers: Add / Remove Helpline Numbers
+  const handleAddCallHelpline = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!newCallNumber.trim()) {
+      showToast('error', 'Kripya valid Calling Helpline number dalein.');
+      return;
+    }
+    const newEntry: HelplineContact = {
+      id: 'call-' + Date.now(),
+      title: newCallTitle.trim() || 'Direct Phone Helpline',
+      number: newCallNumber.trim(),
+      type: 'call',
+      isPrimary: callHelplines.length === 0
+    };
+    const updated = [...callHelplines, newEntry];
+    setCallHelplines(updated);
+    updateSettings({
+      callHelplines: updated,
+      supportPhone: updated.find((c) => c.isPrimary)?.number || updated[0].number
+    });
+    setNewCallTitle('');
+    setNewCallNumber('');
+    showToast('success', '✅ Naya Phone Helpline number add ho gaya!');
+  };
+
+  const handleRemoveCallHelpline = (id: string) => {
+    if (callHelplines.length <= 1) {
+      if (!window.confirm('Yeh aakhri phone helpline number hai. Kya aap ise hatana chahte hain?')) return;
+    }
+    const updated = callHelplines.filter((c) => c.id !== id);
+    setCallHelplines(updated);
+    updateSettings({
+      callHelplines: updated,
+      supportPhone: updated[0]?.number || ''
+    });
+    showToast('success', 'Phone helpline number hata diya gaya.');
+  };
+
+  const handleTogglePrimaryCall = (id: string) => {
+    const updated = callHelplines.map((c) => ({
+      ...c,
+      isPrimary: c.id === id
+    }));
+    setCallHelplines(updated);
+    updateSettings({
+      callHelplines: updated,
+      supportPhone: updated.find((c) => c.id === id)?.number || updated[0]?.number || ''
+    });
+    showToast('success', 'Primary calling number update ho gaya!');
+  };
+
+  const handleAddWhatsAppHelpline = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!newWaNumber.trim()) {
+      showToast('error', 'Kripya valid WhatsApp Helpline number dalein.');
+      return;
+    }
+    const newEntry: HelplineContact = {
+      id: 'wa-' + Date.now(),
+      title: newWaTitle.trim() || '24x7 WhatsApp Chat Support',
+      number: newWaNumber.trim(),
+      type: 'whatsapp',
+      isPrimary: whatsappHelplines.length === 0
+    };
+    const updated = [...whatsappHelplines, newEntry];
+    setWhatsappHelplines(updated);
+    updateSettings({
+      whatsappHelplines: updated,
+      supportWhatsApp: updated.find((w) => w.isPrimary)?.number || updated[0].number
+    });
+    setNewWaTitle('');
+    setNewWaNumber('');
+    showToast('success', '✅ Naya WhatsApp Support number add ho gaya!');
+  };
+
+  const handleRemoveWhatsAppHelpline = (id: string) => {
+    if (whatsappHelplines.length <= 1) {
+      if (!window.confirm('Yeh aakhri WhatsApp helpline number hai. Kya aap ise hatana chahte hain?')) return;
+    }
+    const updated = whatsappHelplines.filter((w) => w.id !== id);
+    setWhatsappHelplines(updated);
+    updateSettings({
+      whatsappHelplines: updated,
+      supportWhatsApp: updated[0]?.number || ''
+    });
+    showToast('success', 'WhatsApp support number hata diya gaya.');
+  };
+
+  const handleTogglePrimaryWhatsApp = (id: string) => {
+    const updated = whatsappHelplines.map((w) => ({
+      ...w,
+      isPrimary: w.id === id
+    }));
+    setWhatsappHelplines(updated);
+    updateSettings({
+      whatsappHelplines: updated,
+      supportWhatsApp: updated.find((w) => w.id === id)?.number || updated[0]?.number || ''
+    });
+    showToast('success', 'Primary WhatsApp support number update ho gaya!');
   };
 
   // Handler: Upload QR Scanner Image (PhonePe/GPay Standee or Screenshot)
@@ -2132,6 +2255,214 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
                     </div>
                   </div>
                 </div>
+
+                {/* ================================================================= */}
+                {/* 🎧 24x7 CUSTOMER HELPLINE & WHATSAPP SUPPORT CONTROL HUB           */}
+                {/* ================================================================= */}
+                <div className="sm:col-span-2 p-4 rounded-2xl bg-black/60 border border-emerald-500/40 space-y-4">
+                  <div>
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
+                          <Phone className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-black text-white">
+                            🎧 24x7 Customer Helpline Numbers (Call & WhatsApp Control)
+                          </h4>
+                          <p className="text-[11px] text-gray-300">
+                            Admin yahan se Calling Helpline aur WhatsApp Support numbers Add aur Remove kar sakte hain. Yeh numbers seedha users ke Helpline page par dikhenge.
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-[10px] px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold uppercase">
+                        Live User Visible
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {/* LEFT: DIRECT CALLING HELPLINE NUMBERS */}
+                    <div className="p-3.5 rounded-2xl bg-[#140822] border border-pink-500/30 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Phone className="w-4 h-4 text-pink-400" />
+                          <h5 className="text-xs font-black text-white uppercase tracking-wider">
+                            Phone Helpline (Calling) Numbers ({callHelplines.length})
+                          </h5>
+                        </div>
+                      </div>
+
+                      {/* Add New Call Number Form */}
+                      <div className="p-3 rounded-xl bg-black/50 border border-white/10 space-y-2">
+                        <span className="text-[11px] font-bold text-pink-300 block">
+                          ➕ Naya Calling Number Jodein:
+                        </span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            value={newCallTitle}
+                            onChange={(e) => setNewCallTitle(e.target.value)}
+                            placeholder="Title (e.g. Toll-Free Care)"
+                            className="px-3 py-1.5 rounded-xl bg-black/60 border border-white/10 text-white text-xs focus:outline-none"
+                          />
+                          <input
+                            type="text"
+                            value={newCallNumber}
+                            onChange={(e) => setNewCallNumber(e.target.value)}
+                            placeholder="Mobile / Phone (e.g. +91 98765 43210)"
+                            className="px-3 py-1.5 rounded-xl bg-black/60 border border-white/10 text-white font-mono text-xs focus:outline-none"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleAddCallHelpline()}
+                          className="w-full py-1.5 px-3 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow"
+                        >
+                          <PlusCircle className="w-3.5 h-3.5" />
+                          <span>Add Calling Number</span>
+                        </button>
+                      </div>
+
+                      {/* List of Existing Call Numbers */}
+                      <div className="space-y-2 max-h-56 overflow-y-auto">
+                        {callHelplines.length === 0 ? (
+                          <p className="text-xs text-gray-500 text-center py-2">Koi phone number nahi hai. Kripya add karein.</p>
+                        ) : (
+                          callHelplines.map((item) => (
+                            <div
+                              key={item.id}
+                              className="p-2.5 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between gap-2"
+                            >
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xs font-bold text-white truncate">{item.title}</span>
+                                  {item.isPrimary && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-pink-500/20 text-pink-300 font-bold uppercase">
+                                      Primary
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs font-mono font-bold text-pink-300">{item.number}</p>
+                              </div>
+
+                              <div className="flex items-center gap-1 flex-shrink-0">
+                                {!item.isPrimary && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleTogglePrimaryCall(item.id)}
+                                    className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] text-gray-300 hover:text-white"
+                                    title="Make Primary"
+                                  >
+                                    Set Primary
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveCallHelpline(item.id)}
+                                  className="p-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/40 text-red-300 hover:text-white border border-red-500/30"
+                                  title="Remove Number"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    {/* RIGHT: WHATSAPP HELPLINE NUMBERS */}
+                    <div className="p-3.5 rounded-2xl bg-[#0a1e12] border border-emerald-500/30 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <MessageCircle className="w-4 h-4 text-emerald-400" />
+                          <h5 className="text-xs font-black text-white uppercase tracking-wider">
+                            WhatsApp Support Numbers ({whatsappHelplines.length})
+                          </h5>
+                        </div>
+                      </div>
+
+                      {/* Add New WhatsApp Number Form */}
+                      <div className="p-3 rounded-xl bg-black/50 border border-white/10 space-y-2">
+                        <span className="text-[11px] font-bold text-emerald-300 block">
+                          ➕ Naya WhatsApp Number Jodein:
+                        </span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            value={newWaTitle}
+                            onChange={(e) => setNewWaTitle(e.target.value)}
+                            placeholder="Title (e.g. WhatsApp Support)"
+                            className="px-3 py-1.5 rounded-xl bg-black/60 border border-white/10 text-white text-xs focus:outline-none"
+                          />
+                          <input
+                            type="text"
+                            value={newWaNumber}
+                            onChange={(e) => setNewWaNumber(e.target.value)}
+                            placeholder="WhatsApp No. (e.g. +91 98765 43210)"
+                            className="px-3 py-1.5 rounded-xl bg-black/60 border border-white/10 text-white font-mono text-xs focus:outline-none"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleAddWhatsAppHelpline()}
+                          className="w-full py-1.5 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow"
+                        >
+                          <PlusCircle className="w-3.5 h-3.5" />
+                          <span>Add WhatsApp Number</span>
+                        </button>
+                      </div>
+
+                      {/* List of Existing WhatsApp Numbers */}
+                      <div className="space-y-2 max-h-56 overflow-y-auto">
+                        {whatsappHelplines.length === 0 ? (
+                          <p className="text-xs text-gray-500 text-center py-2">Koi WhatsApp number nahi hai. Kripya add karein.</p>
+                        ) : (
+                          whatsappHelplines.map((item) => (
+                            <div
+                              key={item.id}
+                              className="p-2.5 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between gap-2"
+                            >
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xs font-bold text-white truncate">{item.title}</span>
+                                  {item.isPrimary && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold uppercase">
+                                      Primary
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs font-mono font-bold text-emerald-300">{item.number}</p>
+                              </div>
+
+                              <div className="flex items-center gap-1 flex-shrink-0">
+                                {!item.isPrimary && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleTogglePrimaryWhatsApp(item.id)}
+                                    className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] text-gray-300 hover:text-white"
+                                    title="Make Primary"
+                                  >
+                                    Set Primary
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveWhatsAppHelpline(item.id)}
+                                  className="p-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/40 text-red-300 hover:text-white border border-red-500/30"
+                                  title="Remove Number"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <button
@@ -2139,7 +2470,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
                 className="py-3 px-6 rounded-2xl bg-gradient-to-r from-pink-600 via-rose-600 to-purple-600 hover:from-pink-500 text-white font-black text-xs shadow-xl shadow-pink-600/30 flex items-center gap-2"
               >
                 <Sparkles className="w-4 h-4" />
-                <span>Save Platform Rates, UPI & Scanner Config</span>
+                <span>Save Platform Rates, UPI, Scanner & Helpline Config</span>
               </button>
             </form>
           )}
@@ -3054,6 +3385,142 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* MODAL: CHANGE SCANNER & UPI POPUP MODAL                                    */}
+        {/* ========================================================================= */}
+        {showScannerModal && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+            <div className="relative w-full max-w-lg rounded-3xl bg-[#190827] border border-pink-500/50 p-5 sm:p-6 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => setShowScannerModal(false)}
+                className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="flex items-center gap-3 pb-3 border-b border-pink-500/20">
+                <div className="p-2.5 rounded-2xl bg-gradient-to-tr from-pink-600 to-rose-600 text-white shadow-lg">
+                  <QrIcon className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-white">Official Deposit Scanner & UPI Config</h3>
+                  <p className="text-xs text-pink-300/80">Admin UPI ID aur QR Scanner upload karein jo users ko recharge me dikhega</p>
+                </div>
+              </div>
+
+              <div className="space-y-3.5">
+                <div>
+                  <label className="text-xs font-semibold text-gray-300 block mb-1">
+                    Official Receiver Business / Merchant Name
+                  </label>
+                  <input
+                    type="text"
+                    value={adminUpiNameInput}
+                    onChange={(e) => setAdminUpiNameInput(e.target.value)}
+                    placeholder="e.g. Suno Sakhi Official"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/10 text-white text-xs focus:outline-none focus:border-pink-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-300 block mb-1">
+                    Official Deposit UPI ID (PhonePe / GPay / Paytm VPA)
+                  </label>
+                  <input
+                    type="text"
+                    value={adminUpiIdInput}
+                    onChange={(e) => setAdminUpiIdInput(e.target.value)}
+                    placeholder="e.g. sunosakhi@okaxis / 7009600157@paytm"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-pink-500"
+                  />
+                </div>
+
+                {/* Upload Scanner Image */}
+                <div>
+                  <label className="text-xs font-semibold text-gray-300 block mb-1.5">
+                    Upload Scanner Image (PhonePe / Google Pay Standee / QR Screenshot)
+                  </label>
+                  <label className="flex items-center justify-center gap-2 p-3 rounded-2xl border-2 border-dashed border-pink-500/50 hover:border-pink-500 bg-pink-950/30 hover:bg-pink-950/50 text-pink-200 text-xs font-bold cursor-pointer transition-all">
+                    <Upload className="w-4 h-4 text-pink-400" />
+                    <span>{isUploadingQr ? 'Uploading Scanner...' : '📁 Choose QR Scanner Image File (Max 2MB)'}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleQrImageUpload}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                {adminQrCodeUrlInput && (
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-white/5 border border-white/10">
+                    <span className="text-xs text-emerald-300 font-bold flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      <span>Custom Scanner Image Uploaded</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAdminQrCodeUrlInput('');
+                        showToast('success', 'Custom image hata di gayi. Dynamic QR code use hoga.');
+                      }}
+                      className="text-xs text-red-300 hover:text-red-200 font-bold underline"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+
+                {/* Live Scanner Preview */}
+                <div className="p-3 rounded-2xl bg-black/40 border border-white/10 flex flex-col items-center justify-center">
+                  <span className="text-[11px] font-bold text-gray-300 mb-2">Live Scanner Preview (Caller View):</span>
+                  <div className="p-2.5 bg-white rounded-2xl shadow-xl">
+                    {adminQrCodeUrlInput ? (
+                      <img
+                        src={adminQrCodeUrlInput}
+                        alt="Custom Deposit Scanner"
+                        className="w-32 h-32 object-contain rounded-xl"
+                      />
+                    ) : (
+                      <UpiQrScanner
+                        upiId={adminUpiIdInput || 'sunosakhi@okaxis'}
+                        name={adminUpiNameInput || 'Suno Sakhi Official'}
+                        size={120}
+                        showDetails={false}
+                        showDownload={false}
+                        className="!p-0 !bg-transparent !border-0 !shadow-none"
+                      />
+                    )}
+                  </div>
+                  <span className="text-[10px] text-pink-300 font-mono mt-1.5 font-bold">
+                    {adminUpiIdInput || 'sunosakhi@okaxis'}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowScannerModal(false)}
+                    className="flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleQuickSaveScanner}
+                    className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 text-white font-black text-xs shadow-lg shadow-pink-600/30 flex items-center justify-center gap-1.5"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>Save & Apply Live</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}

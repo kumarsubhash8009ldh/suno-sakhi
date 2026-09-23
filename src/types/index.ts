@@ -170,6 +170,14 @@ export interface HostAccountRecord {
   activeSessionToken?: string;
 }
 
+export interface HelplineContact {
+  id: string;
+  title: string;
+  number: string;
+  type: 'call' | 'whatsapp';
+  isPrimary?: boolean;
+}
+
 export interface PlatformSettings {
   voiceRatePerMin: number; // ₹7
   videoRatePerMin: number; // ₹15
@@ -180,6 +188,8 @@ export interface PlatformSettings {
   adminUpiId?: string;
   adminUpiName?: string;
   adminQrCodeUrl?: string;
+  callHelplines?: HelplineContact[];
+  whatsappHelplines?: HelplineContact[];
 }
 
 export interface RecentCallLog {

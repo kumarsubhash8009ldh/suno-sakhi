@@ -1,21 +1,31 @@
 import React from 'react';
-import { Headphones, MessageCircle, Phone, ShieldCheck, Lock, Clock, HeartHandshake, ArrowRight, HelpCircle } from 'lucide-react';
+import { Headphones, MessageCircle, Phone, ShieldCheck, Lock, Clock, HeartHandshake, ArrowRight, HelpCircle, ExternalLink } from 'lucide-react';
+import { useAdmin } from '../context/AdminContext';
 
 interface HelplineViewProps {
   onExploreSakhis: () => void;
 }
 
 export const HelplineView: React.FC<HelplineViewProps> = ({ onExploreSakhis }) => {
-  const WHATSAPP_NUMBER = '+919876543210';
-  const DISPLAY_PHONE = '+91 98765 43210';
+  const { settings } = useAdmin();
 
-  const handleWhatsApp = () => {
+  const whatsappList = (settings.whatsappHelplines && settings.whatsappHelplines.length > 0)
+    ? settings.whatsappHelplines
+    : [{ id: 'wa-default', title: '24x7 WhatsApp Chat Support', number: settings.supportWhatsApp || '+91 98765 43210', type: 'whatsapp' as const, isPrimary: true }];
+
+  const callList = (settings.callHelplines && settings.callHelplines.length > 0)
+    ? settings.callHelplines
+    : [{ id: 'call-default', title: 'Direct Phone Helpline', number: settings.supportPhone || '+91 98765 43210', type: 'call' as const, isPrimary: true }];
+
+  const handleWhatsApp = (num: string) => {
+    const clean = num.replace(/\D/g, '');
     const text = encodeURIComponent('Namaste SunoSakhi Support! Mujhe sahayata chahiye.');
-    window.open(`https://wa.me/${WHATSAPP_NUMBER.replace(/\D/g, '')}?text=${text}`, '_blank');
+    window.open(`https://wa.me/${clean}?text=${text}`, '_blank');
   };
 
-  const handleCall = () => {
-    window.location.href = `tel:${WHATSAPP_NUMBER}`;
+  const handleCall = (num: string) => {
+    const clean = num.replace(/[^\d+]/g, '');
+    window.location.href = `tel:${clean}`;
   };
 
   const FAQS = [
@@ -48,58 +58,104 @@ export const HelplineView: React.FC<HelplineViewProps> = ({ onExploreSakhis }) =
           🎧 SunoSakhi 24x7 Help Line & Support
         </h2>
         <p className="text-xs sm:text-sm text-gray-400">
-          Hamari support team aapki sahayata ke liye 24 ghante uplabdh hai. WhatsApp ya direct call karein.
+          Hamari support team aapki sahayata ke liye 24 ghante uplabdh hai. Niche diye gaye verified numbers par WhatsApp ya direct call karein.
         </p>
       </div>
 
       {/* Main Support Channels Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {/* WhatsApp Channel */}
-        <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-b from-[#0c2e1b] to-[#071d11] border border-emerald-500/40 shadow-xl flex flex-col justify-between space-y-4">
-          <div className="space-y-3">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
-              <MessageCircle className="w-6 h-6" />
-            </div>
-            <div>
-              <h3 className="text-lg font-black text-white">WhatsApp Chat Support</h3>
-              <p className="text-xs text-emerald-300/80 mt-0.5">Average reply time: Under 2 minutes</p>
-            </div>
-            <p className="text-xs text-gray-300 leading-relaxed">
-              Payment issues, recharge enquiry, host verification ya kisi bhi samasya ke liye seedha WhatsApp par baat karein.
-            </p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* WhatsApp Channels Column */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 px-1">
+            <MessageCircle className="w-4 h-4 text-emerald-400" />
+            <span className="text-xs font-black uppercase text-emerald-300 tracking-wider">
+              WhatsApp Support Channels ({whatsappList.length})
+            </span>
           </div>
 
-          <button
-            onClick={handleWhatsApp}
-            className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/60 transition-all active:scale-95"
-          >
-            <MessageCircle className="w-4 h-4" />
-            <span>WhatsApp Par Message Karein</span>
-          </button>
+          {whatsappList.map((wa) => (
+            <div
+              key={wa.id}
+              className="p-5 rounded-3xl bg-gradient-to-b from-[#0c2e1b] to-[#071d11] border border-emerald-500/40 shadow-xl flex flex-col justify-between space-y-4"
+            >
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                    <MessageCircle className="w-5 h-5" />
+                  </div>
+                  {wa.isPrimary && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/30 text-emerald-200 border border-emerald-500/40 font-bold uppercase">
+                      Primary
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-white">{wa.title}</h3>
+                  <p className="text-sm font-mono font-black text-emerald-300 mt-0.5">{wa.number}</p>
+                  <p className="text-[11px] text-emerald-300/80">Average reply: Under 2 mins</p>
+                </div>
+                <p className="text-xs text-gray-300 leading-relaxed">
+                  Payment enquiry, recharge status, host verification ya queries ke liye seedha WhatsApp karein.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => handleWhatsApp(wa.number)}
+                className="w-full py-3 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/60 transition-all active:scale-95"
+              >
+                <MessageCircle className="w-4 h-4" />
+                <span>WhatsApp Message Bhejein</span>
+              </button>
+            </div>
+          ))}
         </div>
 
-        {/* Direct Phone Helpline */}
-        <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-b from-[#1c0f33] to-[#110722] border border-pink-500/40 shadow-xl flex flex-col justify-between space-y-4">
-          <div className="space-y-3">
-            <div className="w-12 h-12 rounded-2xl bg-pink-600/20 border border-pink-500/40 flex items-center justify-center text-pink-400">
-              <Phone className="w-6 h-6" />
-            </div>
-            <div>
-              <h3 className="text-lg font-black text-white">Direct Phone Helpline</h3>
-              <p className="text-xs text-pink-300/80 mt-0.5">{DISPLAY_PHONE} (Toll-Free)</p>
-            </div>
-            <p className="text-xs text-gray-300 leading-relaxed">
-              Urgent assistance ya account support ke liye hamare customer support executive se seedha call par baat karein.
-            </p>
+        {/* Direct Phone Helpline Channels Column */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 px-1">
+            <Phone className="w-4 h-4 text-pink-400" />
+            <span className="text-xs font-black uppercase text-pink-300 tracking-wider">
+              Phone Helpline Channels ({callList.length})
+            </span>
           </div>
 
-          <button
-            onClick={handleCall}
-            className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white font-black text-sm flex items-center justify-center gap-2 shadow-lg shadow-pink-950/60 transition-all active:scale-95"
-          >
-            <Phone className="w-4 h-4" />
-            <span>Abhi Call Karein</span>
-          </button>
+          {callList.map((ph) => (
+            <div
+              key={ph.id}
+              className="p-5 rounded-3xl bg-gradient-to-b from-[#1c0f33] to-[#110722] border border-pink-500/40 shadow-xl flex flex-col justify-between space-y-4"
+            >
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="w-10 h-10 rounded-2xl bg-pink-600/20 border border-pink-500/40 flex items-center justify-center text-pink-400">
+                    <Phone className="w-5 h-5" />
+                  </div>
+                  {ph.isPrimary && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-pink-500/30 text-pink-200 border border-pink-500/40 font-bold uppercase">
+                      Toll-Free
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-white">{ph.title}</h3>
+                  <p className="text-sm font-mono font-black text-pink-300 mt-0.5">{ph.number}</p>
+                  <p className="text-[11px] text-pink-300/80">Calling Support: 24 Hours Active</p>
+                </div>
+                <p className="text-xs text-gray-300 leading-relaxed">
+                  Urgent help ya instant grievance redressing ke liye customer support par seedha call karein.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => handleCall(ph.number)}
+                className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white font-black text-sm flex items-center justify-center gap-2 shadow-lg shadow-pink-950/60 transition-all active:scale-95"
+              >
+                <Phone className="w-4 h-4" />
+                <span>Abhi Call Karein</span>
+              </button>
+            </div>
+          ))}
         </div>
       </div>
 

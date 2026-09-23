@@ -865,7 +865,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </button>
 
           <a
-            href="https://github.com/kumarsubhash8009ldh/suno-sakhi/releases/download/v1.0.0/Suno-Sakhi.apk"
+            href="https://github.com/kumarsubhash8009ldh/suno-sakhi/releases/latest/download/Suno-Sakhi.apk"
             download="Suno-Sakhi.apk"
             className="p-3.5 rounded-2xl bg-[#241238] hover:bg-[#321850] border border-purple-500/20 text-left space-y-1 transition-all group block"
           >
@@ -873,7 +873,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <span>📥 Download APK</span>
               <Download className="w-3.5 h-3.5" />
             </span>
-            <p className="text-[10px] text-gray-400">Latest Android app download (~29 MB)</p>
+            <p className="text-[10px] text-gray-400">Latest Android app download (~7 MB)</p>
           </a>
         </div>
 

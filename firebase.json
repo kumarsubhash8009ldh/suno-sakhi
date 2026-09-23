@@ -10,6 +10,23 @@
       "**/node_modules/**",
       "**/*.apk"
     ],
+    "redirects": [
+      {
+        "source": "/download",
+        "destination": "https://github.com/kumarsubhash8009ldh/suno-sakhi/releases/latest/download/Suno-Sakhi.apk",
+        "type": 302
+      },
+      {
+        "source": "/Suno-Sakhi.apk",
+        "destination": "https://github.com/kumarsubhash8009ldh/suno-sakhi/releases/latest/download/Suno-Sakhi.apk",
+        "type": 302
+      },
+      {
+        "source": "/suno-sakhi.apk",
+        "destination": "https://github.com/kumarsubhash8009ldh/suno-sakhi/releases/latest/download/Suno-Sakhi.apk",
+        "type": 302
+      }
+    ],
     "rewrites": [
       {
         "source": "**",

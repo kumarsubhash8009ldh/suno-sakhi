@@ -42,7 +42,8 @@ import {
   Download,
   Eye,
   FileText,
-  Camera
+  Camera,
+  Edit3
 } from 'lucide-react';
 import { useAdmin } from '../context/AdminContext';
 import { useWallet } from '../context/WalletContext';
@@ -91,7 +92,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
   const { balance } = useWallet();
   const { hostProfile } = useHost();
 
-  const [activeTab, setActiveTab] = useState<'recharges' | 'payouts' | 'hosts' | 'users' | 'analytics' | 'settings' | 'nudity'>('recharges');
+  const [activeTab, setActiveTab] = useState<'recharges' | 'payouts' | 'hosts' | 'users' | 'helpline' | 'analytics' | 'settings' | 'nudity'>('recharges');
 
   // Live Data States
   const [hostsList, setHostsList] = useState<HostProfile[]>([]);
@@ -182,6 +183,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
   const [newWaTitle, setNewWaTitle] = useState('');
   const [newWaNumber, setNewWaNumber] = useState('');
 
+  // Quick Update State for Primary Helpline Numbers
+  const [quickPhoneInput, setQuickPhoneInput] = useState<string>(
+    settings.supportPhone || '+91 98765 43210'
+  );
+  const [quickWaInput, setQuickWaInput] = useState<string>(
+    settings.supportWhatsApp || '+91 98765 43210'
+  );
+
+  // Inline Editing State for Phone Helplines
+  const [editingCallId, setEditingCallId] = useState<string | null>(null);
+  const [editCallTitle, setEditCallTitle] = useState<string>('');
+  const [editCallNumber, setEditCallNumber] = useState<string>('');
+
+  // Inline Editing State for WhatsApp Helplines
+  const [editingWaId, setEditingWaId] = useState<string | null>(null);
+  const [editWaTitle, setEditWaTitle] = useState<string>('');
+  const [editWaNumber, setEditWaNumber] = useState<string>('');
+
   // Direct Deposit Form States
   const [depositTargetRole, setDepositTargetRole] = useState<'caller' | 'host'>('caller');
   const [depositTargetId, setDepositTargetId] = useState<string>('');
@@ -254,6 +273,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
     if (settings.adminQrCodeUrl !== undefined) setAdminQrCodeUrlInput(settings.adminQrCodeUrl || '');
     if (settings.callHelplines) setCallHelplines(settings.callHelplines);
     if (settings.whatsappHelplines) setWhatsappHelplines(settings.whatsappHelplines);
+    if (settings.supportPhone) setQuickPhoneInput(settings.supportPhone);
+    if (settings.supportWhatsApp) setQuickWaInput(settings.supportWhatsApp);
   }, [settings]);
 
   // Filtered lists
@@ -724,6 +745,122 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
     showToast('success', 'Primary WhatsApp support number update ho gaya!');
   };
 
+  // Quick 1-Click Update for Primary Calling Number
+  const handleQuickUpdatePhone = () => {
+    if (!quickPhoneInput.trim()) {
+      showToast('error', 'Kripya valid Calling Helpline number dalein.');
+      return;
+    }
+    const cleanNum = quickPhoneInput.trim();
+    let updated: HelplineContact[];
+    const primaryIndex = callHelplines.findIndex((c) => c.isPrimary);
+    if (primaryIndex >= 0) {
+      updated = callHelplines.map((c, i) =>
+        i === primaryIndex ? { ...c, number: cleanNum } : c
+      );
+    } else if (callHelplines.length > 0) {
+      updated = [{ ...callHelplines[0], number: cleanNum, isPrimary: true }, ...callHelplines.slice(1)];
+    } else {
+      updated = [{ id: 'call-' + Date.now(), title: 'Direct Phone Helpline', number: cleanNum, type: 'call', isPrimary: true }];
+    }
+    setCallHelplines(updated);
+    updateSettings({
+      callHelplines: updated,
+      supportPhone: cleanNum
+    });
+    showToast('success', '✅ Primary Calling Helpline Number update ho gaya: ' + cleanNum);
+  };
+
+  // Quick 1-Click Update for Primary WhatsApp Number
+  const handleQuickUpdateWhatsApp = () => {
+    if (!quickWaInput.trim()) {
+      showToast('error', 'Kripya valid WhatsApp number dalein.');
+      return;
+    }
+    const cleanNum = quickWaInput.trim();
+    let updated: HelplineContact[];
+    const primaryIndex = whatsappHelplines.findIndex((w) => w.isPrimary);
+    if (primaryIndex >= 0) {
+      updated = whatsappHelplines.map((w, i) =>
+        i === primaryIndex ? { ...w, number: cleanNum } : w
+      );
+    } else if (whatsappHelplines.length > 0) {
+      updated = [{ ...whatsappHelplines[0], number: cleanNum, isPrimary: true }, ...whatsappHelplines.slice(1)];
+    } else {
+      updated = [{ id: 'wa-' + Date.now(), title: 'WhatsApp Chat Support', number: cleanNum, type: 'whatsapp', isPrimary: true }];
+    }
+    setWhatsappHelplines(updated);
+    updateSettings({
+      whatsappHelplines: updated,
+      supportWhatsApp: cleanNum
+    });
+    showToast('success', '✅ Primary WhatsApp Number update ho gaya: ' + cleanNum);
+  };
+
+  // Start Inline Editing for Call Helpline
+  const handleStartEditCall = (item: HelplineContact) => {
+    setEditingCallId(item.id);
+    setEditCallTitle(item.title);
+    setEditCallNumber(item.number);
+  };
+
+  // Save Inline Edit for Call Helpline
+  const handleSaveEditCall = (id: string) => {
+    if (!editCallNumber.trim()) {
+      showToast('error', 'Kripya valid Calling number dalein.');
+      return;
+    }
+    const updated = callHelplines.map((c) =>
+      c.id === id ? { ...c, title: editCallTitle.trim() || c.title, number: editCallNumber.trim() } : c
+    );
+    setCallHelplines(updated);
+    const prim = updated.find((c) => c.isPrimary) || updated[0];
+    updateSettings({
+      callHelplines: updated,
+      supportPhone: prim?.number || ''
+    });
+    setEditingCallId(null);
+    showToast('success', '✅ Phone helpline number safaltapoorvak update ho gaya!');
+  };
+
+  const handleCancelEditCall = () => {
+    setEditingCallId(null);
+    setEditCallTitle('');
+    setEditCallNumber('');
+  };
+
+  // Start Inline Editing for WhatsApp Helpline
+  const handleStartEditWa = (item: HelplineContact) => {
+    setEditingWaId(item.id);
+    setEditWaTitle(item.title);
+    setEditWaNumber(item.number);
+  };
+
+  // Save Inline Edit for WhatsApp Helpline
+  const handleSaveEditWa = (id: string) => {
+    if (!editWaNumber.trim()) {
+      showToast('error', 'Kripya valid WhatsApp number dalein.');
+      return;
+    }
+    const updated = whatsappHelplines.map((w) =>
+      w.id === id ? { ...w, title: editWaTitle.trim() || w.title, number: editWaNumber.trim() } : w
+    );
+    setWhatsappHelplines(updated);
+    const prim = updated.find((w) => w.isPrimary) || updated[0];
+    updateSettings({
+      whatsappHelplines: updated,
+      supportWhatsApp: prim?.number || ''
+    });
+    setEditingWaId(null);
+    showToast('success', '✅ WhatsApp helpline number safaltapoorvak update ho gaya!');
+  };
+
+  const handleCancelEditWa = () => {
+    setEditingWaId(null);
+    setEditWaTitle('');
+    setEditWaNumber('');
+  };
+
   // Handler: Upload QR Scanner Image (PhonePe/GPay Standee or Screenshot)
   const handleQrImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -945,6 +1082,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
             },
             { id: 'hosts', label: '👩‍🦰 Host Directory', count: hostsList.length },
             { id: 'users', label: '👤 User Directory', count: usersList.length },
+            {
+              id: 'helpline',
+              label: '🎧 Helpline & WhatsApp Support',
+              badge: callHelplines.length + whatsappHelplines.length,
+              badgeClass: 'bg-emerald-600 text-white font-black'
+            },
             {
               id: 'nudity',
               label: '🚨 Nudity Ban Reports',
@@ -2050,6 +2193,469 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
           )}
 
           {/* ========================================================================= */}
+          {/* TAB: 24x7 CUSTOMER HELPLINE & WHATSAPP SUPPORT CONTROL HUB                */}
+          {/* ========================================================================= */}
+          {activeTab === 'helpline' && (
+            <div className="space-y-6">
+              {/* Header Banner */}
+              <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-emerald-950/80 via-teal-950/60 to-black/80 border border-emerald-500/40 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400">
+                    <Phone className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-base sm:text-lg font-black text-white">
+                      🎧 24x7 Customer Helpline & WhatsApp Support Hub
+                    </h3>
+                    <p className="text-xs text-gray-300 mt-0.5">
+                      Direct Calling Helpline aur WhatsApp Chat Support numbers ko Add, Update (Edit), aur Remove karein.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-black uppercase">
+                    ⚡ Live User Sync
+                  </span>
+                </div>
+              </div>
+
+              {/* Quick 1-Click Update Top Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Quick Phone Update */}
+                <div className="p-4 rounded-3xl bg-gradient-to-b from-[#1e0e2e] to-[#12081d] border border-pink-500/30 space-y-3 shadow-lg">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-xl bg-pink-500/20 text-pink-400">
+                        <Phone className="w-4 h-4" />
+                      </div>
+                      <span className="text-xs font-black text-white uppercase tracking-wider">
+                        ⚡ Quick Update: Primary Calling Helpline
+                      </span>
+                    </div>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-pink-500/20 text-pink-300 font-bold uppercase">
+                      Direct Dial
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-300">
+                    Caller aur Host jab direct call button par click karte hain to is number par call lagti hai:
+                  </p>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="text"
+                      value={quickPhoneInput}
+                      onChange={(e) => setQuickPhoneInput(e.target.value)}
+                      placeholder="+91 98765 43210"
+                      className="flex-1 px-3 py-2.5 rounded-xl bg-black/60 border border-pink-500/30 text-white font-mono text-sm focus:outline-none focus:border-pink-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleQuickUpdatePhone}
+                      className="py-2.5 px-4 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow whitespace-nowrap active:scale-95 transition-all"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Update Call Number</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Quick WhatsApp Update */}
+                <div className="p-4 rounded-3xl bg-gradient-to-b from-[#0e2a1b] to-[#081a10] border border-emerald-500/30 space-y-3 shadow-lg">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
+                        <MessageCircle className="w-4 h-4" />
+                      </div>
+                      <span className="text-xs font-black text-white uppercase tracking-wider">
+                        ⚡ Quick Update: Primary WhatsApp Support
+                      </span>
+                    </div>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold uppercase">
+                      WhatsApp Chat
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-300">
+                    App me WhatsApp Support button par click karne par users seedha is number par connect hote hain:
+                  </p>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="text"
+                      value={quickWaInput}
+                      onChange={(e) => setQuickWaInput(e.target.value)}
+                      placeholder="+91 98765 43210"
+                      className="flex-1 px-3 py-2.5 rounded-xl bg-black/60 border border-emerald-500/30 text-white font-mono text-sm focus:outline-none focus:border-emerald-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleQuickUpdateWhatsApp}
+                      className="py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow whitespace-nowrap active:scale-95 transition-all"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Update WhatsApp Number</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Main Channels 2-Column Section */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* COLUMN 1: CALLING HELPLINES */}
+                <div className="p-5 rounded-3xl bg-gradient-to-b from-[#180a26] to-[#0f0518] border border-pink-500/30 space-y-4 shadow-xl">
+                  <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-xl bg-pink-500/20 text-pink-400">
+                        <Phone className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-black text-white">
+                          Direct Calling Helpline Numbers
+                        </h4>
+                        <span className="text-[11px] text-pink-300/80">
+                          {callHelplines.length} verified phone {callHelplines.length === 1 ? 'channel' : 'channels'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Add New Calling Number */}
+                  <div className="p-4 rounded-2xl bg-black/50 border border-white/10 space-y-3">
+                    <span className="text-xs font-black text-pink-300 flex items-center gap-1.5">
+                      <PlusCircle className="w-3.5 h-3.5" />
+                      ➕ Naya Calling Helpline Number Add Karein:
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] text-gray-400 block mb-1">Title / Label</label>
+                        <input
+                          type="text"
+                          value={newCallTitle}
+                          onChange={(e) => setNewCallTitle(e.target.value)}
+                          placeholder="e.g. 24x7 Direct Phone Helpline"
+                          className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/10 text-white text-xs focus:outline-none focus:border-pink-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-gray-400 block mb-1">Phone Number</label>
+                        <input
+                          type="text"
+                          value={newCallNumber}
+                          onChange={(e) => setNewCallNumber(e.target.value)}
+                          placeholder="e.g. +91 98765 43210"
+                          className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-pink-500"
+                        />
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleAddCallHelpline()}
+                      className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow active:scale-95 transition-all"
+                    >
+                      <PlusCircle className="w-4 h-4" />
+                      <span>Add Calling Number</span>
+                    </button>
+                  </div>
+
+                  {/* List of Calling Helpline Numbers */}
+                  <div className="space-y-3">
+                    <span className="text-xs font-bold text-gray-400 uppercase tracking-wider block">
+                      Registered Phone Numbers ({callHelplines.length}):
+                    </span>
+                    {callHelplines.length === 0 ? (
+                      <div className="p-4 rounded-2xl bg-black/40 border border-dashed border-white/10 text-center text-xs text-gray-400">
+                        Koi Calling Helpline number nahi hai. Kripya naya number add karein.
+                      </div>
+                    ) : (
+                      callHelplines.map((item) => (
+                        <div
+                          key={item.id}
+                          className="p-3.5 rounded-2xl bg-black/40 border border-white/10 transition-all hover:border-pink-500/30"
+                        >
+                          {editingCallId === item.id ? (
+                            /* INLINE EDIT MODE */
+                            <div className="space-y-3 p-1">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-black text-pink-300 flex items-center gap-1.5">
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                  Edit / Update Calling Number
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={handleCancelEditCall}
+                                  className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-white/10"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div>
+                                  <label className="text-[10px] text-gray-400 block mb-1">Title</label>
+                                  <input
+                                    type="text"
+                                    value={editCallTitle}
+                                    onChange={(e) => setEditCallTitle(e.target.value)}
+                                    className="w-full px-3 py-1.5 rounded-xl bg-black/70 border border-white/20 text-white text-xs focus:outline-none focus:border-pink-500"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-[10px] text-gray-400 block mb-1">Phone Number</label>
+                                  <input
+                                    type="text"
+                                    value={editCallNumber}
+                                    onChange={(e) => setEditCallNumber(e.target.value)}
+                                    className="w-full px-3 py-1.5 rounded-xl bg-black/70 border border-white/20 text-white font-mono text-xs focus:outline-none focus:border-pink-500"
+                                  />
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveEditCall(item.id)}
+                                  className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow"
+                                >
+                                  <Check className="w-4 h-4" />
+                                  <span>Save & Update Number</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleCancelEditCall}
+                                  className="py-2 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 font-bold text-xs"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            /* DISPLAY MODE */
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                              <div className="space-y-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-xs font-bold text-white">{item.title}</span>
+                                  {item.isPrimary && (
+                                    <span className="text-[9px] px-2 py-0.5 rounded-full bg-pink-500/20 text-pink-300 border border-pink-500/40 font-bold uppercase">
+                                      Primary (Active)
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-sm font-mono font-black text-pink-300">{item.number}</p>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap">
+                                <button
+                                  type="button"
+                                  onClick={() => handleStartEditCall(item)}
+                                  className="py-1.5 px-2.5 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 hover:text-white border border-blue-500/30 text-[11px] font-bold flex items-center gap-1 transition-all"
+                                  title="Number Update / Edit Karein"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                  <span>Update</span>
+                                </button>
+                                {!item.isPrimary && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleTogglePrimaryCall(item.id)}
+                                    className="py-1.5 px-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white text-[11px] font-bold border border-white/10 transition-all"
+                                    title="Make Primary"
+                                  >
+                                    Set Primary
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveCallHelpline(item.id)}
+                                  className="p-2 rounded-xl bg-red-600/20 hover:bg-red-600/30 text-red-300 hover:text-white border border-red-500/30 transition-all"
+                                  title="Remove Number"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* COLUMN 2: WHATSAPP SUPPORT HELPLINES */}
+                <div className="p-5 rounded-3xl bg-gradient-to-b from-[#0a1e12] to-[#051109] border border-emerald-500/30 space-y-4 shadow-xl">
+                  <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
+                        <MessageCircle className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-black text-white">
+                          WhatsApp Chat Support Numbers
+                        </h4>
+                        <span className="text-[11px] text-emerald-300/80">
+                          {whatsappHelplines.length} verified WhatsApp {whatsappHelplines.length === 1 ? 'channel' : 'channels'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Add New WhatsApp Number */}
+                  <div className="p-4 rounded-2xl bg-black/50 border border-white/10 space-y-3">
+                    <span className="text-xs font-black text-emerald-300 flex items-center gap-1.5">
+                      <PlusCircle className="w-3.5 h-3.5" />
+                      ➕ Naya WhatsApp Support Number Add Karein:
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] text-gray-400 block mb-1">Title / Label</label>
+                        <input
+                          type="text"
+                          value={newWaTitle}
+                          onChange={(e) => setNewWaTitle(e.target.value)}
+                          placeholder="e.g. 24x7 WhatsApp Chat Support"
+                          className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/10 text-white text-xs focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-gray-400 block mb-1">WhatsApp Number</label>
+                        <input
+                          type="text"
+                          value={newWaNumber}
+                          onChange={(e) => setNewWaNumber(e.target.value)}
+                          placeholder="e.g. +91 98765 43210"
+                          className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleAddWhatsAppHelpline()}
+                      className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow active:scale-95 transition-all"
+                    >
+                      <PlusCircle className="w-4 h-4" />
+                      <span>Add WhatsApp Number</span>
+                    </button>
+                  </div>
+
+                  {/* List of WhatsApp Numbers */}
+                  <div className="space-y-3">
+                    <span className="text-xs font-bold text-gray-400 uppercase tracking-wider block">
+                      Registered WhatsApp Numbers ({whatsappHelplines.length}):
+                    </span>
+                    {whatsappHelplines.length === 0 ? (
+                      <div className="p-4 rounded-2xl bg-black/40 border border-dashed border-white/10 text-center text-xs text-gray-400">
+                        Koi WhatsApp Support number nahi hai. Kripya naya number add karein.
+                      </div>
+                    ) : (
+                      whatsappHelplines.map((item) => (
+                        <div
+                          key={item.id}
+                          className="p-3.5 rounded-2xl bg-black/40 border border-white/10 transition-all hover:border-emerald-500/30"
+                        >
+                          {editingWaId === item.id ? (
+                            /* INLINE EDIT MODE */
+                            <div className="space-y-3 p-1">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-black text-emerald-300 flex items-center gap-1.5">
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                  Edit / Update WhatsApp Number
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={handleCancelEditWa}
+                                  className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-white/10"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div>
+                                  <label className="text-[10px] text-gray-400 block mb-1">Title</label>
+                                  <input
+                                    type="text"
+                                    value={editWaTitle}
+                                    onChange={(e) => setEditWaTitle(e.target.value)}
+                                    className="w-full px-3 py-1.5 rounded-xl bg-black/70 border border-white/20 text-white text-xs focus:outline-none focus:border-emerald-500"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-[10px] text-gray-400 block mb-1">WhatsApp Number</label>
+                                  <input
+                                    type="text"
+                                    value={editWaNumber}
+                                    onChange={(e) => setEditWaNumber(e.target.value)}
+                                    className="w-full px-3 py-1.5 rounded-xl bg-black/70 border border-white/20 text-white font-mono text-xs focus:outline-none focus:border-emerald-500"
+                                  />
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveEditWa(item.id)}
+                                  className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow"
+                                >
+                                  <Check className="w-4 h-4" />
+                                  <span>Save & Update Number</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleCancelEditWa}
+                                  className="py-2 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 font-bold text-xs"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            /* DISPLAY MODE */
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                              <div className="space-y-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-xs font-bold text-white">{item.title}</span>
+                                  {item.isPrimary && (
+                                    <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold uppercase">
+                                      Primary (Active)
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-sm font-mono font-black text-emerald-300">{item.number}</p>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap">
+                                <button
+                                  type="button"
+                                  onClick={() => handleStartEditWa(item)}
+                                  className="py-1.5 px-2.5 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 hover:text-white border border-blue-500/30 text-[11px] font-bold flex items-center gap-1 transition-all"
+                                  title="Number Update / Edit Karein"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                  <span>Update</span>
+                                </button>
+                                {!item.isPrimary && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleTogglePrimaryWhatsApp(item.id)}
+                                    className="py-1.5 px-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white text-[11px] font-bold border border-white/10 transition-all"
+                                    title="Make Primary"
+                                  >
+                                    Set Primary
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveWhatsAppHelpline(item.id)}
+                                  className="p-2 rounded-xl bg-red-600/20 hover:bg-red-600/30 text-red-300 hover:text-white border border-red-500/30 transition-all"
+                                  title="Remove Number"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================================= */}
           {/* TAB 5: PLATFORM SETTINGS & RATES                                          */}
           {/* ========================================================================= */}
           {activeTab === 'settings' && (
@@ -2325,47 +2931,99 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
                       </div>
 
                       {/* List of Existing Call Numbers */}
-                      <div className="space-y-2 max-h-56 overflow-y-auto">
+                      <div className="space-y-2 max-h-64 overflow-y-auto">
                         {callHelplines.length === 0 ? (
                           <p className="text-xs text-gray-500 text-center py-2">Koi phone number nahi hai. Kripya add karein.</p>
                         ) : (
                           callHelplines.map((item) => (
                             <div
                               key={item.id}
-                              className="p-2.5 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between gap-2"
+                              className="p-2.5 rounded-xl bg-black/40 border border-white/10 space-y-2"
                             >
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-xs font-bold text-white truncate">{item.title}</span>
-                                  {item.isPrimary && (
-                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-pink-500/20 text-pink-300 font-bold uppercase">
-                                      Primary
-                                    </span>
-                                  )}
+                              {editingCallId === item.id ? (
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-black text-pink-300">Update Calling Number:</span>
+                                    <button type="button" onClick={handleCancelEditCall} className="text-gray-400 hover:text-white">
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                  <input
+                                    type="text"
+                                    value={editCallTitle}
+                                    onChange={(e) => setEditCallTitle(e.target.value)}
+                                    placeholder="Title"
+                                    className="w-full px-2 py-1 rounded-lg bg-black/60 border border-white/20 text-white text-xs"
+                                  />
+                                  <input
+                                    type="text"
+                                    value={editCallNumber}
+                                    onChange={(e) => setEditCallNumber(e.target.value)}
+                                    placeholder="Number"
+                                    className="w-full px-2 py-1 rounded-lg bg-black/60 border border-white/20 text-white font-mono text-xs"
+                                  />
+                                  <div className="flex gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSaveEditCall(item.id)}
+                                      className="flex-1 py-1 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold"
+                                    >
+                                      Save Update
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={handleCancelEditCall}
+                                      className="py-1 px-2 rounded-lg bg-white/10 text-gray-300 text-[11px]"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
                                 </div>
-                                <p className="text-xs font-mono font-bold text-pink-300">{item.number}</p>
-                              </div>
+                              ) : (
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-xs font-bold text-white truncate">{item.title}</span>
+                                      {item.isPrimary && (
+                                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-pink-500/20 text-pink-300 font-bold uppercase">
+                                          Primary
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-xs font-mono font-bold text-pink-300">{item.number}</p>
+                                  </div>
 
-                              <div className="flex items-center gap-1 flex-shrink-0">
-                                {!item.isPrimary && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleTogglePrimaryCall(item.id)}
-                                    className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] text-gray-300 hover:text-white"
-                                    title="Make Primary"
-                                  >
-                                    Set Primary
-                                  </button>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveCallHelpline(item.id)}
-                                  className="p-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/40 text-red-300 hover:text-white border border-red-500/30"
-                                  title="Remove Number"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
+                                  <div className="flex items-center gap-1 flex-shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleStartEditCall(item)}
+                                      className="p-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 hover:text-white border border-blue-500/30 text-[10px] font-bold flex items-center gap-0.5"
+                                      title="Update / Edit"
+                                    >
+                                      <Edit3 className="w-3 h-3" />
+                                      <span>Edit</span>
+                                    </button>
+                                    {!item.isPrimary && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleTogglePrimaryCall(item.id)}
+                                        className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] text-gray-300 hover:text-white"
+                                        title="Make Primary"
+                                      >
+                                        Set Primary
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveCallHelpline(item.id)}
+                                      className="p-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/40 text-red-300 hover:text-white border border-red-500/30"
+                                      title="Remove Number"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           ))
                         )}
@@ -2415,47 +3073,99 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
                       </div>
 
                       {/* List of Existing WhatsApp Numbers */}
-                      <div className="space-y-2 max-h-56 overflow-y-auto">
+                      <div className="space-y-2 max-h-64 overflow-y-auto">
                         {whatsappHelplines.length === 0 ? (
                           <p className="text-xs text-gray-500 text-center py-2">Koi WhatsApp number nahi hai. Kripya add karein.</p>
                         ) : (
                           whatsappHelplines.map((item) => (
                             <div
                               key={item.id}
-                              className="p-2.5 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between gap-2"
+                              className="p-2.5 rounded-xl bg-black/40 border border-white/10 space-y-2"
                             >
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-xs font-bold text-white truncate">{item.title}</span>
-                                  {item.isPrimary && (
-                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold uppercase">
-                                      Primary
-                                    </span>
-                                  )}
+                              {editingWaId === item.id ? (
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-black text-emerald-300">Update WhatsApp Number:</span>
+                                    <button type="button" onClick={handleCancelEditWa} className="text-gray-400 hover:text-white">
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                  <input
+                                    type="text"
+                                    value={editWaTitle}
+                                    onChange={(e) => setEditWaTitle(e.target.value)}
+                                    placeholder="Title"
+                                    className="w-full px-2 py-1 rounded-lg bg-black/60 border border-white/20 text-white text-xs"
+                                  />
+                                  <input
+                                    type="text"
+                                    value={editWaNumber}
+                                    onChange={(e) => setEditWaNumber(e.target.value)}
+                                    placeholder="WhatsApp Number"
+                                    className="w-full px-2 py-1 rounded-lg bg-black/60 border border-white/20 text-white font-mono text-xs"
+                                  />
+                                  <div className="flex gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSaveEditWa(item.id)}
+                                      className="flex-1 py-1 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold"
+                                    >
+                                      Save Update
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={handleCancelEditWa}
+                                      className="py-1 px-2 rounded-lg bg-white/10 text-gray-300 text-[11px]"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
                                 </div>
-                                <p className="text-xs font-mono font-bold text-emerald-300">{item.number}</p>
-                              </div>
+                              ) : (
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-xs font-bold text-white truncate">{item.title}</span>
+                                      {item.isPrimary && (
+                                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold uppercase">
+                                          Primary
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-xs font-mono font-bold text-emerald-300">{item.number}</p>
+                                  </div>
 
-                              <div className="flex items-center gap-1 flex-shrink-0">
-                                {!item.isPrimary && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleTogglePrimaryWhatsApp(item.id)}
-                                    className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] text-gray-300 hover:text-white"
-                                    title="Make Primary"
-                                  >
-                                    Set Primary
-                                  </button>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveWhatsAppHelpline(item.id)}
-                                  className="p-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/40 text-red-300 hover:text-white border border-red-500/30"
-                                  title="Remove Number"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
+                                  <div className="flex items-center gap-1 flex-shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleStartEditWa(item)}
+                                      className="p-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 hover:text-white border border-blue-500/30 text-[10px] font-bold flex items-center gap-0.5"
+                                      title="Update / Edit"
+                                    >
+                                      <Edit3 className="w-3 h-3" />
+                                      <span>Edit</span>
+                                    </button>
+                                    {!item.isPrimary && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleTogglePrimaryWhatsApp(item.id)}
+                                        className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] text-gray-300 hover:text-white"
+                                        title="Make Primary"
+                                      >
+                                        Set Primary
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveWhatsAppHelpline(item.id)}
+                                      className="p-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/40 text-red-300 hover:text-white border border-red-500/30"
+                                      title="Remove Number"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           ))
                         )}

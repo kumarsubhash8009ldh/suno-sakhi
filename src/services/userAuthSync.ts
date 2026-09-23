@@ -227,6 +227,73 @@ export const checkUserPhoneExists = async (identifier: string): Promise<boolean>
 };
 
 /**
+ * Check if a Profile Name is globally unique across all Callers and Hosts
+ * Case-insensitive match, trimmed.
+ */
+export const isProfileNameUnique = async (
+  name: string,
+  excludeId?: string,
+  excludePhone?: string
+): Promise<{ isUnique: boolean; message?: string }> => {
+  const cleanName = (name || '').trim();
+  if (!cleanName) {
+    return { isUnique: false, message: 'Profile Name khali nahi ho sakta.' };
+  }
+  const cleanNameLower = cleanName.toLowerCase();
+  const cleanPhone = (excludePhone || '').replace(/\D/g, '');
+
+  // 1. Check local users
+  const localUsers = getLocalRegisteredUsers();
+  for (const u of Object.values(localUsers)) {
+    if (u && u.name && u.name.trim().toLowerCase() === cleanNameLower) {
+      if (excludeId && u.id === excludeId) continue;
+      if (cleanPhone && u.phone && u.phone.replace(/\D/g, '') === cleanPhone) continue;
+      return {
+        isUnique: false,
+        message: '⚠️ Yeh Profile Name pehle se kisi aur ka hai! Kripya doosra unique naam chunein.'
+      };
+    }
+  }
+
+  // 2. Check local hosts store
+  try {
+    const rawHosts = localStorage.getItem('sunosakhi_host_accounts_store');
+    if (rawHosts) {
+      const hostsStore = JSON.parse(rawHosts);
+      for (const h of Object.values(hostsStore) as any[]) {
+        if (h && h.name && h.name.trim().toLowerCase() === cleanNameLower) {
+          if (excludeId && (h.hostId === excludeId || h.id === excludeId)) continue;
+          if (cleanPhone && h.phone && h.phone.replace(/\D/g, '') === cleanPhone) continue;
+          return {
+            isUnique: false,
+            message: '⚠️ Yeh Profile Name pehle se kisi aur ka hai! Kripya doosra unique naam chunein.'
+          };
+        }
+      }
+    }
+  } catch (e) {}
+
+  // 3. Check Backend API (/api/profile/check-name)
+  try {
+    const baseUrl = getApiBaseUrl();
+    const res = await fetch(`${baseUrl}/api/profile/check-name`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: cleanName, excludeId, excludePhone: cleanPhone })
+    });
+    const data = await res.json();
+    if (data && data.isUnique === false) {
+      return {
+        isUnique: false,
+        message: data.message || '⚠️ Yeh Profile Name pehle se kisi aur ka hai! Kripya doosra unique naam chunein.'
+      };
+    }
+  } catch (e) {}
+
+  return { isUnique: true };
+};
+
+/**
  * Retrieve user account by phone number
  */
 export const getUserAccount = async (phone: string): Promise<UserAccount | null> => {
@@ -334,7 +401,20 @@ export const registerNewUser = async (
   }
 
   const userId = cleanPhone ? 'caller-' + cleanPhone : 'caller-' + cleanEmail.replace(/[^a-z0-9]/g, '_');
-  const displayName = name?.trim() || (cleanPhone ? `Caller ${cleanPhone.slice(-4)}` : `User ${cleanEmail.split('@')[0]}`);
+  const customName = name?.trim();
+
+  // Validate unique profile name if custom name provided
+  if (customName && customName !== 'User' && !customName.startsWith('Caller ')) {
+    const nameCheck = await isProfileNameUnique(customName, userId, cleanPhone);
+    if (!nameCheck.isUnique) {
+      return {
+        success: false,
+        error: nameCheck.message || '⚠️ Yeh Profile Name pehle se kisi aur ka hai! Kripya doosra unique naam chunein.'
+      };
+    }
+  }
+
+  const displayName = customName || (cleanPhone ? `Caller ${cleanPhone.slice(-4)}` : `User ${cleanEmail.split('@')[0]}`);
 
   const newAccount: UserAccount = {
     id: userId,

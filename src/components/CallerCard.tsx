@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { Phone, Video, MessageCircle, ShieldCheck, Sparkles } from 'lucide-react';
 import { UserAccount } from '../services/userAuthSync';
 import { Sakhi } from '../types';
@@ -69,8 +69,9 @@ export const CallerCard: React.FC<CallerCardProps> = ({ caller }) => {
               </span>
             </div>
 
-            <p className="text-xs text-pink-300 font-mono mt-0.5 flex items-center gap-1">
-              <span>+91 {cleanPhone.replace(/(\d{5})(\d{5})/, '$1 $2')}</span>
+            <p className="text-xs text-pink-300/90 font-mono mt-0.5 flex items-center gap-1">
+              <span className="text-[10px] text-gray-400 uppercase tracking-wider">ID:</span>
+              <span className="font-bold">{caller.id || `caller-${cleanPhone.slice(-4)}`}</span>
             </p>
 
             <div className="flex items-center gap-2 mt-1 text-[11px] text-gray-400">

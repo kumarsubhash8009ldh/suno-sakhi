@@ -303,7 +303,7 @@ export const VideoCallModal: React.FC = () => {
         <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/50 backdrop-blur-md border border-white/10">
           <div className="w-2 h-2 rounded-full bg-emerald-400"></div>
           <span className="text-sm font-bold text-white">{activeSakhi.name}</span>
-          <span className="text-xs text-pink-300">({activeSakhi.city})</span>
+          <span className="text-[11px] font-mono text-pink-300">ID: {activeSakhi.id}</span>
           <Heart className="w-3.5 h-3.5 text-pink-400 fill-pink-400 ml-1" />
         </div>
 

@@ -21,7 +21,8 @@ import {
   loginExistingUser,
   broadcastAuthChange,
   getActiveSession,
-  logoutCurrentUser
+  logoutCurrentUser,
+  isProfileNameUnique
 } from '../services/userAuthSync';
 import { getSavedReferredBy } from '../services/referralSync';
 
@@ -156,6 +157,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setLoading(true);
 
     try {
+      const trimmedName = userName.trim();
+      if (trimmedName) {
+        const nameCheck = await isProfileNameUnique(trimmedName);
+        if (!nameCheck.isUnique) {
+          setErrorMessage(nameCheck.message || '⚠️ Yeh Profile Name pehle se kisi aur ka hai! Kripya doosra unique naam chunein.');
+          setLoading(false);
+          return;
+        }
+      }
+
       if (signupRole === 'host') {
         // Register brand new Sakhi Host
         const hostName = userName.trim() || (isEmail ? 'Sakhi Host' : `Sakhi ${clean.slice(-4)}`);
@@ -171,7 +182,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         if (regHostRes.success) {
           setUserRole('host');
-          setSuccessMessage(`🌸 Welcome ${hostName}! Aapka Sakhi Host account ban gaya hai. Host Studio khul gaya.`);
+          setSuccessMessage(`🌸 Welcome ${hostName}! Host account register ho gaya hai. KYC verify hone par account activate hoga.`);
           broadcastAuthChange();
           setTimeout(closeAndNotify, 700);
         } else {

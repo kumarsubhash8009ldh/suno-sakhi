@@ -177,6 +177,7 @@ export const VoiceCallModal: React.FC = () => {
 
         <div className="text-center mt-6">
           <h2 className="text-2xl font-bold tracking-tight">{activeSakhi.name}</h2>
+          <p className="text-xs font-mono text-pink-400 font-bold mt-0.5">ID: {activeSakhi.id}</p>
           <p className="text-xs text-pink-300/80 mt-1 flex items-center justify-center gap-1">
             <Heart className="w-3.5 h-3.5 text-pink-400 fill-pink-400" />
             <span>{activeSakhi.tagline || 'Live connected on SunoSakhi'}</span>

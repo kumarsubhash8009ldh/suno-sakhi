@@ -470,8 +470,10 @@ export const setHostVerificationStatus = async (
           status: isVerified ? 'online' : 'offline',
           verification: {
             status,
-            verifiedAt: Date.now(),
-            approvedBy: 'Admin'
+            verifiedAt: isVerified ? Date.now() : undefined,
+            approvedAt: isVerified ? Date.now() : undefined,
+            approvedBy: isVerified ? 'Admin' : undefined,
+            adminNote: adminNote || (isVerified ? 'Approved by Admin' : 'Rejected by Admin')
           }
         },
         { merge: true }
@@ -481,20 +483,27 @@ export const setHostVerificationStatus = async (
     }
   }
 
-  // 3. Update current localStorage hostProfile if this matches
+  // 3. Update current localStorage hostProfile
   try {
-    const saved = localStorage.getItem('sunosakhi_host_profile_v2');
-    if (saved) {
-      const current = JSON.parse(saved);
-      if (current && (current.id === hostId || hostId.includes(current.phone || 'xyz'))) {
-        current.isVerified = isVerified;
-        current.status = isVerified ? 'online' : 'offline';
-        if (!current.verification) current.verification = {};
-        current.verification.status = status;
-        current.verification.verifiedAt = Date.now();
-        localStorage.setItem('sunosakhi_host_profile_v2', JSON.stringify(current));
+    ['sunosakhi_host_profile', 'sunosakhi_host_profile_v2'].forEach((key) => {
+      const saved = localStorage.getItem(key);
+      if (saved) {
+        const current = JSON.parse(saved);
+        if (current && (current.id === hostId || hostId.includes(current.phone || 'xyz') || (current.phone && hostId.includes(current.phone)))) {
+          current.isVerified = isVerified;
+          current.status = isVerified ? 'online' : 'offline';
+          if (!current.verification) current.verification = {};
+          current.verification.status = status;
+          current.verification.adminNote = adminNote;
+          if (isVerified) {
+            current.verification.verifiedAt = Date.now();
+            current.verification.approvedAt = Date.now();
+            current.verification.approvedBy = 'Admin';
+          }
+          localStorage.setItem(key, JSON.stringify(current));
+        }
       }
-    }
+    });
   } catch (e) {}
 
   return {

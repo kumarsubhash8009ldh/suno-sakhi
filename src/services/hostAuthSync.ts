@@ -2,6 +2,7 @@ import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase';
 import { HostProfile, HostAccountRecord } from '../types';
 import { getApiBaseUrl } from './apiConfig';
+import { isProfileNameUnique } from './userAuthSync';
 
 const HOST_ACCOUNTS_COLLECTION = 'host_accounts';
 const HOSTS_COLLECTION = 'hosts';
@@ -175,6 +176,15 @@ export const registerHostWithPhone = async (params: {
     ? 'sakhi-host-' + normalized.replace(/[^a-z0-9]/g, '_')
     : 'sakhi-user-' + normalized;
 
+  // Validate unique profile name
+  const nameCheck = await isProfileNameUnique(params.name.trim(), hostId, normalized);
+  if (!nameCheck.isUnique) {
+    return {
+      success: false,
+      error: nameCheck.message || '⚠️ Yeh Profile Name pehle se kisi aur ka hai! Kripya doosra unique naam chunein.'
+    };
+  }
+
   const newAccount: HostAccountRecord = {
     phone: isEmail ? '' : normalized,
     email: isEmail ? normalized : undefined,
@@ -185,7 +195,7 @@ export const registerHostWithPhone = async (params: {
     lastLoginAt: Date.now()
   };
 
-  const isIdVerified = Boolean(params.panNumber && params.residentIdNumber);
+  const isIdSubmitted = Boolean(params.panNumber && params.residentIdNumber);
   const residentType = params.residentIdType || 'aadhaar';
   const residentNum = params.residentIdNumber || '';
   const panNum = (params.panNumber || '').toUpperCase();
@@ -199,7 +209,7 @@ export const registerHostWithPhone = async (params: {
     city: params.city.trim() || 'Delhi',
     avatar: selfiePhoto,
     videoPoster: selfiePhoto,
-    status: 'online', // DIRECT ACTIVE!
+    status: 'offline', // Requires Admin Approval
     rating: 5.0,
     totalCalls: 0,
     languages: params.languages.length > 0 ? params.languages : ['Hindi', 'English'],
@@ -208,8 +218,8 @@ export const registerHostWithPhone = async (params: {
     voiceRatePerMin: 5,
     videoRatePerMin: 10,
     audioSnippet: 'https://actions.google.com/sounds/v1/human_voices/female_laugh.ogg',
-    tagline: '🌸 Verified Female Companion',
-    isVerified: true, // DIRECT ACTIVE!
+    tagline: '🌸 Female Companion',
+    isVerified: false, // Requires Admin Approval
     phone: isEmail ? '' : normalized,
     email: isEmail ? normalized : undefined,
     totalVoiceMinutes: 0,
@@ -220,15 +230,17 @@ export const registerHostWithPhone = async (params: {
     netIncome: 0,
     pendingPayout: 0,
     verification: {
-      panNumber: panNum || 'DIRECT_ACTIVE',
-      residentIdType: residentType,
-      residentIdNumber: residentNum || 'DIRECT_ACTIVE',
+      panNumber: panNum,
+      secondaryIdType: residentType === 'passport' ? 'aadhaar' : (residentType as any),
+      secondaryIdNumber: residentNum,
       selfieUrl: selfiePhoto,
       gender: 'female',
-      status: 'verified', // DIRECTLY ACTIVE
-      verifiedAt: Date.now(),
+      status: isIdSubmitted ? 'pending' : 'unverified',
+      submittedAt: isIdSubmitted ? Date.now() : undefined,
+      residentIdType: residentType,
+      residentIdNumber: residentNum,
       idType: residentType,
-      idNumber: residentNum || 'DIRECT_ACTIVE'
+      idNumber: residentNum
     },
     incomeHistory: []
   };

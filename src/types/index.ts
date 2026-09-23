@@ -86,14 +86,25 @@ export interface HostIncomeRecord {
 export interface HostVerificationData {
   panNumber?: string;
   panDocUrl?: string;
+  secondaryIdType?: 'aadhaar' | 'voter' | 'driving_license';
+  secondaryIdNumber?: string;
+  secondaryDocUrl?: string;
+  selfieUrl: string; // Live photo
+  gender?: 'female';
+  femaleCertified?: boolean;
+  status: 'unverified' | 'pending' | 'verified' | 'rejected';
+  submittedAt?: number | string;
+  verifiedAt?: number | string;
+  approvedAt?: number | string;
+  approvedBy?: string;
+  adminNote?: string;
+  // Backward compatibility
+  aadhaarNumber?: string;
+  aadhaarFrontUrl?: string;
+  aadhaarBackUrl?: string;
   residentIdType?: 'aadhaar' | 'voter' | 'passport' | 'driving_license';
   residentIdNumber?: string;
   residentDocUrl?: string;
-  selfieUrl: string;
-  gender?: 'female';
-  status: 'unverified' | 'pending' | 'verified';
-  verifiedAt?: number;
-  // Backward compatibility
   idType?: string;
   idNumber?: string;
 }

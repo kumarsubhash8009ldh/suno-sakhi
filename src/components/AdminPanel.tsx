@@ -39,7 +39,10 @@ import {
   Image as ImageIcon,
   PlusCircle,
   ExternalLink,
-  Download
+  Download,
+  Eye,
+  FileText,
+  Camera
 } from 'lucide-react';
 import { useAdmin } from '../context/AdminContext';
 import { useWallet } from '../context/WalletContext';
@@ -175,6 +178,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
   const [depositNote, setDepositNote] = useState<string>('');
   const [isSubmittingDeposit, setIsSubmittingDeposit] = useState<boolean>(false);
 
+  // Host KYC Inspection & Review Modal States
+  const [reviewingHostKyc, setReviewingHostKyc] = useState<HostProfile | null>(null);
+  const [kycAdminNote, setKycAdminNote] = useState<string>('');
+  const [kycProcessing, setKycProcessing] = useState<boolean>(false);
+  const [hostKycFilter, setHostKycFilter] = useState<'all' | 'pending' | 'verified' | 'rejected'>('all');
+  const [expandedDocImage, setExpandedDocImage] = useState<string | null>(null);
+
   const showToast = (type: 'success' | 'error', text: string) => {
     setToastMsg({ type, text });
     setTimeout(() => setToastMsg(null), 4000);
@@ -231,6 +241,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
   // Filtered lists
   const filteredHosts = useMemo(() => {
     return hostsList.filter((h) => {
+      // Filter by KYC tab
+      if (hostKycFilter === 'pending' && (!h || h.isVerified || h.verification?.status !== 'pending')) {
+        return false;
+      }
+      if (hostKycFilter === 'verified' && (!h || !h.isVerified || h.verification?.status !== 'verified')) {
+        return false;
+      }
+      if (hostKycFilter === 'rejected' && (!h || h.verification?.status !== 'rejected')) {
+        return false;
+      }
+
       const query = hostSearch.toLowerCase().trim();
       if (!query) return true;
       return (
@@ -240,7 +261,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
         (h.city || '').toLowerCase().includes(query)
       );
     });
-  }, [hostsList, hostSearch]);
+  }, [hostsList, hostSearch, hostKycFilter]);
 
   const filteredUsers = useMemo(() => {
     return usersList.filter((u) => {
@@ -525,12 +546,44 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
     loadData();
   };
 
-  // Handler: Toggle Host Aadhaar Verification
+  // Handler: Toggle Host Verification
   const handleToggleHostVerification = async (h: HostProfile) => {
     const newStatus = !h.isVerified;
     await setHostVerificationStatus(h.id, newStatus);
     showToast('success', `Host (${h.name}) verification status ${newStatus ? 'Verified ✅' : 'Unverified ⚠️'} kar diya gaya!`);
     loadData();
+  };
+
+  // Handler: Approve Host KYC from Review Modal
+  const handleApproveHostKyc = async (hostId: string) => {
+    setKycProcessing(true);
+    try {
+      const res = await setHostVerificationStatus(hostId, true, kycAdminNote || 'Approved by Super Admin');
+      showToast('success', res.message || 'Host successfully approved & activated!');
+      setReviewingHostKyc(null);
+      setKycAdminNote('');
+      await loadData();
+    } catch (err: any) {
+      showToast('error', err?.message || 'Host approve karne me samasya aayi.');
+    } finally {
+      setKycProcessing(false);
+    }
+  };
+
+  // Handler: Reject Host KYC from Review Modal
+  const handleRejectHostKyc = async (hostId: string) => {
+    setKycProcessing(true);
+    try {
+      const res = await setHostVerificationStatus(hostId, false, kycAdminNote.trim() || 'Admin verification rejected');
+      showToast('success', res.message || 'Host KYC reject kar di gayi.');
+      setReviewingHostKyc(null);
+      setKycAdminNote('');
+      await loadData();
+    } catch (err: any) {
+      showToast('error', err?.message || 'Host reject karne me samasya aayi.');
+    } finally {
+      setKycProcessing(false);
+    }
   };
 
   // Handler: Save Platform Settings
@@ -1416,7 +1469,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
           {/* ========================================================================= */}
           {activeTab === 'hosts' && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
                   <h3 className="text-base font-black text-white">Registered Host Girls ({hostsList.length})</h3>
                   <p className="text-xs text-pink-300">Sabhi Host IDs, Mobile Numbers, Call Minutes aur Host Earnings</p>
@@ -1432,6 +1485,57 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
                     className="w-full pl-9 pr-3 py-2 rounded-xl bg-black/60 border border-pink-500/30 text-white text-xs focus:outline-none"
                   />
                 </div>
+              </div>
+
+              {/* Host KYC Status Filter Pills */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setHostKycFilter('all')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                    hostKycFilter === 'all'
+                      ? 'bg-pink-600 text-white border-pink-400 shadow-md'
+                      : 'bg-white/5 text-gray-300 border-white/10 hover:bg-white/10'
+                  }`}
+                >
+                  All Hosts ({hostsList.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHostKycFilter('pending')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 ${
+                    hostKycFilter === 'pending'
+                      ? 'bg-amber-500 text-black border-amber-400 font-black shadow-md'
+                      : 'bg-amber-950/40 text-amber-300 border-amber-500/30 hover:bg-amber-900/40'
+                  }`}
+                >
+                  <span>⏳ Pending KYC Approval</span>
+                  <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-black text-[10px] font-black">
+                    {hostsList.filter((h) => !h.isVerified && h.verification?.status === 'pending').length}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHostKycFilter('verified')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                    hostKycFilter === 'verified'
+                      ? 'bg-emerald-600 text-white border-emerald-400 shadow-md'
+                      : 'bg-emerald-950/40 text-emerald-300 border-emerald-500/30 hover:bg-emerald-900/40'
+                  }`}
+                >
+                  ✅ Approved ({hostsList.filter((h) => h.isVerified && h.verification?.status === 'verified').length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHostKycFilter('rejected')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                    hostKycFilter === 'rejected'
+                      ? 'bg-red-600 text-white border-red-400 shadow-md'
+                      : 'bg-red-950/40 text-red-300 border-red-500/30 hover:bg-red-900/40'
+                  }`}
+                >
+                  ❌ Rejected ({hostsList.filter((h) => h.verification?.status === 'rejected').length})
+                </button>
               </div>
 
               {filteredHosts.length === 0 ? (
@@ -1479,13 +1583,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
                           }`}>
                             {host.status}
                           </span>
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                            host.isVerified
-                              ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
-                              : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                          }`}>
-                            {host.isVerified ? '✓ Aadhaar Verified' : '⚠️ Unverified'}
-                          </span>
+                          {host.isVerified && host.verification?.status === 'verified' ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                              ✅ KYC Approved
+                            </span>
+                          ) : host.verification?.status === 'pending' ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-500/30 text-amber-200 border border-amber-500/50 animate-pulse">
+                              ⏳ KYC Pending Approval
+                            </span>
+                          ) : host.verification?.status === 'rejected' ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-red-500/20 text-red-300 border border-red-500/30">
+                              ❌ KYC Rejected
+                            </span>
+                          ) : (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-gray-500/20 text-gray-300 border border-gray-500/30">
+                              ⚠️ KYC Unsubmitted
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -1585,12 +1699,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
                           <span>Deposit</span>
                         </button>
 
+                        {/* Review Host KYC Button */}
                         <button
-                          onClick={() => handleToggleHostVerification(host)}
-                          className="py-1.5 px-2 rounded-xl bg-blue-950/60 hover:bg-blue-900/60 border border-blue-500/30 text-blue-300 font-bold text-xs"
-                          title="Toggle Verification"
+                          onClick={() => {
+                            setReviewingHostKyc(host);
+                            setKycAdminNote(host.verification?.adminNote || '');
+                          }}
+                          className={`py-1.5 px-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1 border shadow transition-all ${
+                            host.verification?.status === 'pending'
+                              ? 'bg-amber-500 hover:bg-amber-400 text-black border-amber-300 font-black animate-pulse'
+                              : host.isVerified && host.verification?.status === 'verified'
+                              ? 'bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border-emerald-500/40'
+                              : 'bg-pink-950/60 hover:bg-pink-900 text-pink-300 border-pink-500/30'
+                          }`}
+                          title="Review KYC Live Photo, PAN & Government ID"
                         >
-                          {host.isVerified ? 'Unverify' : 'Verify ID'}
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>{host.verification?.status === 'pending' ? 'Review KYC (!)' : 'Review KYC'}</span>
                         </button>
 
                         <button
@@ -2932,8 +3057,345 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
             </div>
           </div>
         )}
+
+        {/* ========================================================================= */}
+        {/* MODAL: KYC REVIEW & APPROVAL MODAL (Live Photo + PAN + Secondary ID)     */}
+        {/* ========================================================================= */}
+        {reviewingHostKyc && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+            <div className="relative w-full max-w-3xl rounded-3xl bg-gradient-to-b from-[#1c081e] to-[#0a000c] border border-pink-500/40 p-5 sm:p-6 shadow-2xl max-h-[92vh] overflow-y-auto">
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setReviewingHostKyc(null);
+                  setKycAdminNote('');
+                }}
+                className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              {/* Header */}
+              <div className="flex items-center gap-3.5 mb-5 pb-4 border-b border-pink-500/20">
+                <img
+                  src={reviewingHostKyc.avatar}
+                  alt={reviewingHostKyc.name}
+                  className="w-16 h-16 rounded-2xl object-cover border-2 border-pink-500 shadow-md flex-shrink-0"
+                />
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-lg font-black text-white">{reviewingHostKyc.name}</h3>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-pink-500/20 text-pink-300 font-mono font-bold">
+                      Age {reviewingHostKyc.age}
+                    </span>
+                    {reviewingHostKyc.isVerified && reviewingHostKyc.verification?.status === 'verified' ? (
+                      <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold">
+                        ✅ Approved
+                      </span>
+                    ) : reviewingHostKyc.verification?.status === 'pending' ? (
+                      <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-500/30 text-amber-200 border border-amber-500/50 font-bold animate-pulse">
+                        ⏳ Pending Approval
+                      </span>
+                    ) : reviewingHostKyc.verification?.status === 'rejected' ? (
+                      <span className="text-xs px-2.5 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/40 font-bold">
+                        ❌ Rejected
+                      </span>
+                    ) : (
+                      <span className="text-xs px-2.5 py-0.5 rounded-full bg-gray-500/20 text-gray-300 border border-gray-500/40 font-bold">
+                        ⚠️ Unsubmitted
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs font-mono text-pink-400 font-bold mt-0.5">
+                    Host ID: {reviewingHostKyc.id}
+                  </p>
+                  <p className="text-xs text-gray-300 mt-0.5">
+                    Mobile: <span className="font-mono text-white font-bold">+91 {reviewingHostKyc.phone}</span> • City: {reviewingHostKyc.city} • Lang: {reviewingHostKyc.languages?.join(', ')}
+                  </p>
+                </div>
+              </div>
+
+              {/* Policy Banner */}
+              <div className="p-3 rounded-2xl bg-pink-950/40 border border-pink-500/30 text-xs text-pink-200 mb-5 flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-pink-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <strong className="text-pink-300 font-bold block">Host Verification Guidelines:</strong>
+                  Host tabhi online jaa sakti hai aur calls receive kar sakti hai jab Super Admin Live Photo, PAN Card aur Secondary ID (Aadhaar / Voter / Licence) verify karke Approve kare.
+                </div>
+              </div>
+
+              {/* Verification Documents 3-Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+                {/* 1. Live Selfie Capture */}
+                <div className="p-3.5 rounded-2xl bg-black/50 border border-white/10 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-white">
+                        <Camera className="w-4 h-4 text-pink-400" />
+                        <span>1. Live Photo</span>
+                      </div>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                        reviewingHostKyc.verification?.selfieUrl
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                          : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      }`}>
+                        {reviewingHostKyc.verification?.selfieUrl ? 'Captured' : 'Missing'}
+                      </span>
+                    </div>
+
+                    <p className="text-[11px] text-gray-400 mb-2">Real-time live camera selfie</p>
+
+                    <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-black/60 border border-white/10 group cursor-pointer"
+                      onClick={() => {
+                        const url = reviewingHostKyc.verification?.selfieUrl || reviewingHostKyc.avatar;
+                        if (url) setExpandedDocImage(url);
+                      }}
+                    >
+                      <img
+                        src={reviewingHostKyc.verification?.selfieUrl || reviewingHostKyc.avatar}
+                        alt="Live Selfie"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                      />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                        <span className="text-[11px] font-bold text-white bg-black/70 px-2 py-1 rounded-lg flex items-center gap-1">
+                          <Eye className="w-3.5 h-3.5" /> Zoom
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <p className="text-[10px] text-gray-400 text-center mt-2">
+                    Click image to inspect full-size
+                  </p>
+                </div>
+
+                {/* 2. Mandatory PAN Card */}
+                <div className="p-3.5 rounded-2xl bg-black/50 border border-white/10 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-white">
+                        <CreditCard className="w-4 h-4 text-amber-400" />
+                        <span>2. PAN Card</span>
+                      </div>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                        reviewingHostKyc.verification?.panDocUrl
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                          : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      }`}>
+                        {reviewingHostKyc.verification?.panDocUrl ? 'Uploaded' : 'Missing'}
+                      </span>
+                    </div>
+
+                    <div className="mb-2">
+                      <span className="text-[10px] text-gray-400 block">PAN Number:</span>
+                      <span className="text-xs font-mono font-black text-amber-300 tracking-wider">
+                        {reviewingHostKyc.verification?.panNumber || 'Not provided'}
+                      </span>
+                    </div>
+
+                    <div
+                      className="relative aspect-[3/4] rounded-xl overflow-hidden bg-black/60 border border-white/10 group cursor-pointer flex items-center justify-center"
+                      onClick={() => {
+                        if (reviewingHostKyc.verification?.panDocUrl) {
+                          setExpandedDocImage(reviewingHostKyc.verification.panDocUrl);
+                        }
+                      }}
+                    >
+                      {reviewingHostKyc.verification?.panDocUrl ? (
+                        <>
+                          <img
+                            src={reviewingHostKyc.verification.panDocUrl}
+                            alt="PAN Card"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                          />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                            <span className="text-[11px] font-bold text-white bg-black/70 px-2 py-1 rounded-lg flex items-center gap-1">
+                              <Eye className="w-3.5 h-3.5" /> Zoom
+                            </span>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="p-4 text-center text-gray-500 text-xs">
+                          <FileText className="w-8 h-8 mx-auto mb-1 opacity-40" />
+                          PAN Card photo nahi mili
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <p className="text-[10px] text-gray-400 text-center mt-2">
+                    Click image to inspect full-size
+                  </p>
+                </div>
+
+                {/* 3. Secondary ID (1 of 3: Aadhaar / Voter / Licence) */}
+                <div className="p-3.5 rounded-2xl bg-black/50 border border-white/10 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-white">
+                        <FileText className="w-4 h-4 text-blue-400" />
+                        <span>3. Secondary ID</span>
+                      </div>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                        (reviewingHostKyc.verification?.secondaryDocUrl || reviewingHostKyc.verification?.aadhaarFrontUrl)
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                          : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      }`}>
+                        {(reviewingHostKyc.verification?.secondaryDocUrl || reviewingHostKyc.verification?.aadhaarFrontUrl) ? 'Uploaded' : 'Missing'}
+                      </span>
+                    </div>
+
+                    <div className="mb-2">
+                      <span className="text-[10px] text-gray-400 block">
+                        Type:{' '}
+                        <strong className="text-white">
+                          {reviewingHostKyc.verification?.secondaryIdType === 'aadhaar'
+                            ? 'Aadhaar Card'
+                            : reviewingHostKyc.verification?.secondaryIdType === 'voter'
+                            ? 'Voter ID'
+                            : reviewingHostKyc.verification?.secondaryIdType === 'driving_license'
+                            ? 'Driving Licence'
+                            : reviewingHostKyc.verification?.aadhaarNumber
+                            ? 'Aadhaar Card (Legacy)'
+                            : 'Not Selected'}
+                        </strong>
+                      </span>
+                      <span className="text-xs font-mono font-black text-blue-300 tracking-wider">
+                        {reviewingHostKyc.verification?.secondaryIdNumber ||
+                          reviewingHostKyc.verification?.aadhaarNumber ||
+                          'Not provided'}
+                      </span>
+                    </div>
+
+                    <div
+                      className="relative aspect-[3/4] rounded-xl overflow-hidden bg-black/60 border border-white/10 group cursor-pointer flex items-center justify-center"
+                      onClick={() => {
+                        const doc = reviewingHostKyc.verification?.secondaryDocUrl || reviewingHostKyc.verification?.aadhaarFrontUrl;
+                        if (doc) setExpandedDocImage(doc);
+                      }}
+                    >
+                      {(reviewingHostKyc.verification?.secondaryDocUrl || reviewingHostKyc.verification?.aadhaarFrontUrl) ? (
+                        <>
+                          <img
+                            src={reviewingHostKyc.verification?.secondaryDocUrl || reviewingHostKyc.verification?.aadhaarFrontUrl}
+                            alt="Secondary ID"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                          />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                            <span className="text-[11px] font-bold text-white bg-black/70 px-2 py-1 rounded-lg flex items-center gap-1">
+                              <Eye className="w-3.5 h-3.5" /> Zoom
+                            </span>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="p-4 text-center text-gray-500 text-xs">
+                          <FileText className="w-8 h-8 mx-auto mb-1 opacity-40" />
+                          Document photo nahi mili
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <p className="text-[10px] text-gray-400 text-center mt-2">
+                    Click image to inspect full-size
+                  </p>
+                </div>
+              </div>
+
+              {/* Female Certified & Metadata Info */}
+              <div className="p-3 rounded-2xl bg-black/40 border border-white/10 text-xs text-gray-300 mb-4 flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <span className="text-gray-400">Female Host Certified: </span>
+                  <strong className="text-emerald-400 font-bold">
+                    {reviewingHostKyc.verification?.femaleCertified !== false ? '✅ Yes (Confirmed by Host)' : '❌ Not confirmed'}
+                  </strong>
+                </div>
+                {reviewingHostKyc.verification?.submittedAt && (
+                  <div className="text-[11px] text-gray-400">
+                    Submitted: {new Date(reviewingHostKyc.verification.submittedAt).toLocaleString()}
+                  </div>
+                )}
+              </div>
+
+              {/* Previous Note (if present) */}
+              {reviewingHostKyc.verification?.adminNote && (
+                <div className="p-3 rounded-xl bg-white/5 border border-white/10 mb-4 text-xs">
+                  <span className="text-gray-400 block mb-0.5">Previous Admin Note:</span>
+                  <span className="text-white font-mono">{reviewingHostKyc.verification.adminNote}</span>
+                </div>
+              )}
+
+              {/* Admin Note Input */}
+              <div className="mb-5">
+                <label className="text-xs font-semibold text-gray-300 block mb-1.5">
+                  Admin Decision Note / Reason (Optional for approve, required for rejection):
+                </label>
+                <input
+                  type="text"
+                  value={kycAdminNote}
+                  onChange={(e) => setKycAdminNote(e.target.value)}
+                  placeholder="e.g. All documents verified & approved OR Photo/PAN blur hai..."
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/10 text-white text-xs focus:outline-none focus:border-pink-500"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  disabled={kycProcessing}
+                  onClick={() => handleRejectHostKyc(reviewingHostKyc.id)}
+                  className="flex-1 py-3 rounded-xl bg-red-600/20 hover:bg-red-600/40 border border-red-500/40 text-red-300 hover:text-white font-bold text-xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 shadow"
+                >
+                  <XCircle className="w-4 h-4" />
+                  <span>{kycProcessing ? 'Processing...' : '❌ Reject KYC'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={kycProcessing}
+                  onClick={() => handleApproveHostKyc(reviewingHostKyc.id)}
+                  className="flex-1 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white font-black text-xs shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-1.5 disabled:opacity-50 transition-all"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{kycProcessing ? 'Approving...' : '✅ Approve & Activate Host ID'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* MODAL: EXPANDED DOCUMENT ZOOM MODAL                                       */}
+        {/* ========================================================================= */}
+        {expandedDocImage && (
+          <div
+            className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 cursor-pointer"
+            onClick={() => setExpandedDocImage(null)}
+          >
+            <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center">
+              <button
+                type="button"
+                onClick={() => setExpandedDocImage(null)}
+                className="absolute -top-10 right-0 p-2 text-white/80 hover:text-white bg-white/10 rounded-full"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <img
+                src={expandedDocImage}
+                alt="Document Full Preview"
+                className="max-w-full max-h-[85vh] object-contain rounded-2xl border-2 border-pink-500/60 shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              />
+              <p className="text-xs text-gray-400 mt-2">Click outside or press X to close</p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 };
+
+export default AdminPanel;
 

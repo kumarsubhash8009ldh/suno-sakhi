@@ -79,13 +79,14 @@ function loadDatabase() {
         if (Array.isArray(saved.payouts)) db.payouts = saved.payouts;
         if (saved.rechargeRequests && typeof saved.rechargeRequests === 'object') db.rechargeRequests = saved.rechargeRequests;
         if (saved.chatMessages && typeof saved.chatMessages === 'object') db.chatMessages = saved.chatMessages;
-        // Ensure all registered hosts are active & verified for direct activation and have live earnings initialized
+        // Preserve host verification status and ensure earnings fields are initialized
         Object.values(db.hosts).forEach((h) => {
           if (h && typeof h === 'object') {
-            h.isVerified = true;
-            if (!h.verification) h.verification = {};
-            h.verification.status = 'verified';
-            if (!h.status || h.status === 'offline') h.status = 'online';
+            if (h.isVerified === undefined) h.isVerified = false;
+            if (!h.verification) {
+              h.verification = { status: h.isVerified ? 'verified' : 'unverified' };
+            }
+            if (!h.status) h.status = h.isVerified ? 'online' : 'offline';
             if (h.netIncome === undefined) h.netIncome = 0;
             if (h.pendingPayout === undefined) h.pendingPayout = 0;
             if (h.grossRevenue === undefined) h.grossRevenue = 0;
@@ -789,6 +790,8 @@ const server = http.createServer(async (req, res) => {
       if (h.name.toLowerCase().startsWith('caller') || h.role === 'caller') return false;
       // MUST BE FEMALE
       if (h.gender && h.gender !== 'female') return false;
+      // MUST BE VERIFIED & APPROVED BY ADMIN
+      if (!h.isVerified || h.verification?.status !== 'verified') return false;
       if (
         h.id.startsWith('host_priya') ||
         h.id.startsWith('host_ananya') ||
@@ -814,6 +817,49 @@ const server = http.createServer(async (req, res) => {
     }
     const deduplicated = Array.from(uniqueMap.values());
     return sendJson(res, 200, { success: true, hosts: deduplicated });
+  }
+
+  // 3b. Profile Name Uniqueness Check Endpoint
+  if (pathname === '/api/profile/check-name' && (req.method === 'GET' || req.method === 'POST')) {
+    let name = '';
+    let excludeId = '';
+    let excludePhone = '';
+    if (req.method === 'POST') {
+      const body = await parseBody(req);
+      name = String(body.name || '').trim();
+      excludeId = String(body.excludeId || '').trim();
+      excludePhone = String(body.excludePhone || '').replace(/\D/g, '');
+    } else {
+      name = String(parsedUrl.query.name || '').trim();
+      excludeId = String(parsedUrl.query.excludeId || '').trim();
+      excludePhone = String(parsedUrl.query.excludePhone || '').replace(/\D/g, '');
+    }
+
+    if (!name) {
+      return sendJson(res, 200, { success: true, isUnique: true });
+    }
+
+    const nameLower = name.toLowerCase();
+    const isCallerNameTaken = Object.values(db.users).some(
+      (u) => u && u.name && u.name.trim().toLowerCase() === nameLower &&
+             (!excludeId || u.id !== excludeId) &&
+             (!excludePhone || u.phone !== excludePhone)
+    );
+    const isHostNameTaken = Object.values(db.hosts).some(
+      (h) => h && h.name && h.name.trim().toLowerCase() === nameLower &&
+             (!excludeId || h.id !== excludeId) &&
+             (!excludePhone || h.phone !== excludePhone)
+    );
+
+    if (isCallerNameTaken || isHostNameTaken) {
+      return sendJson(res, 200, {
+        success: true,
+        isUnique: false,
+        message: '⚠️ Yeh Profile Name pehle se kisi aur ka hai! Kripya doosra unique naam chunein.'
+      });
+    }
+
+    return sendJson(res, 200, { success: true, isUnique: true });
   }
 
   // 4. Register or Update Host (Supports Phone or Email)
@@ -847,6 +893,23 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    const hostId = cleanPhone ? `host_${cleanPhone}` : `host_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`;
+
+    // Enforce unique profile name across all hosts and callers
+    const nameLower = cleanName.toLowerCase();
+    const isHostNameTaken = Object.values(db.hosts).some(
+      (h) => h && h.name && h.name.trim().toLowerCase() === nameLower && h.id !== hostId && (cleanPhone ? h.phone !== cleanPhone : true)
+    );
+    const isCallerNameTaken = Object.values(db.users).some(
+      (u) => u && u.name && u.name.trim().toLowerCase() === nameLower && (cleanPhone ? u.phone !== cleanPhone : true)
+    );
+    if (isHostNameTaken || isCallerNameTaken) {
+      return sendJson(res, 400, {
+        success: false,
+        message: '⚠️ Yeh Profile Name pehle se kisi aur ka hai! Kripya doosra unique naam chunein.'
+      });
+    }
+
     // Purge any existing duplicates with same phone or email to enforce 1 single record
     for (const [k, existing] of Object.entries(db.hosts)) {
       if (!existing) continue;
@@ -857,12 +920,16 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    const hostId = cleanPhone ? `host_${cleanPhone}` : `host_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`;
-    const panNum = String(body.panNumber || body.verification?.panNumber || 'DIRECT_ACTIVE').toUpperCase().trim();
-    const residentType = body.residentIdType || body.verification?.residentIdType || 'aadhaar';
-    const residentNum = String(body.residentIdNumber || body.verification?.residentIdNumber || body.verification?.idNumber || 'DIRECT_ACTIVE').trim();
+    const panNum = String(body.panNumber || body.verification?.panNumber || '').toUpperCase().trim();
+    const panDoc = body.panDocUrl || body.verification?.panDocUrl || '';
+    const secondaryType = body.secondaryIdType || body.verification?.secondaryIdType || body.residentIdType || 'aadhaar';
+    const secondaryNum = String(body.secondaryIdNumber || body.verification?.secondaryIdNumber || body.residentIdNumber || '').trim();
+    const secondaryDoc = body.secondaryDocUrl || body.verification?.secondaryDocUrl || '';
     const selfiePhoto = body.selfieUrl || body.verification?.selfieUrl || body.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600&auto=format&fit=crop&q=80';
     const sessionToken = generateSessionToken();
+
+    const hasKycSubmitted = Boolean(panNum && secondaryNum);
+    const initialStatus = hasKycSubmitted ? 'pending' : (body.verification?.status || 'unverified');
 
     const newHost = {
       id: hostId,
@@ -872,7 +939,7 @@ const server = http.createServer(async (req, res) => {
       city: body.city || 'India',
       avatar: selfiePhoto,
       videoPoster: body.videoPoster || selfiePhoto,
-      status: 'online', // DIRECT INSTANT ACTIVATION!
+      status: 'offline', // Requires Admin approval
       rating: Number(body.rating) || 5.0,
       totalCalls: Number(body.totalCalls) || 0,
       languages: Array.isArray(body.languages) && body.languages.length > 0 ? body.languages : ['Hindi'],
@@ -880,24 +947,28 @@ const server = http.createServer(async (req, res) => {
       interests: Array.isArray(body.interests) && body.interests.length > 0 ? body.interests : ['Friendly Chat'],
       voiceRatePerMin: 5,
       videoRatePerMin: 10,
-      tagline: '🌸 Verified Female Companion',
+      tagline: '🌸 Female Companion',
       phone: cleanPhone || '',
       email: cleanEmail || '',
       password: String(body.password || 'sakhi123'),
-      isVerified: true, // DIRECT INSTANT VERIFICATION!
+      isVerified: false, // Requires Admin approval
       activeSessionToken: sessionToken,
       lastLoginAt: Date.now(),
       verification: {
         panNumber: panNum,
-        residentIdType: residentType,
-        residentIdNumber: residentNum,
+        panDocUrl: panDoc,
+        secondaryIdType: secondaryType,
+        secondaryIdNumber: secondaryNum,
+        secondaryDocUrl: secondaryDoc,
         selfieUrl: selfiePhoto,
         gender: 'female',
-        status: 'verified',
-        submittedAt: Date.now(),
-        verifiedAt: Date.now(),
-        idType: residentType,
-        idNumber: residentNum
+        status: initialStatus,
+        submittedAt: hasKycSubmitted ? Date.now() : undefined,
+        residentIdType: secondaryType,
+        residentIdNumber: secondaryNum,
+        residentDocUrl: secondaryDoc,
+        idType: secondaryType,
+        idNumber: secondaryNum
       },
       netIncome: Number(body.netIncome) || 0,
       pendingPayout: Number(body.pendingPayout) || 0,
@@ -911,8 +982,65 @@ const server = http.createServer(async (req, res) => {
 
     db.hosts[hostId] = newHost;
     saveDatabase();
-    console.log(`🌸 [HOST REGISTERED - DIRECT ACTIVE] ${newHost.name} (${newHost.phone || newHost.email}) ID: ${hostId}`);
+    console.log(`🌸 [HOST REGISTERED - PENDING ADMIN APPROVAL] ${newHost.name} (${newHost.phone || newHost.email}) ID: ${hostId}`);
     return sendJson(res, 200, { success: true, host: newHost, sessionToken });
+  }
+
+  // 4a. Host KYC Verification Submission Endpoint
+  if (pathname === '/api/hosts/verification' && req.method === 'POST') {
+    const body = await parseBody(req);
+    const hostId = body.hostId || body.id;
+    const cleanPhone = String(body.phone || hostId || '').replace(/\D/g, '');
+
+    const foundId = Object.keys(db.hosts).find(
+      (k) => k === hostId || (cleanPhone && cleanPhone.length >= 10 && (k.includes(cleanPhone) || db.hosts[k].phone === cleanPhone))
+    );
+
+    if (!foundId || !db.hosts[foundId]) {
+      return sendJson(res, 404, { success: false, message: 'Host profile nahi mili.' });
+    }
+
+    const host = db.hosts[foundId];
+    const panNum = String(body.panNumber || '').toUpperCase().trim();
+    const panDocUrl = body.panDocUrl || '';
+    const secondaryType = body.secondaryIdType || 'aadhaar';
+    const secondaryNum = String(body.secondaryIdNumber || '').trim();
+    const secondaryDocUrl = body.secondaryDocUrl || '';
+    const selfieUrl = body.selfieUrl || host.avatar || '';
+
+    if (!panNum || !secondaryNum || !selfieUrl) {
+      return sendJson(res, 400, {
+        success: false,
+        message: 'Kripya PAN card, Secondary ID (Aadhaar/Voter/Licence) aur Live Photo teeno provide karein.'
+      });
+    }
+
+    host.isVerified = false;
+    host.status = 'offline';
+    host.verification = {
+      panNumber: panNum,
+      panDocUrl,
+      secondaryIdType: secondaryType,
+      secondaryIdNumber: secondaryNum,
+      secondaryDocUrl,
+      selfieUrl,
+      gender: 'female',
+      status: 'pending',
+      submittedAt: Date.now(),
+      residentIdType: secondaryType,
+      residentIdNumber: secondaryNum,
+      residentDocUrl,
+      idType: secondaryType,
+      idNumber: secondaryNum
+    };
+
+    saveDatabase();
+    console.log(`📋 [HOST KYC SUBMITTED FOR ADMIN APPROVAL] ${host.name} (${foundId})`);
+    return sendJson(res, 200, {
+      success: true,
+      message: '✅ Aapke KYC documents jama ho gaye hain! Super Admin ise review karke approve karega.',
+      host
+    });
   }
 
   // 4b. Host Login (Phone/Email + Password OR OTP)
@@ -1230,7 +1358,25 @@ const server = http.createServer(async (req, res) => {
     }
 
     const userId = cleanPhone ? `caller-${cleanPhone}` : `caller-${cleanEmail.replace(/[^a-z0-9]/g, '_')}`;
-    const displayName = (body.name || '').trim() || (cleanPhone ? `Caller ${cleanPhone.slice(-4)}` : `User ${cleanEmail.split('@')[0]}`);
+    const customName = (body.name || '').trim();
+
+    if (customName && customName !== 'User' && !customName.startsWith('Caller ')) {
+      const nameLower = customName.toLowerCase();
+      const isCallerNameTaken = Object.values(db.users).some(
+        (u) => u && u.name && u.name.trim().toLowerCase() === nameLower && u.id !== userId && (cleanPhone ? u.phone !== cleanPhone : true)
+      );
+      const isHostNameTaken = Object.values(db.hosts).some(
+        (h) => h && h.name && h.name.trim().toLowerCase() === nameLower && (cleanPhone ? h.phone !== cleanPhone : true)
+      );
+      if (isCallerNameTaken || isHostNameTaken) {
+        return sendJson(res, 400, {
+          success: false,
+          message: '⚠️ Yeh Profile Name pehle se kisi aur ka hai! Kripya doosra unique naam chunein.'
+        });
+      }
+    }
+
+    const displayName = customName || (cleanPhone ? `Caller ${cleanPhone.slice(-4)}` : `User ${cleanEmail.split('@')[0]}`);
 
     const user = {
       id: userId,

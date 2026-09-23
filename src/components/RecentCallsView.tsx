@@ -185,6 +185,9 @@ export const RecentCallsView: React.FC<RecentCallsViewProps> = ({ onExploreSakhi
                       <h4 className="text-sm font-bold text-white truncate group-hover:text-pink-300 transition-colors">
                         {log.sakhiName}
                       </h4>
+                      <span className="text-[10px] font-mono text-pink-400 font-semibold">
+                        ID: {log.sakhiId}
+                      </span>
                       {isMissed && (
                         <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-red-500/20 text-red-300 border border-red-500/30">
                           Missed

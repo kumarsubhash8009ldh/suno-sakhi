@@ -1018,11 +1018,12 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const updated: HostProfile = {
         ...prev,
         isVerified: isApproved,
-        status: isApproved ? 'online' : prev.status,
+        status: isApproved ? 'online' : 'offline',
         verification: {
           ...verification,
-          status: isApproved ? 'verified' : (verification.status || 'verified'),
-          verifiedAt: Date.now()
+          status: isApproved ? 'verified' : (verification.status || 'pending'),
+          submittedAt: verification.submittedAt || Date.now(),
+          verifiedAt: isApproved ? (verification.verifiedAt || Date.now()) : undefined
         }
       };
       saveHostProfileToCloud(updated);

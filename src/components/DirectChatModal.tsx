@@ -150,7 +150,8 @@ export const DirectChatModal: React.FC = () => {
             </div>
             <div>
               <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
-                {directChatSakhi.name}, <span className="text-pink-300 font-normal">{directChatSakhi.age}</span>
+                <span>{directChatSakhi.name}</span>
+                <span className="text-[11px] text-pink-300 font-mono font-normal">({directChatSakhi.id})</span>
                 <Heart className="w-3.5 h-3.5 text-pink-400 fill-pink-400" />
               </h3>
               <p className="text-[11px] text-emerald-400 flex items-center gap-1.5 font-medium">

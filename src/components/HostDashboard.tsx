@@ -142,8 +142,12 @@ export const HostDashboard: React.FC = () => {
     await startCall(callerCompanion, type);
   };
 
-  // Toggle Online/Offline status
+  // Toggle Online/Offline status (Requires Admin KYC Approval)
   const handleToggleOnline = async () => {
+    if (!hostProfile.isVerified || hostProfile.verification?.status !== 'verified') {
+      openVerificationModal();
+      return;
+    }
     const nextStatus = hostProfile.status === 'online' ? 'offline' : 'online';
     setTogglingOnline(true);
     try {
@@ -287,6 +291,66 @@ export const HostDashboard: React.FC = () => {
 
   return (
     <div className="max-w-6xl mx-auto p-4 sm:p-6 space-y-6">
+      {/* Host KYC Verification Status Alert */}
+      {!hostProfile.isVerified && (
+        <div className={`p-4 rounded-3xl border shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4 ${
+          hostProfile.verification?.status === 'pending'
+            ? 'bg-amber-950/60 border-amber-500/40 text-amber-200'
+            : hostProfile.verification?.status === 'rejected'
+            ? 'bg-red-950/70 border-red-500/50 text-red-200'
+            : 'bg-gradient-to-r from-pink-950/70 via-purple-950/70 to-black border-pink-500/40 text-pink-200'
+        }`}>
+          <div className="flex items-center gap-3">
+            <div className={`p-3 rounded-2xl flex-shrink-0 ${
+              hostProfile.verification?.status === 'pending'
+                ? 'bg-amber-500/20 text-amber-400'
+                : hostProfile.verification?.status === 'rejected'
+                ? 'bg-red-500/20 text-red-400'
+                : 'bg-pink-500/20 text-pink-400'
+            }`}>
+              <ShieldCheck className="w-6 h-6" />
+            </div>
+            <div>
+              <h4 className="text-sm sm:text-base font-extrabold text-white flex items-center gap-2">
+                <span>
+                  {hostProfile.verification?.status === 'pending'
+                    ? 'Host KYC Under Super Admin Review ⏳'
+                    : hostProfile.verification?.status === 'rejected'
+                    ? 'Host KYC Rejected ❌'
+                    : 'Host ID Verification Required 🔒'}
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 font-mono">
+                  ID: {hostProfile.id}
+                </span>
+              </h4>
+              <p className="text-xs text-gray-300 mt-0.5 max-w-xl">
+                {hostProfile.verification?.status === 'pending'
+                  ? 'Aapke KYC documents (Live Selfie, PAN Card aur ID) Super Admin ke paas review me hain. Approval milte hi aap online ho sakengi aur callers jud sakenge.'
+                  : hostProfile.verification?.status === 'rejected'
+                  ? `Rejection Note: ${hostProfile.verification?.adminNote || 'Documents clear nahi the'}. Kripya sahi documents dobara submit karein.`
+                  : 'Callers se voice/video calls lene aur host earnings shuru karne ke liye Live Selfie, PAN Card aur 1 ID verify karwayein.'}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={openVerificationModal}
+            className={`px-4 py-2.5 rounded-2xl font-extrabold text-xs flex-shrink-0 shadow-lg active:scale-95 transition-all ${
+              hostProfile.verification?.status === 'pending'
+                ? 'bg-amber-500 hover:bg-amber-400 text-black'
+                : hostProfile.verification?.status === 'rejected'
+                ? 'bg-red-600 hover:bg-red-500 text-white'
+                : 'bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 text-white shadow-pink-900/50'
+            }`}
+          >
+            {hostProfile.verification?.status === 'pending'
+              ? 'View Submitted KYC'
+              : hostProfile.verification?.status === 'rejected'
+              ? 'Re-submit KYC'
+              : 'Complete KYC Now 🔒'}
+          </button>
+        </div>
+      )}
+
       {/* Top Banner: Host Profile with Photo Update */}
       <div className="relative rounded-3xl overflow-hidden glass-card border border-pink-500/30 p-6 shadow-2xl">
         {photoSuccess && (
@@ -954,11 +1018,11 @@ export const HostDashboard: React.FC = () => {
                       </div>
                       <div className="min-w-0">
                         <h4 className="text-sm font-black text-white truncate">{caller.name || 'Caller'}</h4>
-                        <p className="text-[11px] text-gray-400 font-mono">
-                          +91 {cleanPhone ? `${cleanPhone.slice(0, 5)} ${cleanPhone.slice(5)}` : 'Registered'}
+                        <p className="text-[11px] text-pink-300/90 font-mono">
+                          ID: {caller.id || `caller-${cleanPhone.slice(-4)}`}
                         </p>
                         <span className="text-[10px] text-emerald-400 font-semibold inline-block">
-                          Active Caller • Wallet: ₹{Number(caller.balance || 0).toFixed(0)}
+                          Active Verified Caller
                         </span>
                       </div>
                     </div>

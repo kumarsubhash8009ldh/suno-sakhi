@@ -170,12 +170,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
   // Helpline State
   const [callHelplines, setCallHelplines] = useState<HelplineContact[]>(
     settings.callHelplines || [
-      { id: 'call-1', title: '24x7 Direct Phone Helpline', number: settings.supportPhone || '+91 98765 43210', type: 'call', isPrimary: true }
+      { id: 'call-1', title: '24x7 Direct Phone Helpline', number: settings.supportPhone || '+91 7009600157', type: 'call', isPrimary: true }
     ]
   );
   const [whatsappHelplines, setWhatsappHelplines] = useState<HelplineContact[]>(
     settings.whatsappHelplines || [
-      { id: 'wa-1', title: '24x7 WhatsApp Chat Support', number: settings.supportWhatsApp || '+91 98765 43210', type: 'whatsapp', isPrimary: true }
+      { id: 'wa-1', title: '24x7 WhatsApp Chat Support', number: settings.supportWhatsApp || '+91 7009600157', type: 'whatsapp', isPrimary: true }
     ]
   );
   const [newCallTitle, setNewCallTitle] = useState('');
@@ -185,10 +185,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
 
   // Quick Update State for Primary Helpline Numbers
   const [quickPhoneInput, setQuickPhoneInput] = useState<string>(
-    settings.supportPhone || '+91 98765 43210'
+    settings.supportPhone || '+91 7009600157'
   );
   const [quickWaInput, setQuickWaInput] = useState<string>(
-    settings.supportWhatsApp || '+91 98765 43210'
+    settings.supportWhatsApp || '+91 7009600157'
   );
 
   // Inline Editing State for Phone Helplines
@@ -638,8 +638,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
       adminQrCodeUrl: adminQrCodeUrlInput.trim(),
       callHelplines,
       whatsappHelplines,
-      supportPhone: callHelplines.find((c) => c.isPrimary)?.number || callHelplines[0]?.number || settings.supportPhone || '+91 98765 43210',
-      supportWhatsApp: whatsappHelplines.find((w) => w.isPrimary)?.number || whatsappHelplines[0]?.number || settings.supportWhatsApp || '+91 98765 43210'
+      supportPhone: callHelplines.find((c) => c.isPrimary)?.number || callHelplines[0]?.number || settings.supportPhone || '+91 7009600157',
+      supportWhatsApp: whatsappHelplines.find((w) => w.isPrimary)?.number || whatsappHelplines[0]?.number || settings.supportWhatsApp || '+91 7009600157'
     });
     showToast('success', '✅ Platform Rates, Commission, Deposit UPI, Scanner aur Helpline Numbers update ho gaye!');
   };

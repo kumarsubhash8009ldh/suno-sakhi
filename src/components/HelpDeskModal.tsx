@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Phone, MessageSquare, Headphones, ShieldCheck, Copy, Check, Clock, Sparkles } from 'lucide-react';
+import { useAdmin } from '../context/AdminContext';
 
 interface HelpDeskModalProps {
   isOpen: boolean;
@@ -7,9 +8,12 @@ interface HelpDeskModalProps {
 }
 
 export const HelpDeskModal: React.FC<HelpDeskModalProps> = ({ isOpen, onClose }) => {
+  const { settings } = useAdmin();
   const [copied, setCopied] = useState(false);
-  const supportNumber = '+91 98765 43210';
-  const whatsappUrl = `https://wa.me/919876543210?text=${encodeURIComponent('Namaste SunoSakhi Help Desk, mujhe account/call related sahayata chahiye.')}`;
+  const supportNumber = settings.supportPhone || '+91 7009600157';
+  const whatsappNum = settings.supportWhatsApp || '+91 7009600157';
+  const cleanWa = whatsappNum.replace(/\D/g, '');
+  const whatsappUrl = `https://wa.me/${cleanWa}?text=${encodeURIComponent('Namaste SunoSakhi Help Desk, mujhe account/call related sahayata chahiye.')}`;
 
   if (!isOpen) return null;
 

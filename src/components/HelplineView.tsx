@@ -11,11 +11,11 @@ export const HelplineView: React.FC<HelplineViewProps> = ({ onExploreSakhis }) =
 
   const whatsappList = (settings.whatsappHelplines && settings.whatsappHelplines.length > 0)
     ? settings.whatsappHelplines
-    : [{ id: 'wa-default', title: '24x7 WhatsApp Chat Support', number: settings.supportWhatsApp || '+91 98765 43210', type: 'whatsapp' as const, isPrimary: true }];
+    : [{ id: 'wa-default', title: '24x7 WhatsApp Chat Support', number: settings.supportWhatsApp || '+91 7009600157', type: 'whatsapp' as const, isPrimary: true }];
 
   const callList = (settings.callHelplines && settings.callHelplines.length > 0)
     ? settings.callHelplines
-    : [{ id: 'call-default', title: 'Direct Phone Helpline', number: settings.supportPhone || '+91 98765 43210', type: 'call' as const, isPrimary: true }];
+    : [{ id: 'call-default', title: 'Direct Phone Helpline', number: settings.supportPhone || '+91 7009600157', type: 'call' as const, isPrimary: true }];
 
   const handleWhatsApp = (num: string) => {
     const clean = num.replace(/\D/g, '');

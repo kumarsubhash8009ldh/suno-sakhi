@@ -25,16 +25,16 @@ const defaultSettings: PlatformSettings = {
   videoRatePerMin: 15,
   sakhiChatRate: 3,
   hostIncomePercent: 60,
-  supportPhone: '+91 98765 43210',
-  supportWhatsApp: '+91 98765 43210',
+  supportPhone: '+91 7009600157',
+  supportWhatsApp: '+91 7009600157',
   adminUpiId: 'sunosakhi@okaxis',
   adminUpiName: 'Suno Sakhi Official',
   adminQrCodeUrl: '',
   callHelplines: [
-    { id: 'call-1', title: '24x7 Direct Phone Helpline', number: '+91 98765 43210', type: 'call', isPrimary: true }
+    { id: 'call-1', title: '24x7 Direct Phone Helpline', number: '+91 7009600157', type: 'call', isPrimary: true }
   ],
   whatsappHelplines: [
-    { id: 'wa-1', title: '24x7 WhatsApp Chat Support', number: '+91 98765 43210', type: 'whatsapp', isPrimary: true }
+    { id: 'wa-1', title: '24x7 WhatsApp Chat Support', number: '+91 7009600157', type: 'whatsapp', isPrimary: true }
   ]
 };
 
@@ -52,6 +52,18 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
+        if (parsed.supportPhone === '+91 98765 43210') parsed.supportPhone = '+91 7009600157';
+        if (parsed.supportWhatsApp === '+91 98765 43210') parsed.supportWhatsApp = '+91 7009600157';
+        if (Array.isArray(parsed.callHelplines)) {
+          parsed.callHelplines = parsed.callHelplines.map((c: any) =>
+            c.number === '+91 98765 43210' ? { ...c, number: '+91 7009600157' } : c
+          );
+        }
+        if (Array.isArray(parsed.whatsappHelplines)) {
+          parsed.whatsappHelplines = parsed.whatsappHelplines.map((w: any) =>
+            w.number === '+91 98765 43210' ? { ...w, number: '+91 7009600157' } : w
+          );
+        }
         return {
           ...defaultSettings,
           ...parsed,
@@ -69,11 +81,21 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     if (!isFirebaseConfigured()) return;
     const unsub = subscribeToCloudSettings((cloudSettings) => {
+      let callH = cloudSettings.callHelplines;
+      if (Array.isArray(callH)) {
+        callH = callH.map((c: any) => c.number === '+91 98765 43210' ? { ...c, number: '+91 7009600157' } : c);
+      }
+      let waH = cloudSettings.whatsappHelplines;
+      if (Array.isArray(waH)) {
+        waH = waH.map((w: any) => w.number === '+91 98765 43210' ? { ...w, number: '+91 7009600157' } : w);
+      }
       setSettings((prev) => ({
         ...prev,
         ...cloudSettings,
-        callHelplines: cloudSettings.callHelplines || prev.callHelplines || defaultSettings.callHelplines,
-        whatsappHelplines: cloudSettings.whatsappHelplines || prev.whatsappHelplines || defaultSettings.whatsappHelplines
+        supportPhone: (cloudSettings.supportPhone === '+91 98765 43210' || !cloudSettings.supportPhone) ? (prev.supportPhone || '+91 7009600157') : cloudSettings.supportPhone,
+        supportWhatsApp: (cloudSettings.supportWhatsApp === '+91 98765 43210' || !cloudSettings.supportWhatsApp) ? (prev.supportWhatsApp || '+91 7009600157') : cloudSettings.supportWhatsApp,
+        callHelplines: callH || prev.callHelplines || defaultSettings.callHelplines,
+        whatsappHelplines: waH || prev.whatsappHelplines || defaultSettings.whatsappHelplines
       }));
     });
     return () => {

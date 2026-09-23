@@ -168,6 +168,7 @@ export interface PlatformSettings {
   supportWhatsApp: string;
   adminUpiId?: string;
   adminUpiName?: string;
+  adminQrCodeUrl?: string;
 }
 
 export interface RecentCallLog {

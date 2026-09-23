@@ -15,13 +15,16 @@ import {
   ArrowLeft,
   ExternalLink,
   ShieldAlert,
-  Send
+  Send,
+  QrCode as QrIcon,
+  Smartphone
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useWallet } from '../context/WalletContext';
 import { useAdmin } from '../context/AdminContext';
 import { RECHARGE_PACKS } from '../data/sakhis';
 import { RechargePack, RechargeRequest } from '../types';
+import { UpiQrScanner } from './UpiQrScanner';
 
 export const WalletModal: React.FC = () => {
   const {
@@ -44,6 +47,7 @@ export const WalletModal: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'recharge' | 'history'>('recharge');
   const [historyTab, setHistoryTab] = useState<'requests' | 'txs'>('requests');
+  const [depositMethodTab, setDepositMethodTab] = useState<'scanner' | 'upi'>('scanner');
 
   if (!isWalletModalOpen) return null;
 
@@ -308,51 +312,92 @@ export const WalletModal: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Official UPI ID Card */}
-                <div className="p-4 rounded-2xl bg-black/60 border border-pink-500/40 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-gray-300 uppercase tracking-wide">
-                      Official Admin UPI ID:
-                    </span>
-                    <span className="text-[11px] text-pink-300 font-mono">{adminName}</span>
-                  </div>
-
-                  <div className="flex items-center justify-between p-3 rounded-xl bg-[#1b0a2c] border border-pink-500/30">
-                    <span className="font-mono text-sm sm:text-base font-black text-pink-300 tracking-wider select-all">
-                      {adminUpi}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleCopyUpi}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
-                        copied
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-pink-600 hover:bg-pink-500 text-white shadow'
-                      }`}
-                    >
-                      {copied ? (
-                        <>
-                          <Check className="w-3.5 h-3.5" />
-                          <span>Copied!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5" />
-                          <span>Copy UPI</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-
-                  {/* Direct App Button */}
-                  <a
-                    href={`upi://pay?pa=${adminUpi}&pn=${encodeURIComponent(adminName)}&am=${selectedPack.amount}&cu=INR`}
-                    className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow"
+                {/* Deposit Option Selector: Scanner vs UPI */}
+                <div className="flex p-1 rounded-2xl bg-black/60 border border-pink-500/30 gap-1 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setDepositMethodTab('scanner')}
+                    className={`flex-1 py-2 px-3 rounded-xl font-black transition-all flex items-center justify-center gap-1.5 ${
+                      depositMethodTab === 'scanner'
+                        ? 'bg-gradient-to-r from-pink-600 to-rose-600 text-white shadow-lg shadow-pink-900/40'
+                        : 'text-gray-300 hover:text-white'
+                    }`}
                   >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    <span>⚡ Pay via UPI App (GPay / PhonePe / Paytm)</span>
-                  </a>
+                    <QrIcon className="w-3.5 h-3.5" />
+                    <span>📱 Scan QR Code (Fast)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDepositMethodTab('upi')}
+                    className={`flex-1 py-2 px-3 rounded-xl font-black transition-all flex items-center justify-center gap-1.5 ${
+                      depositMethodTab === 'upi'
+                        ? 'bg-gradient-to-r from-pink-600 to-rose-600 text-white shadow-lg shadow-pink-900/40'
+                        : 'text-gray-300 hover:text-white'
+                    }`}
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>💳 Copy UPI / App Link</span>
+                  </button>
                 </div>
+
+                {depositMethodTab === 'scanner' ? (
+                  /* OPTION 1: QR CODE SCANNER */
+                  <UpiQrScanner
+                    upiId={adminUpi}
+                    name={adminName}
+                    amount={selectedPack.amount}
+                    customQrUrl={settings.adminQrCodeUrl}
+                    size={190}
+                    showDetails={true}
+                    showDownload={true}
+                  />
+                ) : (
+                  /* OPTION 2: UPI ID & APP LINK */
+                  <div className="p-4 rounded-2xl bg-black/60 border border-pink-500/40 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-gray-300 uppercase tracking-wide">
+                        Official Admin UPI ID:
+                      </span>
+                      <span className="text-[11px] text-pink-300 font-mono">{adminName}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-[#1b0a2c] border border-pink-500/30">
+                      <span className="font-mono text-sm sm:text-base font-black text-pink-300 tracking-wider select-all">
+                        {adminUpi}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleCopyUpi}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                          copied
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-pink-600 hover:bg-pink-500 text-white shadow'
+                        }`}
+                      >
+                        {copied ? (
+                          <>
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Copied!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>Copy UPI</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Direct App Button */}
+                    <a
+                      href={`upi://pay?pa=${adminUpi}&pn=${encodeURIComponent(adminName)}&am=${selectedPack.amount}&cu=INR`}
+                      className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>⚡ Pay via UPI App (GPay / PhonePe / Paytm)</span>
+                    </a>
+                  </div>
+                )}
 
                 {/* Steps Instruction */}
                 <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-2 text-xs text-gray-300">

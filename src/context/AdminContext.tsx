@@ -28,7 +28,8 @@ const defaultSettings: PlatformSettings = {
   supportPhone: '+91 98765 43210',
   supportWhatsApp: '+91 98765 43210',
   adminUpiId: 'sunosakhi@okaxis',
-  adminUpiName: 'Suno Sakhi Official'
+  adminUpiName: 'Suno Sakhi Official',
+  adminQrCodeUrl: ''
 };
 
 const AdminContext = createContext<AdminContextType | undefined>(undefined);

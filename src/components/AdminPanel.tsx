@@ -33,7 +33,13 @@ import {
   Copy,
   ShieldAlert,
   AlertOctagon,
-  Trash2
+  Trash2,
+  QrCode as QrIcon,
+  Upload,
+  Image as ImageIcon,
+  PlusCircle,
+  ExternalLink,
+  Download
 } from 'lucide-react';
 import { useAdmin } from '../context/AdminContext';
 import { useWallet } from '../context/WalletContext';
@@ -66,8 +72,10 @@ import {
   fetchAllRechargeRequests,
   subscribeToAllRechargeRequests,
   approveRechargeRequest,
-  rejectRechargeRequest
+  rejectRechargeRequest,
+  adminDirectDeposit
 } from '../services/rechargeSync';
+import { UpiQrScanner } from './UpiQrScanner';
 
 interface AdminPanelProps {
   isModal?: boolean;
@@ -150,6 +158,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
   const [hostShare, setHostShare] = useState(settings.hostIncomePercent);
   const [adminUpiIdInput, setAdminUpiIdInput] = useState(settings.adminUpiId || 'sunosakhi@okaxis');
   const [adminUpiNameInput, setAdminUpiNameInput] = useState(settings.adminUpiName || 'Suno Sakhi Official');
+  const [adminQrCodeUrlInput, setAdminQrCodeUrlInput] = useState(settings.adminQrCodeUrl || '');
+  const [isUploadingQr, setIsUploadingQr] = useState<boolean>(false);
+  const [showScannerModal, setShowScannerModal] = useState<boolean>(false);
+  const [showDirectDepositModal, setShowDirectDepositModal] = useState<boolean>(false);
+
+  // Direct Deposit Form States
+  const [depositTargetRole, setDepositTargetRole] = useState<'caller' | 'host'>('caller');
+  const [depositTargetId, setDepositTargetId] = useState<string>('');
+  const [depositTargetName, setDepositTargetName] = useState<string>('');
+  const [depositTargetPhone, setDepositTargetPhone] = useState<string>('');
+  const [depositAmount, setDepositAmount] = useState<string>('100');
+  const [depositBonus, setDepositBonus] = useState<string>('5');
+  const [depositMethod, setDepositMethod] = useState<'UPI' | 'Scanner' | 'Cash' | 'Manual'>('UPI');
+  const [depositUtr, setDepositUtr] = useState<string>('');
+  const [depositNote, setDepositNote] = useState<string>('');
+  const [isSubmittingDeposit, setIsSubmittingDeposit] = useState<boolean>(false);
 
   const showToast = (type: 'success' | 'error', text: string) => {
     setToastMsg({ type, text });
@@ -197,6 +221,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
       if (unsub) unsub();
     };
   }, []);
+
+  useEffect(() => {
+    if (settings.adminUpiId) setAdminUpiIdInput(settings.adminUpiId);
+    if (settings.adminUpiName) setAdminUpiNameInput(settings.adminUpiName);
+    if (settings.adminQrCodeUrl !== undefined) setAdminQrCodeUrlInput(settings.adminQrCodeUrl || '');
+  }, [settings]);
 
   // Filtered lists
   const filteredHosts = useMemo(() => {
@@ -512,9 +542,115 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
       sakhiChatRate: Number(chatRate),
       hostIncomePercent: Number(hostShare),
       adminUpiId: adminUpiIdInput.trim(),
-      adminUpiName: adminUpiNameInput.trim()
+      adminUpiName: adminUpiNameInput.trim(),
+      adminQrCodeUrl: adminQrCodeUrlInput.trim()
     });
-    showToast('success', '✅ Platform Rates, Commission aur Official Deposit UPI ID update ho gaye!');
+    showToast('success', '✅ Platform Rates, Commission, Deposit UPI aur Scanner update ho gaye!');
+  };
+
+  // Handler: Upload QR Scanner Image (PhonePe/GPay Standee or Screenshot)
+  const handleQrImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      showToast('error', 'Kripya valid image file (PNG/JPG) chunein.');
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      showToast('error', 'Image size 2MB se kam hona chahiye.');
+      return;
+    }
+
+    setIsUploadingQr(true);
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setAdminQrCodeUrlInput(reader.result);
+        showToast('success', 'Custom Scanner Image upload ho gayi! Live save karne ke liye "Save" button dabayein.');
+      }
+      setIsUploadingQr(false);
+    };
+    reader.onerror = () => {
+      showToast('error', 'Image upload karne me error aaya.');
+      setIsUploadingQr(false);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Handler: Quick Save Scanner & UPI from modal or hub
+  const handleQuickSaveScanner = () => {
+    updateSettings({
+      adminUpiId: adminUpiIdInput.trim(),
+      adminUpiName: adminUpiNameInput.trim(),
+      adminQrCodeUrl: adminQrCodeUrlInput.trim()
+    });
+    showToast('success', '✅ Deposit UPI ID aur Scanner live update ho gaye!');
+    setShowScannerModal(false);
+  };
+
+  // Handler: Open Direct Deposit modal pre-filled for a user or host
+  const handleOpenDirectDeposit = (target: {
+    id: string;
+    name: string;
+    phone?: string;
+    role: 'caller' | 'host';
+  }) => {
+    setDepositTargetRole(target.role);
+    setDepositTargetId(target.id);
+    setDepositTargetName(target.name);
+    setDepositTargetPhone(target.phone || '');
+    setDepositAmount('100');
+    setDepositBonus(target.role === 'caller' ? '5' : '0');
+    setDepositMethod('UPI');
+    setDepositUtr('');
+    setDepositNote(`Admin Direct Deposit via UPI`);
+    setShowDirectDepositModal(true);
+  };
+
+  // Handler: Execute Direct Deposit
+  const handleExecuteDirectDeposit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const amountNum = parseFloat(depositAmount);
+    const bonusNum = parseFloat(depositBonus) || 0;
+
+    if (!depositTargetId) {
+      showToast('error', 'Kripya user ya host select karein.');
+      return;
+    }
+
+    if (isNaN(amountNum) || amountNum <= 0) {
+      showToast('error', 'Kripya valid deposit amount enter karein.');
+      return;
+    }
+
+    setIsSubmittingDeposit(true);
+    try {
+      const res = await adminDirectDeposit({
+        userId: depositTargetId,
+        userName: depositTargetName,
+        userPhone: depositTargetPhone,
+        amount: amountNum,
+        bonus: bonusNum,
+        method: depositMethod,
+        utr: depositUtr,
+        note: depositNote || `Admin Direct Deposit (${depositMethod})`,
+        role: depositTargetRole
+      });
+
+      if (res.success) {
+        showToast('success', res.message);
+        setShowDirectDepositModal(false);
+        loadData();
+      } else {
+        showToast('error', res.message);
+      }
+    } catch (err: any) {
+      showToast('error', err?.message || 'Deposit karne me error aaya.');
+    } finally {
+      setIsSubmittingDeposit(false);
+    }
   };
 
   // Handler: Unban Phone Number
@@ -621,7 +757,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
           {[
             {
               id: 'recharges',
-              label: '📥 Recharge Requests (जमा सत्यापन)',
+              label: '📥 Deposit & Recharges (जमा & स्कैनर)',
               badge: rechargeRequestsList.filter((r) => r.status === 'pending').length,
               badgeClass: 'bg-amber-500 text-black font-black animate-pulse'
             },
@@ -640,7 +776,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
               badgeClass: 'bg-red-600 text-white font-black animate-pulse'
             },
             { id: 'analytics', label: '📊 Financials' },
-            { id: 'settings', label: '⚙️ Settings & UPI' }
+            { id: 'settings', label: '⚙️ Settings, UPI & Scanner' }
           ].map((tab) => (
             <button
               key={tab.id}
@@ -711,11 +847,124 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
                     <Wallet className="w-4 h-4 text-pink-400" />
                   </div>
                   <p className="text-base font-black font-mono text-white mt-2 select-all">
-                    {settings.adminUpiId || 'sunosakhi@okaxis'}
+                    {adminUpiIdInput || settings.adminUpiId || 'sunosakhi@okaxis'}
                   </p>
-                  <p className="text-[11px] text-pink-300/80 mt-1">
-                    Receiver: {settings.adminUpiName || 'Suno Sakhi Official'}
-                  </p>
+                  <div className="flex items-center justify-between gap-1 mt-1">
+                    <p className="text-[11px] text-pink-300/80 truncate">
+                      Receiver: {adminUpiNameInput || settings.adminUpiName || 'Suno Sakhi Official'}
+                    </p>
+                    <span className="text-[10px] text-emerald-400 font-bold whitespace-nowrap">QR Ready</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* OFFICIAL DEPOSIT SCANNER & UPI CONTROL HUB */}
+              <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-[#210936] via-[#160624] to-[#12051e] border-2 border-pink-500/40 shadow-2xl flex flex-col lg:flex-row items-center justify-between gap-5 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-pink-600/10 rounded-full blur-3xl pointer-events-none" />
+
+                <div className="flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
+                  {/* Compact Live Scanner Preview */}
+                  <div className="flex-shrink-0 p-2.5 rounded-2xl bg-white shadow-xl border-2 border-pink-500/50 group relative">
+                    {adminQrCodeUrlInput ? (
+                      <img
+                        src={adminQrCodeUrlInput}
+                        alt="Deposit Scanner"
+                        className="w-24 h-24 sm:w-28 sm:h-28 object-contain rounded-xl"
+                      />
+                    ) : (
+                      <UpiQrScanner
+                        upiId={adminUpiIdInput || 'sunosakhi@okaxis'}
+                        name={adminUpiNameInput || 'Suno Sakhi Official'}
+                        size={110}
+                        showDetails={false}
+                        showDownload={false}
+                        className="!p-0 !bg-transparent !border-0 !shadow-none"
+                      />
+                    )}
+                    <span className="absolute -bottom-2 -right-2 px-2 py-0.5 rounded-full bg-pink-600 text-white text-[9px] font-black uppercase shadow">
+                      Live QR
+                    </span>
+                  </div>
+
+                  {/* Info details */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2 justify-center sm:justify-start flex-wrap">
+                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[10px] font-black flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                        <span>Active Deposit System</span>
+                      </span>
+                      <span className="text-xs text-pink-300 font-bold">
+                        Scanner & UPI Payment Receiver
+                      </span>
+                    </div>
+
+                    <h4 className="text-lg sm:text-xl font-black text-white flex items-center gap-2 justify-center sm:justify-start">
+                      <span>{adminUpiNameInput || 'Suno Sakhi Official'}</span>
+                    </h4>
+
+                    <div className="flex items-center gap-2 justify-center sm:justify-start">
+                      <span className="font-mono text-sm sm:text-base font-black text-pink-300 bg-black/60 px-3 py-1 rounded-xl border border-pink-500/30 select-all">
+                        {adminUpiIdInput || 'sunosakhi@okaxis'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          try {
+                            navigator.clipboard.writeText(adminUpiIdInput);
+                            showToast('success', 'UPI ID copied to clipboard!');
+                          } catch {}
+                        }}
+                        className="p-1.5 rounded-xl bg-pink-600/30 hover:bg-pink-600/50 text-pink-300 border border-pink-500/40"
+                        title="Copy UPI ID"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    <p className="text-[11px] text-gray-400">
+                      Users ko recharge karte waqt ye Scanner aur UPI ID dikhega. Bank / UPI app me UTR verify karke approve karein.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Quick Action Buttons */}
+                <div className="flex sm:flex-col gap-2 w-full lg:w-auto flex-wrap justify-center">
+                  <button
+                    type="button"
+                    onClick={() => setShowScannerModal(true)}
+                    className="flex-1 sm:flex-initial py-2.5 px-4 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 text-white font-bold text-xs shadow-lg shadow-pink-600/30 flex items-center justify-center gap-2 transition-all whitespace-nowrap"
+                  >
+                    <QrIcon className="w-4 h-4" />
+                    <span>⚙️ Change Scanner & UPI</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (usersList.length > 0) {
+                        handleOpenDirectDeposit({
+                          id: usersList[0].id,
+                          name: usersList[0].name,
+                          phone: usersList[0].phone,
+                          role: 'caller'
+                        });
+                      } else {
+                        setShowDirectDepositModal(true);
+                      }
+                    }}
+                    className="flex-1 sm:flex-initial py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all whitespace-nowrap"
+                  >
+                    <PlusCircle className="w-4 h-4" />
+                    <span>➕ Manual Deposit / Credit Coins</span>
+                  </button>
+
+                  <a
+                    href={`upi://pay?pa=${adminUpiIdInput}&pn=${encodeURIComponent(adminUpiNameInput)}&cu=INR`}
+                    className="flex-1 sm:flex-initial py-2 px-3 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all text-center"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-pink-300" />
+                    <span>⚡ Test UPI App</span>
+                  </a>
                 </div>
               </div>
 
@@ -1319,6 +1568,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
                           <span>Bal ±</span>
                         </button>
 
+                        {/* Direct Deposit to Host */}
+                        <button
+                          onClick={() =>
+                            handleOpenDirectDeposit({
+                              id: host.id,
+                              name: host.name,
+                              phone: host.phone,
+                              role: 'host'
+                            })
+                          }
+                          className="py-1.5 px-2.5 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 text-white font-bold text-xs flex items-center justify-center gap-1 shadow"
+                          title="Direct Deposit / Bonus Credit via UPI or Scanner"
+                        >
+                          <PlusCircle className="w-3.5 h-3.5" />
+                          <span>Deposit</span>
+                        </button>
+
                         <button
                           onClick={() => handleToggleHostVerification(host)}
                           className="py-1.5 px-2 rounded-xl bg-blue-950/60 hover:bg-blue-900/60 border border-blue-500/30 text-blue-300 font-bold text-xs"
@@ -1439,6 +1705,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
                         >
                           <Coins className="w-3.5 h-3.5 text-amber-300" />
                           <span>Balance Kam/Jyada</span>
+                        </button>
+
+                        {/* Direct Deposit to User */}
+                        <button
+                          onClick={() =>
+                            handleOpenDirectDeposit({
+                              id: u.id,
+                              name: u.name,
+                              phone: u.phone,
+                              role: 'caller'
+                            })
+                          }
+                          className="py-1.5 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1 shadow"
+                          title="Direct Deposit / Recharge via UPI or Scanner"
+                        >
+                          <PlusCircle className="w-3.5 h-3.5" />
+                          <span>➕ Deposit</span>
                         </button>
 
                         <button
@@ -1632,13 +1915,106 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
                     className="w-full px-3 py-2 rounded-xl bg-black/60 border border-pink-500/30 text-white text-sm focus:outline-none"
                   />
                 </div>
+
+                {/* QR Scanner Custom Image & Dynamic Preview */}
+                <div className="sm:col-span-2 p-4 rounded-2xl bg-black/60 border border-pink-500/30 space-y-4">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                      <h4 className="text-sm font-black text-white flex items-center gap-2">
+                        <QrIcon className="w-4 h-4 text-pink-400" />
+                        <span>Official Deposit QR Code Scanner</span>
+                      </h4>
+                      <p className="text-[11px] text-gray-300">
+                        Aap apna official merchant QR code upload kar sakte hain, ya auto-generated dynamic UPI QR use kar sakte hain.
+                      </p>
+                    </div>
+
+                    {adminQrCodeUrlInput && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAdminQrCodeUrlInput('');
+                          showToast('success', 'Custom image hata di gayi. Ab Auto-Generated Dynamic UPI QR use hoga.');
+                        }}
+                        className="py-1 px-2.5 rounded-lg bg-white/10 hover:bg-white/20 text-gray-300 text-[11px] font-bold"
+                      >
+                        Reset to Dynamic QR
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                    {/* Upload Controls */}
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs font-semibold text-gray-300 block mb-1.5">
+                          Upload Merchant Scanner Image (PhonePe / GPay / Paytm standee / screenshot)
+                        </label>
+                        <label className="flex items-center justify-center gap-2 p-3 rounded-xl border border-dashed border-pink-500/50 hover:border-pink-500 bg-pink-950/20 hover:bg-pink-950/40 text-pink-300 text-xs font-bold cursor-pointer transition-all">
+                          <Upload className="w-4 h-4" />
+                          <span>{isUploadingQr ? 'Uploading Image...' : '📁 Choose QR Image File (Max 2MB)'}</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleQrImageUpload}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-semibold text-gray-300 block mb-1">
+                          Or Enter Custom Image URL
+                        </label>
+                        <input
+                          type="text"
+                          value={adminQrCodeUrlInput}
+                          onChange={(e) => setAdminQrCodeUrlInput(e.target.value)}
+                          placeholder="https://... / data:image/png;base64,..."
+                          className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/10 text-white text-xs font-mono focus:outline-none"
+                        />
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-[11px] text-gray-300 space-y-1">
+                        <p className="font-bold text-white">💡 Scanner Settings Tips:</p>
+                        <p>• Agar custom image blank hogi toh system automatic dynamic UPI QR code generate karega.</p>
+                        <p>• Users is scanner ko Google Pay, PhonePe, Paytm ya kisi bhi app se direct scan karke deposit kar sakenge.</p>
+                      </div>
+                    </div>
+
+                    {/* Live Scanner Preview */}
+                    <div className="flex flex-col items-center justify-center p-3 rounded-2xl bg-black/40 border border-white/10">
+                      <span className="text-[11px] font-bold text-pink-300 mb-2">Live Deposit Scanner Preview:</span>
+                      <div className="p-3 bg-white rounded-2xl shadow-xl">
+                        {adminQrCodeUrlInput ? (
+                          <img
+                            src={adminQrCodeUrlInput}
+                            alt="Custom QR Scanner"
+                            className="w-36 h-36 object-contain rounded-xl"
+                          />
+                        ) : (
+                          <UpiQrScanner
+                            upiId={adminUpiIdInput || 'sunosakhi@okaxis'}
+                            name={adminUpiNameInput || 'Suno Sakhi Official'}
+                            size={140}
+                            showDetails={false}
+                            showDownload={false}
+                            className="!p-0 !bg-transparent !border-0 !shadow-none"
+                          />
+                        )}
+                      </div>
+                      <span className="text-[10px] text-gray-400 mt-2 font-mono">{adminUpiIdInput || 'sunosakhi@okaxis'}</span>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <button
                 type="submit"
-                className="py-3 px-6 rounded-2xl bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 text-white font-black text-xs shadow-xl shadow-pink-600/30"
+                className="py-3 px-6 rounded-2xl bg-gradient-to-r from-pink-600 via-rose-600 to-purple-600 hover:from-pink-500 text-white font-black text-xs shadow-xl shadow-pink-600/30 flex items-center gap-2"
               >
-                Save Platform Rates & UPI Config
+                <Sparkles className="w-4 h-4" />
+                <span>Save Platform Rates, UPI & Scanner Config</span>
               </button>
             </form>
           )}
@@ -2196,6 +2572,360 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
                     className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 text-white font-black text-xs shadow-lg"
                   >
                     Confirm Rejection
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: CONFIGURE DEPOSIT SCANNER & UPI */}
+        {showScannerModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
+            <div className="w-full max-w-lg p-5 sm:p-6 rounded-3xl bg-[#180928] border border-pink-500/50 shadow-2xl space-y-4 my-auto relative">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                  <QrIcon className="w-5 h-5 text-pink-400" />
+                  <span>Configure Deposit Scanner & UPI</span>
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowScannerModal(false)}
+                  className="p-1.5 rounded-full hover:bg-white/10 text-gray-300"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Live Preview Box */}
+              <div className="flex flex-col items-center p-3 rounded-2xl bg-black/50 border border-pink-500/30">
+                <span className="text-xs font-bold text-pink-300 mb-2">Active Deposit Scanner:</span>
+                <div className="p-3 bg-white rounded-2xl shadow-xl">
+                  {adminQrCodeUrlInput ? (
+                    <img
+                      src={adminQrCodeUrlInput}
+                      alt="Merchant QR Scanner"
+                      className="w-40 h-40 object-contain rounded-xl"
+                    />
+                  ) : (
+                    <UpiQrScanner
+                      upiId={adminUpiIdInput || 'sunosakhi@okaxis'}
+                      name={adminUpiNameInput || 'Suno Sakhi Official'}
+                      size={150}
+                      showDetails={false}
+                      showDownload={false}
+                      className="!p-0 !bg-transparent !border-0 !shadow-none"
+                    />
+                  )}
+                </div>
+                <div className="mt-2 text-center">
+                  <p className="font-mono text-sm font-black text-pink-300">{adminUpiIdInput || 'sunosakhi@okaxis'}</p>
+                  <p className="text-[11px] text-gray-400">{adminUpiNameInput || 'Suno Sakhi Official'}</p>
+                </div>
+              </div>
+
+              {/* Form Inputs */}
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-300 block mb-1">
+                    Official Deposit UPI ID (PhonePe / GPay / Paytm)
+                  </label>
+                  <input
+                    type="text"
+                    value={adminUpiIdInput}
+                    onChange={(e) => setAdminUpiIdInput(e.target.value)}
+                    placeholder="e.g. sunosakhi@okaxis"
+                    className="w-full px-3 py-2 rounded-xl bg-black/60 border border-pink-500/30 text-white font-mono text-xs focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-300 block mb-1">
+                    Official Receiver Business Name
+                  </label>
+                  <input
+                    type="text"
+                    value={adminUpiNameInput}
+                    onChange={(e) => setAdminUpiNameInput(e.target.value)}
+                    placeholder="e.g. Suno Sakhi Official"
+                    className="w-full px-3 py-2 rounded-xl bg-black/60 border border-pink-500/30 text-white text-xs focus:outline-none"
+                  />
+                </div>
+
+                {/* Upload Merchant Scanner */}
+                <div>
+                  <label className="text-xs font-semibold text-gray-300 block mb-1">
+                    Upload Custom Scanner Image (PhonePe/GPay QR Standee)
+                  </label>
+                  <div className="flex gap-2">
+                    <label className="flex-1 flex items-center justify-center gap-2 p-2.5 rounded-xl border border-dashed border-pink-500/50 hover:border-pink-500 bg-pink-950/20 text-pink-300 text-xs font-bold cursor-pointer">
+                      <Upload className="w-4 h-4" />
+                      <span>{isUploadingQr ? 'Uploading...' : '📁 Choose QR Image File'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleQrImageUpload}
+                        className="hidden"
+                      />
+                    </label>
+
+                    {adminQrCodeUrlInput && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAdminQrCodeUrlInput('');
+                          showToast('success', 'Custom image reset. Dynamic QR will be used.');
+                        }}
+                        className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 text-xs font-bold"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowScannerModal(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleQuickSaveScanner}
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 text-white font-black text-xs shadow-lg shadow-pink-600/30 flex items-center justify-center gap-1.5"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Save Scanner & UPI</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: DIRECT MANUAL DEPOSIT (CREDIT COINS VIA UPI / SCANNER) */}
+        {showDirectDepositModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
+            <div className="w-full max-w-lg p-5 sm:p-6 rounded-3xl bg-[#180928] border border-emerald-500/50 shadow-2xl space-y-4 my-auto relative">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                  <PlusCircle className="w-5 h-5 text-emerald-400" />
+                  <span>Direct Deposit / Credit Coins</span>
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowDirectDepositModal(false)}
+                  className="p-1.5 rounded-full hover:bg-white/10 text-gray-300"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleExecuteDirectDeposit} className="space-y-3.5">
+                {/* Role Switcher */}
+                <div className="flex p-1 rounded-xl bg-black/60 border border-white/10 gap-1 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDepositTargetRole('caller');
+                      if (usersList.length > 0) {
+                        setDepositTargetId(usersList[0].id);
+                        setDepositTargetName(usersList[0].name);
+                        setDepositTargetPhone(usersList[0].phone);
+                      }
+                    }}
+                    className={`flex-1 py-1.5 rounded-lg font-bold transition-all ${
+                      depositTargetRole === 'caller' ? 'bg-pink-600 text-white' : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    Caller User (Wallet Coins)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDepositTargetRole('host');
+                      if (hostsList.length > 0) {
+                        setDepositTargetId(hostsList[0].id);
+                        setDepositTargetName(hostsList[0].name);
+                        setDepositTargetPhone(hostsList[0].phone || '');
+                      }
+                    }}
+                    className={`flex-1 py-1.5 rounded-lg font-bold transition-all ${
+                      depositTargetRole === 'host' ? 'bg-pink-600 text-white' : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    Host Account (Kamai / Balance)
+                  </button>
+                </div>
+
+                {/* Target User Selector */}
+                <div>
+                  <label className="text-xs font-semibold text-gray-300 block mb-1">
+                    Select {depositTargetRole === 'caller' ? 'Caller' : 'Host'} Account:
+                  </label>
+                  <select
+                    value={depositTargetId}
+                    onChange={(e) => {
+                      const selId = e.target.value;
+                      setDepositTargetId(selId);
+                      if (depositTargetRole === 'caller') {
+                        const found = usersList.find((u) => u.id === selId);
+                        if (found) {
+                          setDepositTargetName(found.name);
+                          setDepositTargetPhone(found.phone || '');
+                        }
+                      } else {
+                        const found = hostsList.find((h) => h.id === selId);
+                        if (found) {
+                          setDepositTargetName(found.name);
+                          setDepositTargetPhone(found.phone || '');
+                        }
+                      }
+                    }}
+                    className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/10 text-white text-xs focus:outline-none"
+                  >
+                    {depositTargetRole === 'caller'
+                      ? usersList.map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.name} (+91 {u.phone}) — Bal: ₹{(u.balance || 0).toFixed(2)}
+                          </option>
+                        ))
+                      : hostsList.map((h) => (
+                          <option key={h.id} value={h.id}>
+                            {h.name} (+91 {h.phone}) — Kamai: ₹{(h.netIncome || 0).toFixed(2)}
+                          </option>
+                        ))}
+                  </select>
+                </div>
+
+                {/* Amount and Quick Presets */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-gray-300">
+                      Deposit Amount (₹) <span className="text-rose-400">*</span>
+                    </label>
+                    <span className="text-[11px] text-emerald-400 font-bold">
+                      Total Credit: ₹{(parseFloat(depositAmount) || 0) + (parseFloat(depositBonus) || 0)}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-5 gap-1.5 mb-2">
+                    {['50', '100', '250', '500', '1000'].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => {
+                          setDepositAmount(preset);
+                          setDepositBonus(Math.round(parseInt(preset) * 0.05).toString());
+                        }}
+                        className={`py-1 rounded-lg text-xs font-bold border transition-all ${
+                          depositAmount === preset
+                            ? 'bg-emerald-600 text-white border-emerald-500'
+                            : 'bg-black/40 text-gray-300 border-white/10 hover:border-white/30'
+                        }`}
+                      >
+                        ₹{preset}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <input
+                        type="number"
+                        min="1"
+                        required
+                        value={depositAmount}
+                        onChange={(e) => setDepositAmount(e.target.value)}
+                        placeholder="Amount ₹"
+                        className="w-full px-3 py-2 rounded-xl bg-black/60 border border-emerald-500/40 text-white font-mono font-bold text-sm focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <input
+                        type="number"
+                        min="0"
+                        value={depositBonus}
+                        onChange={(e) => setDepositBonus(e.target.value)}
+                        placeholder="Free Bonus ₹"
+                        className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/10 text-emerald-300 font-mono text-sm focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Payment Mode */}
+                <div>
+                  <label className="text-xs font-semibold text-gray-300 block mb-1">
+                    Deposit Mode / Source:
+                  </label>
+                  <div className="grid grid-cols-4 gap-1 text-[11px]">
+                    {(['UPI', 'Scanner', 'Cash', 'Manual'] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setDepositMethod(m)}
+                        className={`py-1.5 rounded-lg font-bold border transition-all ${
+                          depositMethod === m
+                            ? 'bg-pink-600 text-white border-pink-500'
+                            : 'bg-black/40 text-gray-400 border-white/10 hover:text-white'
+                        }`}
+                      >
+                        {m === 'Scanner' ? '📱 Scanner' : m === 'UPI' ? '⚡ UPI' : m === 'Cash' ? '💵 Cash' : '⚙️ Manual'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* UTR Reference */}
+                <div>
+                  <label className="text-xs font-semibold text-gray-300 block mb-1">
+                    Bank UTR / Transaction Reference (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={depositUtr}
+                    onChange={(e) => setDepositUtr(e.target.value)}
+                    placeholder="e.g. 12-digit UTR from UPI App"
+                    className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/10 text-white font-mono text-xs focus:outline-none"
+                  />
+                </div>
+
+                {/* Note */}
+                <div>
+                  <label className="text-xs font-semibold text-gray-300 block mb-1">
+                    Admin Note
+                  </label>
+                  <input
+                    type="text"
+                    value={depositNote}
+                    onChange={(e) => setDepositNote(e.target.value)}
+                    placeholder="e.g. PhonePe payment verified by Admin"
+                    className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/10 text-white text-xs focus:outline-none"
+                  />
+                </div>
+
+                {/* Submit Actions */}
+                <div className="flex items-center gap-2 pt-2">
+                  <button
+                    type="button"
+                    disabled={isSubmittingDeposit}
+                    onClick={() => setShowDirectDepositModal(false)}
+                    className="flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingDeposit}
+                    className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white font-black text-xs shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  >
+                    <PlusCircle className="w-4 h-4" />
+                    <span>{isSubmittingDeposit ? 'Crediting...' : 'Confirm & Deposit'}</span>
                   </button>
                 </div>
               </form>

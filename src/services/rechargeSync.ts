@@ -346,3 +346,84 @@ export const rejectRechargeRequest = async (
     request: updatedReq
   };
 };
+
+/**
+ * Admin Action: Directly deposit / credit coins to any user/host wallet with UPI/Scanner/Cash note
+ */
+export const adminDirectDeposit = async (params: {
+  userId: string;
+  userName?: string;
+  userPhone?: string;
+  amount: number;
+  bonus?: number;
+  method?: string; // 'UPI' | 'Scanner' | 'Cash' | 'Direct Admin'
+  utr?: string;
+  note?: string;
+  role?: 'caller' | 'host';
+}): Promise<{ success: boolean; message: string; newBalance?: number; request?: RechargeRequest }> => {
+  const amount = Number(params.amount) || 0;
+  const bonus = Number(params.bonus) || 0;
+  const totalCredit = amount + bonus;
+  if (totalCredit <= 0) {
+    return { success: false, message: 'Deposit amount ₹0 se jyada hona chahiye.' };
+  }
+
+  const utr = params.utr?.trim() || `DEP${Math.floor(100000000000 + Math.random() * 900000000000)}`;
+  const method = params.method || 'UPI';
+  const role = params.role || 'caller';
+  const now = Date.now();
+
+  const newReq: RechargeRequest = {
+    id: 'req_direct_' + now,
+    userId: params.userId,
+    userName: params.userName || (role === 'host' ? 'Host' : 'Caller'),
+    userPhone: params.userPhone,
+    amount,
+    bonus,
+    totalBalance: totalCredit,
+    utr,
+    paymentMethod: method,
+    status: 'approved',
+    createdAt: now,
+    reviewedAt: now,
+    reviewedBy: 'Admin',
+    adminNote: params.note || `Admin Direct Deposit via ${method}`
+  };
+
+  let newBalance = 0;
+  if (role === 'caller') {
+    const callerId = params.userId.startsWith('caller_') ? params.userId : (params.userPhone ? 'caller_' + params.userPhone.replace(/\D/g, '').slice(-10) : params.userId);
+    const creditRes = await creditUserCloudWallet(callerId, totalCredit, {
+      id: 'tx_dep_' + now,
+      type: 'credit',
+      amount: totalCredit,
+      description: `Admin Deposit via ${method} (Ref: ${utr})`,
+      timestamp: now
+    });
+    newBalance = creditRes.newBalance;
+  }
+
+  // 1. Save to Firestore
+  if (isFirebaseConfigured() && db) {
+    try {
+      await setDoc(doc(db, RECHARGE_REQUESTS_COLLECTION, newReq.id), newReq);
+    } catch (e) {
+      console.warn('Could not save direct deposit to Firestore:', e);
+    }
+  }
+
+  // 2. Save to LocalStorage
+  try {
+    const local = getLocalRechargeRequests();
+    local.unshift(newReq);
+    saveLocalRechargeRequests(local);
+  } catch (e) {}
+
+  return {
+    success: true,
+    message: `✅ ₹${totalCredit} (${amount} + ₹${bonus} bonus) successfully deposit kar diye gaye! Naya Balance: ₹${newBalance.toFixed(2)}`,
+    newBalance,
+    request: newReq
+  };
+};
+

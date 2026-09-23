@@ -85,14 +85,15 @@ interface AdminPanelProps {
   isModal?: boolean;
   onClose?: () => void;
   isSuperAdmin?: boolean;
+  initialTab?: 'recharges' | 'payouts' | 'hosts' | 'users' | 'helpline' | 'analytics' | 'settings' | 'nudity';
 }
 
-export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose, isSuperAdmin = false }) => {
+export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose, isSuperAdmin = false, initialTab }) => {
   const { settings, isFirebaseActive, updateSettings, closeAdmin } = useAdmin();
   const { balance } = useWallet();
   const { hostProfile } = useHost();
 
-  const [activeTab, setActiveTab] = useState<'recharges' | 'payouts' | 'hosts' | 'users' | 'helpline' | 'analytics' | 'settings' | 'nudity'>('recharges');
+  const [activeTab, setActiveTab] = useState<'recharges' | 'payouts' | 'hosts' | 'users' | 'helpline' | 'analytics' | 'settings' | 'nudity'>(initialTab || 'recharges');
 
   // Live Data States
   const [hostsList, setHostsList] = useState<HostProfile[]>([]);
@@ -1065,6 +1066,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
           </div>
         )}
 
+        {/* Persistent Quick Helpline Status & Edit Bar */}
+        <div className="mx-3 sm:mx-5 mt-2.5 p-3 rounded-2xl bg-gradient-to-r from-emerald-950/90 via-[#180a26] to-[#091510] border border-emerald-500/40 flex items-center justify-between flex-wrap gap-2 text-xs shadow-lg">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
+              <Phone className="w-4 h-4" />
+            </div>
+            <div className="text-left">
+              <span className="font-bold text-white block">
+                🎧 Live Customer Helpline Numbers:
+              </span>
+              <span className="text-[11px] text-gray-300">
+                Call: <strong className="font-mono text-pink-300">{settings.supportPhone || '+91 7009600157'}</strong> | WhatsApp: <strong className="font-mono text-emerald-300">{settings.supportWhatsApp || '+91 7009600157'}</strong>
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveTab('helpline')}
+            className={`py-1.5 px-3 rounded-xl font-black text-xs shadow transition-all flex items-center gap-1.5 ${
+              activeTab === 'helpline'
+                ? 'bg-emerald-500 text-black'
+                : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white shadow-emerald-950/60'
+            }`}
+          >
+            <Edit3 className="w-3.5 h-3.5" />
+            <span>✏️ Naya Number Jodein ya Update Karein</span>
+          </button>
+        </div>
+
         {/* Navigation Tabs Bar */}
         <div className="flex border-b border-white/10 px-3 sm:px-5 pt-2 bg-black/40 overflow-x-auto gap-1 sm:gap-2">
           {[
@@ -1075,6 +1105,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
               badgeClass: 'bg-amber-500 text-black font-black animate-pulse'
             },
             {
+              id: 'helpline',
+              label: '🎧 Helpline & WhatsApp (नंबर जोड़ें & बदलें)',
+              badge: callHelplines.length + whatsappHelplines.length,
+              badgeClass: 'bg-emerald-600 text-white font-black'
+            },
+            {
               id: 'payouts',
               label: '💳 Host Withdrawals',
               badge: payoutsList.filter((p) => p.status === 'pending').length,
@@ -1082,12 +1118,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
             },
             { id: 'hosts', label: '👩‍🦰 Host Directory', count: hostsList.length },
             { id: 'users', label: '👤 User Directory', count: usersList.length },
-            {
-              id: 'helpline',
-              label: '🎧 Helpline & WhatsApp Support',
-              badge: callHelplines.length + whatsappHelplines.length,
-              badgeClass: 'bg-emerald-600 text-white font-black'
-            },
             {
               id: 'nudity',
               label: '🚨 Nudity Ban Reports',

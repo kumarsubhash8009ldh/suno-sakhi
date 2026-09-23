@@ -5,9 +5,10 @@ import { useAdmin } from '../context/AdminContext';
 interface HelpDeskModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onOpenHelpline?: () => void;
 }
 
-export const HelpDeskModal: React.FC<HelpDeskModalProps> = ({ isOpen, onClose }) => {
+export const HelpDeskModal: React.FC<HelpDeskModalProps> = ({ isOpen, onClose, onOpenHelpline }) => {
   const { settings } = useAdmin();
   const [copied, setCopied] = useState(false);
   const supportNumber = settings.supportPhone || '+91 7009600157';
@@ -94,7 +95,7 @@ export const HelpDeskModal: React.FC<HelpDeskModalProps> = ({ isOpen, onClose })
 
             <div className="flex items-center gap-2">
               <a
-                href="tel:+919876543210"
+                href={`tel:${supportNumber.replace(/[^\d+]/g, '')}`}
                 className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-md transition-all"
               >
                 <Phone className="w-3.5 h-3.5" />
@@ -123,6 +124,20 @@ export const HelpDeskModal: React.FC<HelpDeskModalProps> = ({ isOpen, onClose })
             <span>100% Secure & Confidential Grievance Resolution</span>
           </div>
         </div>
+
+        {onOpenHelpline && (
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              onOpenHelpline();
+            }}
+            className="w-full mt-3 py-2 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5"
+          >
+            <span>👑 Admin: Helpline Number Add / Badalna Chahte Hain?</span>
+            <span className="text-pink-400">➔</span>
+          </button>
+        )}
       </div>
     </div>
   );

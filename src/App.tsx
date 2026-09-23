@@ -319,7 +319,10 @@ const MainContent: React.FC = () => {
             }}
           />
         ) : currentTab === 'helpline' ? (
-          <HelplineView onExploreSakhis={() => setCurrentTab('sakhis')} />
+          <HelplineView
+            onExploreSakhis={() => setCurrentTab('sakhis')}
+            onOpenAdmin={() => setCurrentTab('admin')}
+          />
         ) : currentTab === 'recents' ? (
           <RecentCallsView
             onExploreSakhis={() => setCurrentTab('sakhis')}
@@ -908,7 +911,14 @@ const MainContent: React.FC = () => {
         isOpen={isReferralModalOpen}
         onClose={() => setIsReferralModalOpen(false)}
       />
-      <HelpDeskModal isOpen={isHelpDeskOpen} onClose={() => setIsHelpDeskOpen(false)} />
+      <HelpDeskModal
+        isOpen={isHelpDeskOpen}
+        onClose={() => setIsHelpDeskOpen(false)}
+        onOpenHelpline={() => {
+          setIsHelpDeskOpen(false);
+          setCurrentTab('helpline');
+        }}
+      />
 
       {/* Host Recruitment Slide Modal */}
       <HostCommissionSlideModal

@@ -19,8 +19,11 @@ import {
   Heart,
   Check,
   Award,
-  Radio
+  Radio,
+  MessageCircle,
+  Edit3
 } from 'lucide-react';
+import { useAdmin } from '../context/AdminContext';
 import {
   getCurrentUser,
   logoutCurrentUser,
@@ -72,6 +75,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onOpenHelpline,
   onOpenHostDashboard
 }) => {
+  const { settings } = useAdmin();
   const { balance, openWalletModal } = useWallet();
   const {
     userRole,
@@ -885,6 +889,36 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <LogOut className="w-4 h-4 text-red-400" />
           <span>🚪 Logout Current ID / Switch Account</span>
         </button>
+      </div>
+
+      {/* Helpline & WhatsApp Number Direct Access Card */}
+      <div className="p-5 rounded-3xl bg-gradient-to-r from-[#0d2a1b] via-[#160a2c] to-[#250d3a] border border-emerald-500/40 shadow-xl space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+              <Phone className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-black text-white flex items-center gap-2">
+                <span>🎧 24x7 Customer Helpline & WhatsApp Numbers</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30 uppercase">
+                  Live Active
+                </span>
+              </h4>
+              <p className="text-xs text-gray-300 mt-0.5">
+                Calling: <strong className="font-mono text-pink-300">{settings.supportPhone || '+91 7009600157'}</strong> | WhatsApp: <strong className="font-mono text-emerald-300">{settings.supportWhatsApp || '+91 7009600157'}</strong>
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={onOpenHelpline}
+            className="py-2 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white font-black text-xs shadow-md transition-all flex items-center gap-1.5 active:scale-95"
+          >
+            <Edit3 className="w-3.5 h-3.5" />
+            <span>✏️ Number Badalna / Add Karna</span>
+          </button>
+        </div>
       </div>
 
       {/* Master Admin Portal Access Section */}

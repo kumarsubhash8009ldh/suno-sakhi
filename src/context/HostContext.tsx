@@ -290,6 +290,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setHostProfile(updatedProfile);
       localStorage.setItem(HOST_STORAGE_KEY, JSON.stringify(updatedProfile));
       localStorage.setItem('sunosakhi_host_logged_in', 'true');
+      saveHostProfileToCloud(updatedProfile);
       setIsHostLoggedIn(true);
       setUserRole('host');
       broadcastAuthChange();
@@ -554,12 +555,19 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     if (!isHostLoggedIn || !hostProfile.id) return;
     const sendHostHeartbeat = () => {
-      updateHostOnlineStatus(hostProfile.id, hostProfile.status || 'online');
+      updateHostOnlineStatus(hostProfile.id, hostProfile.status || 'online', {
+        name: hostProfile.name,
+        phone: hostProfile.phone,
+        avatar: hostProfile.avatar,
+        languages: hostProfile.languages,
+        city: hostProfile.city,
+        bio: hostProfile.bio
+      });
     };
     sendHostHeartbeat();
     const interval = setInterval(sendHostHeartbeat, 6000);
     return () => clearInterval(interval);
-  }, [isHostLoggedIn, hostProfile.id, hostProfile.status]);
+  }, [isHostLoggedIn, hostProfile.id, hostProfile.status, hostProfile.name, hostProfile.phone, hostProfile.avatar]);
 
   // Sync active direct chat messages from Backend Server
   useEffect(() => {

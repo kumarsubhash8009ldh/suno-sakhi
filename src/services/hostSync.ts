@@ -29,14 +29,17 @@ export const deduplicateHosts = (hosts: Sakhi[]): Sakhi[] => {
  */
 export const isRealHostAccount = (h: any): boolean => {
   if (!h || !h.id) return false;
-  const p = h.phone ? String(h.phone).replace(/\D/g, '') : '';
+  let p = h.phone ? String(h.phone).replace(/\D/g, '') : '';
+  if (!p && typeof h.id === 'string') {
+    const digits = h.id.replace(/\D/g, '');
+    if (digits.length >= 10) {
+      p = digits.slice(-10);
+    }
+  }
   const em = h.email ? String(h.email).trim().toLowerCase() : '';
   const hasPhone = p.length >= 10;
   const hasEmail = Boolean(em && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em));
   if (!hasPhone && !hasEmail) return false;
-
-  const n = (h.name || '').trim();
-  if (!n || n === 'Sakhi Host' || n.toLowerCase().startsWith('caller')) return false;
 
   return true;
 };
@@ -102,32 +105,80 @@ export const subscribeToAllRealHosts = (
           const currentSnapshotMap = new Map<string, Sakhi>();
           snapshot.forEach((docSnap) => {
             const data = docSnap.data() as any;
-            if (data && isRealHostAccount({ ...data, id: docSnap.id })) {
-              const sakhi: Sakhi = {
-                id: docSnap.id,
-                name: data.name || 'Verified Sakhi',
-                age: data.age || 22,
-                city: data.city || 'India',
-                avatar: data.avatar || data.selfieUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
-                videoPoster: data.videoPoster || data.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
-                status: data.status === 'offline' ? 'offline' : 'online',
-                rating: typeof data.rating === 'number' ? data.rating : 5.0,
-                totalCalls: data.totalCalls || 0,
-                languages: Array.isArray(data.languages) && data.languages.length > 0 ? data.languages : ['Hindi'],
-                bio: data.bio || 'Namaste! Main SunoSakhi par aapse baatein karne ke liye available hoon.',
-                interests: data.interests || ['Friendly Chat'],
-                voiceRatePerMin: 7, // Caller standard audio rate
-                videoRatePerMin: 15, // Caller standard video rate
-                tagline: data.tagline || '🌸 Verified Sakhi Host',
-                audioSnippet: data.audioSnippet || '',
-                phone: data.phone || '',
-                email: data.email || '',
-                isVerified: true
-              };
-              const key = sakhi.phone || sakhi.email || sakhi.id;
-              currentSnapshotMap.set(key, sakhi);
+            if (data) {
+              const docId = docSnap.id;
+              const phoneDigits = docId.replace(/\D/g, '').slice(-10);
+              const phone = data.phone ? String(data.phone).replace(/\D/g, '').slice(-10) : (phoneDigits.length === 10 ? phoneDigits : '');
+              const email = data.email ? String(data.email).trim().toLowerCase() : (docId.includes('@') ? docId : '');
+
+              if (phone.length === 10 || email) {
+                const displayName = data.name && data.name.trim() !== '' && data.name !== 'Sakhi Host'
+                  ? data.name.trim()
+                  : (phone ? `Sakhi ${phone.slice(-4)}` : 'Sakhi Host');
+
+                const sakhi: Sakhi = {
+                  id: docId,
+                  name: displayName,
+                  age: data.age || 22,
+                  city: data.city || 'India',
+                  avatar: data.avatar || data.selfieUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+                  videoPoster: data.videoPoster || data.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+                  status: data.status === 'offline' ? 'offline' : 'online',
+                  rating: typeof data.rating === 'number' ? data.rating : 5.0,
+                  totalCalls: data.totalCalls || 0,
+                  languages: Array.isArray(data.languages) && data.languages.length > 0 ? data.languages : ['Hindi', 'English'],
+                  bio: data.bio || 'Namaste! Main SunoSakhi par aapse baatein karne ke liye available hoon.',
+                  interests: data.interests || ['Friendly Chat', 'Life Talk'],
+                  voiceRatePerMin: 7, // Caller standard audio rate
+                  videoRatePerMin: 15, // Caller standard video rate
+                  tagline: data.tagline || '🌸 Verified Sakhi Host',
+                  audioSnippet: data.audioSnippet || '',
+                  phone: phone,
+                  email: email,
+                  isVerified: true
+                };
+                const key = sakhi.phone || sakhi.email || sakhi.id;
+                currentSnapshotMap.set(key, sakhi);
+              }
             }
           });
+
+          // Also ensure local logged-in host profile appears immediately
+          try {
+            const rawHost = localStorage.getItem('sunosakhi_host_profile');
+            const isHostLogged = localStorage.getItem('sunosakhi_host_logged_in') === 'true';
+            if (rawHost && isHostLogged) {
+              const hp = JSON.parse(rawHost);
+              const p = String(hp.phone || hp.id || '').replace(/\D/g, '').slice(-10);
+              const em = (hp.email || '').trim().toLowerCase();
+              if (p.length === 10 || em) {
+                const k = p || em || hp.id;
+                if (!currentSnapshotMap.has(k)) {
+                  currentSnapshotMap.set(k, {
+                    id: hp.id || `sakhi-user-${p}`,
+                    name: hp.name || `Sakhi ${p.slice(-4)}`,
+                    age: hp.age || 22,
+                    city: hp.city || 'India',
+                    avatar: hp.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+                    videoPoster: hp.videoPoster || hp.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+                    status: hp.status || 'online',
+                    rating: hp.rating || 5.0,
+                    totalCalls: hp.totalCalls || 0,
+                    languages: hp.languages || ['Hindi', 'English'],
+                    bio: hp.bio || 'Namaste! Main SunoSakhi par aapse baatein karne ke liye available hoon.',
+                    interests: hp.interests || ['Friendly Chat', 'Life Talk'],
+                    voiceRatePerMin: 7,
+                    videoRatePerMin: 15,
+                    tagline: hp.tagline || '🌸 Verified Sakhi Host',
+                    audioSnippet: hp.audioSnippet || '',
+                    phone: p,
+                    email: em,
+                    isVerified: true
+                  });
+                }
+              }
+            }
+          } catch {}
 
           const clean = Array.from(currentSnapshotMap.values()).filter(isRealHostAccount);
           const unique = deduplicateHosts(clean);
@@ -179,14 +230,37 @@ export const subscribeToAllRealHosts = (
  */
 export const updateHostOnlineStatus = async (
   hostId: string,
-  status: 'online' | 'busy' | 'offline'
+  status: 'online' | 'busy' | 'offline',
+  extraProfile?: Partial<Sakhi>
 ): Promise<boolean> => {
+  if (!hostId) return false;
+  const pDigits = hostId.replace(/\D/g, '').slice(-10);
+  const localList = getLocalRegisteredHosts();
+  const matched = localList.find((h) => h.id === hostId || (pDigits.length === 10 && h.phone === pDigits));
+
+  const phone = extraProfile?.phone || matched?.phone || (pDigits.length === 10 ? pDigits : '');
+  const name = extraProfile?.name || matched?.name || (phone ? `Sakhi ${phone.slice(-4)}` : 'Sakhi Host');
+  const avatar = extraProfile?.avatar || matched?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400';
+
   // 1. Update in Cloud Firestore
   if (isFirebaseConfigured() && db) {
     try {
+      const payload: any = {
+        status,
+        lastActiveAt: Date.now()
+      };
+      if (phone) payload.phone = phone;
+      if (name) payload.name = name;
+      if (avatar) payload.avatar = avatar;
+      if (matched?.languages) payload.languages = matched.languages;
+      if (matched?.city) payload.city = matched.city;
+      if (matched?.bio) payload.bio = matched.bio;
+      payload.gender = 'female';
+      payload.isVerified = true;
+
       await setDoc(
         doc(db, HOSTS_COLLECTION, hostId),
-        { status, lastActiveAt: Date.now() },
+        payload,
         { merge: true }
       );
     } catch (err) {
@@ -196,8 +270,7 @@ export const updateHostOnlineStatus = async (
 
   // 2. Update in Local Storage cache
   try {
-    const local = getLocalRegisteredHosts();
-    const updated = local.map((h) => (h.id === hostId ? { ...h, status } : h));
+    const updated = localList.map((h) => (h.id === hostId || (phone && h.phone === phone) ? { ...h, status } : h));
     localStorage.setItem(LOCAL_HOSTS_KEY, JSON.stringify(updated));
   } catch {}
 
@@ -222,29 +295,37 @@ export const updateHostOnlineStatus = async (
 export const saveHostProfileToCloud = async (
   profile: HostProfile
 ): Promise<boolean> => {
-  if (!isRealHostAccount(profile)) {
-    return false;
-  }
+  if (!profile || !profile.id) return false;
+
+  const cleanPhone = String(profile.phone || '').replace(/\D/g, '').slice(-10);
+  const idDigits = profile.id.replace(/\D/g, '').slice(-10);
+  const phone = cleanPhone.length === 10 ? cleanPhone : (idDigits.length === 10 ? idDigits : '');
+  const email = profile.email || '';
+  if (!phone && !email) return false;
+
+  const displayName = profile.name && profile.name.trim() !== '' && profile.name !== 'Sakhi Host'
+    ? profile.name.trim()
+    : (phone ? `Sakhi ${phone.slice(-4)}` : 'Sakhi Host');
 
   const sakhiObj: Sakhi = {
     id: profile.id,
-    name: profile.name.trim(),
+    name: displayName,
     age: profile.age || 22,
     city: profile.city || 'India',
-    avatar: profile.avatar,
-    videoPoster: profile.videoPoster || profile.avatar,
+    avatar: profile.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+    videoPoster: profile.videoPoster || profile.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
     status: profile.status || 'online',
     rating: profile.rating || 5.0,
     totalCalls: profile.incomeHistory?.length || 0,
-    languages: profile.languages || ['Hindi'],
+    languages: profile.languages && profile.languages.length > 0 ? profile.languages : ['Hindi', 'English'],
     bio: profile.bio || 'Namaste! Main SunoSakhi par aapse baatein karne ke liye available hoon.',
-    interests: ['Friendly Chat', 'Life Talk'],
+    interests: profile.interests || ['Friendly Chat', 'Life Talk'],
     voiceRatePerMin: 7,
     videoRatePerMin: 15,
     tagline: profile.tagline || '🌸 Verified Sakhi Host',
     audioSnippet: profile.audioSnippet || '',
-    phone: profile.phone || '',
-    email: profile.email || '',
+    phone: phone,
+    email: email,
     isVerified: true
   };
 
@@ -254,6 +335,10 @@ export const saveHostProfileToCloud = async (
       await setDoc(doc(db, HOSTS_COLLECTION, profile.id), {
         ...profile,
         ...sakhiObj,
+        phone,
+        name: displayName,
+        gender: 'female',
+        status: profile.status || 'online',
         lastActiveAt: Date.now()
       }, { merge: true });
       console.log('✅ Host profile successfully saved to Cloud Firestore:', profile.id);
@@ -265,7 +350,7 @@ export const saveHostProfileToCloud = async (
   // 2. Save to Local Storage cache
   try {
     const list = getLocalRegisteredHosts();
-    const idx = list.findIndex((h) => h.id === profile.id || (profile.phone && h.phone === profile.phone));
+    const idx = list.findIndex((h) => h.id === profile.id || (phone && h.phone === phone));
     if (idx >= 0) {
       list[idx] = sakhiObj;
     } else {

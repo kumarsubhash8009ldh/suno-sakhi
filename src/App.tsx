@@ -32,7 +32,7 @@ import { HostProvider, useHost } from './context/HostContext';
 import { AdminProvider } from './context/AdminContext';
 import { Sakhi } from './types';
 import { subscribeToAllRealHosts, saveHostProfileToCloud } from './services/hostSync';
-import { getCurrentUser, syncUserToServer, getActiveSession, useActiveSession, UserAccount, subscribeToAllRealCallers } from './services/userAuthSync';
+import { getCurrentUser, syncUserToServer, saveUserToCloud, getActiveSession, useActiveSession, UserAccount, subscribeToAllRealCallers } from './services/userAuthSync';
 import { getApiBaseUrl } from './services/apiConfig';
 import { Sparkles, Phone, Video, Search, ShieldCheck, Heart, Users, MessageCircleHeart, Award, UserCheck, MessageCircle, Headphones, Shield, Shuffle, LogIn, ArrowRight, X, ShieldAlert } from 'lucide-react';
 
@@ -103,26 +103,17 @@ const MainContent: React.FC = () => {
     return () => clearTimeout(timer);
   }, [userRole, isHostLoggedIn]);
 
-  // Auto-sync any existing local user/host profiles to backend server on startup
+  // Auto-sync any existing local user/host profiles to Firestore cloud on startup
   useEffect(() => {
     try {
       const caller = getCurrentUser();
-      if (caller && caller.phone) {
-        syncUserToServer(caller);
+      if (caller && (caller.phone || caller.email)) {
+        saveUserToCloud(caller);
       }
       const rawHost = localStorage.getItem('sunosakhi_host_profile');
       if (rawHost) {
         const hp = JSON.parse(rawHost);
-        if (
-          hp &&
-          hp.phone &&
-          String(hp.phone).replace(/\D/g, '').length >= 10 &&
-          hp.name &&
-          hp.name.trim() !== '' &&
-          hp.name !== 'Sakhi Host' &&
-          !hp.name.toLowerCase().startsWith('caller') &&
-          localStorage.getItem('sunosakhi_host_logged_in') === 'true'
-        ) {
+        if (hp && (hp.phone || hp.email || hp.id)) {
           saveHostProfileToCloud(hp);
         }
       }
@@ -195,27 +186,18 @@ const MainContent: React.FC = () => {
   // Strictly ONLY real verified Girl Hosts (Female) registered with Mobile or Email
   const filteredSakhis = useMemo(() => {
     const seen = new Set<string>();
-    return realSakhis.filter((sakhi) => {
+    const list = realSakhis.filter((sakhi) => {
       // Must be female girl host
       if (sakhi.gender && sakhi.gender !== 'female') return false;
 
-      const hasValidPhone = Boolean(sakhi.phone && String(sakhi.phone).replace(/\D/g, '').length >= 10);
+      const pDigits = String(sakhi.phone || sakhi.id || '').replace(/\D/g, '').slice(-10);
+      const hasValidPhone = pDigits.length === 10;
       const hasValidEmail = Boolean(sakhi.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sakhi.email));
       if (!hasValidPhone && !hasValidEmail) return false;
 
-      // Zero dummy accounts guarantee: must have verified phone or email, and real name
-      if (
-        !sakhi.name ||
-        sakhi.name.trim() === '' ||
-        sakhi.name === 'Sakhi Host' ||
-        sakhi.name.toLowerCase().startsWith('caller')
-      ) {
-        return false;
-      }
-
       // Deduplication: Never display duplicate host cards
       const uniqueKey = (hasValidEmail ? sakhi.email!.toLowerCase() : '') ||
-                        (hasValidPhone ? String(sakhi.phone).replace(/\D/g, '') : '') ||
+                        (hasValidPhone ? pDigits : '') ||
                         sakhi.id;
       if (seen.has(uniqueKey)) return false;
       seen.add(uniqueKey);
@@ -228,33 +210,44 @@ const MainContent: React.FC = () => {
 
       if (!matchesSearch) return false;
 
-      // Callers only see real hosts who are currently Online
-      if (sakhi.status !== 'online') return false;
-
+      if (activeFilter === 'online') return sakhi.status === 'online';
       if (activeFilter === 'top') return sakhi.rating >= 4.9;
       if (activeFilter === 'hindi') return sakhi.languages.includes('Hindi');
       if (activeFilter === 'punjabi') return sakhi.languages.includes('Punjabi');
 
       return true;
     });
+
+    // Sort: Online hosts first, then others
+    return list.sort((a, b) => {
+      if (a.status === 'online' && b.status !== 'online') return -1;
+      if (a.status !== 'online' && b.status === 'online') return 1;
+      return 0;
+    });
   }, [realSakhis, activeFilter, searchQuery]);
 
-  // Filtered Callers for Host View (Show Real Online Callers)
+  // Filtered Callers for Host View (Show Real Online / Active Callers)
   const filteredCallers = useMemo(() => {
-    return registeredCallers.filter((caller) => {
-      const cleanPhone = String(caller.phone || '').replace(/\D/g, '');
-      const hasValidPhone = cleanPhone.length >= 10;
+    const list = registeredCallers.filter((caller) => {
+      const cleanPhone = String(caller.phone || caller.id || '').replace(/\D/g, '').slice(-10);
+      const hasValidPhone = cleanPhone.length === 10;
       const hasValidEmail = Boolean(caller.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(caller.email));
       if (!hasValidPhone && !hasValidEmail) return false;
-
-      // Only show online / active callers
-      if (caller.status === 'offline') return false;
 
       const q = searchQuery.toLowerCase().trim();
       if (!q) return true;
       const matchesName = (caller.name || '').toLowerCase().includes(q);
       const matchesPhone = cleanPhone.includes(q);
       return matchesName || matchesPhone;
+    });
+
+    // Sort: Online callers first, then recently active
+    return list.sort((a, b) => {
+      const aOnline = a.status === 'online' || a.isOnline;
+      const bOnline = b.status === 'online' || b.isOnline;
+      if (aOnline && !bOnline) return -1;
+      if (!aOnline && bOnline) return 1;
+      return (b.lastLoginAt || 0) - (a.lastLoginAt || 0);
     });
   }, [registeredCallers, searchQuery]);
 

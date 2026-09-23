@@ -30,6 +30,7 @@ import {
   getActiveSession,
   broadcastAuthChange
 } from '../services/userAuthSync';
+import { isAdminUser, SUPER_ADMIN_PHONE } from '../services/adminSync';
 import { useWallet } from '../context/WalletContext';
 import { useHost } from '../context/HostContext';
 import { compressImageFile } from '../utils/imageCompressor';
@@ -513,7 +514,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <div>
                 <h3 className="text-lg font-black text-white">Host Girl (Sakhi) Profile</h3>
                 <p className="text-xs text-emerald-300/80">
-                  Callers se audio/video calls aur chats attend karke 60% direct kamayein!
+                  Callers se audio/video calls aur chats attend karke direct kamayein!
                 </p>
               </div>
             </div>
@@ -538,13 +539,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
           </div>
 
-          {/* Rate Card & 60% Commission Badge */}
+          {/* Rate Card & Host Earning Badge */}
           <div className="p-3.5 rounded-2xl bg-black/60 border border-emerald-500/30 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Award className="w-5 h-5 text-amber-400 flex-shrink-0" />
               <div>
-                <span className="text-xs font-black text-white">Fixed Rates & 60% Earning Share</span>
-                <p className="text-[11px] text-gray-400">Har call aur message ka 60% seedha aapke wallet me add hota hai</p>
+                <span className="text-xs font-black text-white">Fixed Rates & Host Earning Share</span>
+                <p className="text-[11px] text-gray-400">Har call aur message ka direct share aapke wallet me add hota hai</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -846,10 +847,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             className="p-3.5 rounded-2xl bg-[#160a28] hover:bg-[#200e3a] border border-pink-500/20 text-left space-y-1 transition-all group"
           >
             <span className="text-xs font-black text-pink-300 group-hover:text-white flex items-center justify-between">
-              <span>🏷️ Rate Card & 60%</span>
+              <span>🏷️ Rate Card</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </span>
-            <p className="text-[10px] text-gray-400">Voice ₹5, Video ₹10, Chat ₹2 & 60% share</p>
+            <p className="text-[10px] text-gray-400">Voice ₹5, Video ₹10, Chat ₹2 & Host earning</p>
           </button>
 
           <button
@@ -887,23 +888,54 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       </div>
 
       {/* Master Admin Portal Access Section */}
-      <div className="p-5 rounded-3xl bg-gradient-to-r from-[#21092e] to-[#341144] border border-pink-500/30 flex items-center justify-between shadow-xl">
-        <div className="flex items-center gap-3">
-          <div className="p-3 rounded-2xl bg-pink-500/20 text-pink-400 border border-pink-500/30">
-            <Shield className="w-6 h-6" />
+      {(() => {
+        const session = getActiveSession();
+        const isSuperAdmin = isAdminUser(session?.phone);
+        return (
+          <div className={`p-5 rounded-3xl border flex items-center justify-between shadow-xl transition-all ${
+            isSuperAdmin
+              ? 'bg-gradient-to-r from-[#2b1b05] via-[#3d1222] to-[#1f0729] border-amber-500/60 ring-1 ring-amber-500/30'
+              : 'bg-gradient-to-r from-[#21092e] to-[#341144] border-pink-500/30'
+          }`}>
+            <div className="flex items-center gap-3">
+              <div className={`p-3 rounded-2xl border ${
+                isSuperAdmin
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                  : 'bg-pink-500/20 text-pink-400 border-pink-500/30'
+              }`}>
+                <Shield className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-black text-white">
+                    {isSuperAdmin ? '👑 Super Admin Console' : 'Master Admin Portal'}
+                  </h4>
+                  {isSuperAdmin && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
+                      {SUPER_ADMIN_PHONE}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-pink-300/80">
+                  {isSuperAdmin
+                    ? 'Callers & Hosts Directory, Balances Kam/Jyada karein, Accounts Delete karein.'
+                    : 'Withdrawal payments release, Host IDs & User IDs directory'}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={onOpenAdmin}
+              className={`px-4 py-2.5 rounded-xl font-black text-xs shadow-lg transition-all ${
+                isSuperAdmin
+                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 text-black'
+                  : 'bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 text-white'
+              }`}
+            >
+              {isSuperAdmin ? 'Open Admin Console' : 'Open Admin'}
+            </button>
           </div>
-          <div>
-            <h4 className="text-sm font-black text-white">Master Admin Portal</h4>
-            <p className="text-xs text-pink-300/80">Withdrawal payments release, Host IDs & User IDs directory</p>
-          </div>
-        </div>
-        <button
-          onClick={onOpenAdmin}
-          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 text-white font-black text-xs shadow-lg transition-all"
-        >
-          Open Admin
-        </button>
-      </div>
+        );
+      })()}
 
       {/* Return to Sakhis */}
       <div className="text-center pt-2">

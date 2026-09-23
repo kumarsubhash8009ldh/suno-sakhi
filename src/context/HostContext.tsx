@@ -147,7 +147,7 @@ const defaultHost: HostProfile = {
   rating: 5.0,
   totalCalls: 0,
   languages: ['Hindi', 'English'],
-  bio: 'Host account register karke 60% earning shuru karein!',
+  bio: 'Host account register karke direct earning shuru karein!',
   interests: ['Friendly Chat', 'Life Talk'],
   voiceRatePerMin: 5,
   videoRatePerMin: 10,

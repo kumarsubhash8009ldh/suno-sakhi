@@ -161,7 +161,7 @@ export const HostWithdrawModal: React.FC = () => {
           <div className="flex items-center gap-2 mb-1">
             <CreditCard className="w-5 h-5 text-emerald-400" />
             <h3 className="text-lg sm:text-xl font-black text-white">
-              Host Payment Withdrawal (60% Share)
+              Host Payment Withdrawal
             </h3>
           </div>
           <p className="text-xs text-pink-200/80">
@@ -181,7 +181,7 @@ export const HostWithdrawModal: React.FC = () => {
 
             <div className="p-3 rounded-2xl bg-[#221038] border border-pink-500/30 shadow">
               <span className="text-[10px] uppercase font-bold text-pink-300 tracking-wider block">
-                Lifetime 60% Earned
+                Lifetime Net Earned
               </span>
               <div className="text-xl sm:text-2xl font-black text-white mt-0.5">
                 ₹{((hostProfile?.netIncome ?? 0) || 0).toFixed(2)}

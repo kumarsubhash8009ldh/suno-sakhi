@@ -100,7 +100,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onQuickCall, onOpenRefer
                 className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 via-pink-600 to-purple-600 hover:from-amber-400 hover:to-pink-500 text-white font-black text-xs sm:text-sm shadow-xl shadow-pink-900/50 flex items-center gap-1.5 transition-all border border-amber-300/50 hover:scale-105 active:scale-95 animate-pulse"
               >
                 <Crown className="w-4 h-4 text-amber-200" />
-                <span>🌸 Host Banein (60% Share)</span>
+                <span>🌸 Host Banein (Direct Kamai)</span>
               </button>
             )}
           </div>

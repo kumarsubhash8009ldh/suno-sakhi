@@ -1,6 +1,8 @@
 import React from 'react';
-import { Phone, MessageCircle, Zap, Headphones, User, Crown, Gift } from 'lucide-react';
+import { Phone, MessageCircle, Zap, Headphones, User, Crown, Gift, Shield } from 'lucide-react';
 import { useHost } from '../context/HostContext';
+import { useActiveSession } from '../services/userAuthSync';
+import { isAdminUser } from '../services/adminSync';
 
 interface BottomNavProps {
   currentTab: string;
@@ -16,6 +18,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   onOpenReferral
 }) => {
   const { userRole, hostConversations } = useHost();
+  const session = useActiveSession();
+  const isSuperAdmin = isAdminUser(session?.phone);
   const isHost = userRole === 'host';
   const unreadCount = hostConversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
 
@@ -118,6 +122,22 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           </div>
           <span className="text-[10px] font-bold tracking-tight">Profile</span>
         </button>
+
+        {/* 7. Super Admin (Only shown for 7009600157) */}
+        {isSuperAdmin && (
+          <button
+            onClick={() => onTabChange('admin')}
+            className={`flex flex-col items-center gap-0.5 py-1 px-1.5 rounded-2xl transition-all ${
+              currentTab === 'admin' ? 'text-amber-400 font-black' : 'text-amber-300/80 hover:text-amber-300'
+            }`}
+            title="Super Admin Portal (7009600157)"
+          >
+            <div className={`p-1 rounded-full ${currentTab === 'admin' ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-500/10'}`}>
+              <Shield className="w-4 h-4 text-amber-400 animate-pulse" />
+            </div>
+            <span className="text-[10px] font-extrabold tracking-tight text-amber-300">Admin</span>
+          </button>
+        )}
       </div>
     </nav>
   );

@@ -92,7 +92,7 @@ const MainContent: React.FC = () => {
   const [isHostSlideOpen, setIsHostSlideOpen] = useState<boolean>(false);
   const [isApkGuideOpen, setIsApkGuideOpen] = useState<boolean>(false);
 
-  // Auto-pop attractive 60% commission slide for callers after 3.5 seconds
+  // Auto-pop attractive host recruitment slide for callers after 3.5 seconds
   useEffect(() => {
     if (userRole === 'host' || isHostLoggedIn) return;
     if (typeof window !== 'undefined' && sessionStorage.getItem('sunosakhi_dismissed_host_slide') === 'true') return;
@@ -792,7 +792,7 @@ const MainContent: React.FC = () => {
                         className="px-6 py-3 rounded-2xl bg-gradient-to-r from-pink-600 via-fuchsia-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white font-extrabold text-xs sm:text-sm shadow-lg shadow-pink-600/40 transition-all flex items-center gap-2 hover:scale-105"
                       >
                         <UserCheck className="w-4 h-4" />
-                        <span>🌸 Host Bano & 60% Kamai Shuru Karo</span>
+                        <span>🌸 Host Bano & Direct Kamai Shuru Karo</span>
                       </button>
                     )}
                   </div>
@@ -819,7 +819,7 @@ const MainContent: React.FC = () => {
           </div>
           <p className="max-w-md text-gray-500">
             Dil se baat sirf SunoSakhi ke saath. Voice: ₹5/min • Video: ₹8/min • Sakhi Chat: ₹2/msg.
-            Host Earns 60% Income. 100% Secure, Confidential, and Private.
+            Host Direct Income. 100% Secure, Confidential, and Private.
           </p>
           <div className="flex items-center gap-4 text-xs font-semibold">
             <button
@@ -910,7 +910,7 @@ const MainContent: React.FC = () => {
       />
       <HelpDeskModal isOpen={isHelpDeskOpen} onClose={() => setIsHelpDeskOpen(false)} />
 
-      {/* 60% Commission Host Recruitment Slide Modal */}
+      {/* Host Recruitment Slide Modal */}
       <HostCommissionSlideModal
         isOpen={isHostSlideOpen}
         onClose={() => {
@@ -926,7 +926,7 @@ const MainContent: React.FC = () => {
         }}
       />
 
-      {/* Floating Host 60% Commission Trigger Pill */}
+      {/* Floating Host Recruitment Trigger Pill */}
       {userRole !== 'host' && !isHostLoggedIn && currentTab === 'sakhis' && (
         <HostRecruitmentPill onClick={() => setIsHostSlideOpen(true)} />
       )}

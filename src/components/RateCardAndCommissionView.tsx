@@ -36,7 +36,7 @@ export const RateCardAndCommissionView: React.FC<RateCardAndCommissionViewProps>
           🏷️ Rate Card & 💰 Commission Details
         </h2>
         <p className="text-xs sm:text-sm text-gray-400">
-          Zero hidden charges. Transparent per-second billing for callers aur verified 60% direct kamai host ladkiyon ke liye.
+          Zero hidden charges. Transparent per-second billing for callers aur verified direct kamai host ladkiyon ke liye.
         </p>
 
         {/* Host Free & Instant Commission Notice Box */}
@@ -50,7 +50,7 @@ export const RateCardAndCommissionView: React.FC<RateCardAndCommissionViewProps>
               <span className="px-2 py-0.5 rounded-full bg-emerald-500 text-black text-[10px] font-black uppercase">Free for Host</span>
             </h4>
             <p className="text-[11px] sm:text-xs text-gray-200 leading-relaxed">
-              Host ladkiyon ki ID par Messages, Audio Call aur Video Call ka <strong>₹0 charge</strong> lagta hai (100% Free). Callers se milne wali <strong>60% commission sath ke sath</strong> host ke account me live update hoti hai aur UPI/Bank me withdraw ki ja sakti hai!
+              Host ladkiyon ki ID par Messages, Audio Call aur Video Call ka <strong>₹0 charge</strong> lagta hai (100% Free). Callers se milne wali <strong>host commission sath ke sath</strong> host ke account me live update hoti hai aur UPI/Bank me withdraw ki ja sakti hai!
             </p>
           </div>
         </div>
@@ -85,7 +85,7 @@ export const RateCardAndCommissionView: React.FC<RateCardAndCommissionViewProps>
                 : 'text-gray-400 hover:text-white'
             }`}
           >
-            60% Commission
+            Host Commission
           </button>
         </div>
       </div>
@@ -210,7 +210,7 @@ export const RateCardAndCommissionView: React.FC<RateCardAndCommissionViewProps>
           </div>
         )}
 
-        {/* COLUMN 2: HOST 60% COMMISSION DETAILS (कमीशन डिटेल्स) */}
+        {/* COLUMN 2: HOST COMMISSION DETAILS (कमीशन डिटेल्स) */}
         {(activeSubTab === 'all' || activeSubTab === 'commission') && (
           <div className="rounded-3xl bg-[#0b1f1c]/90 border border-emerald-500/30 p-5 sm:p-6 space-y-5 shadow-2xl flex flex-col justify-between">
             <div className="space-y-4">
@@ -368,7 +368,7 @@ export const RateCardAndCommissionView: React.FC<RateCardAndCommissionViewProps>
                 }}
                 className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/40 transition-all"
               >
-                <span>{isHostLoggedIn ? '🌸 Host Dashboard Kholein' : '🌸 Host Bano & 60% Kamai Shuru Karo'}</span>
+                <span>{isHostLoggedIn ? '🌸 Host Dashboard Kholein' : '🌸 Host Bano & Kamai Shuru Karo'}</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>

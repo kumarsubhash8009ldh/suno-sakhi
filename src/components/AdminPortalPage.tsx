@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Shield, Lock, ArrowLeft, KeyRound, AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react';
 import { AdminPanel } from './AdminPanel';
 import { useAdmin } from '../context/AdminContext';
+import { useActiveSession } from '../services/userAuthSync';
+import { isAdminUser, SUPER_ADMIN_PHONE } from '../services/adminSync';
 
 interface AdminPortalPageProps {
   onClose?: () => void;
@@ -9,18 +11,30 @@ interface AdminPortalPageProps {
 
 export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({ onClose }) => {
   const { openAdmin } = useAdmin();
+  const session = useActiveSession();
+  const isSuperAdminAccount = isAdminUser(session?.phone);
+
   const [passcode, setPasscode] = useState('');
   const [isUnlocked, setIsUnlocked] = useState(() => {
-    return sessionStorage.getItem('sunosakhi_admin_session') === 'active';
+    return isSuperAdminAccount || sessionStorage.getItem('sunosakhi_admin_session') === 'active';
   });
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // If user logs in with 7009600157, auto-unlock
+  React.useEffect(() => {
+    if (isSuperAdminAccount) {
+      setIsUnlocked(true);
+      sessionStorage.setItem('sunosakhi_admin_session', 'active');
+      openAdmin();
+    }
+  }, [isSuperAdminAccount, openAdmin]);
 
   const handleUnlock = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
 
-    // Secure Master Admin Passcode
-    if (passcode === 'admin786' || passcode === 'sakhi@admin2026' || passcode === '123456') {
+    // Secure Master Admin Passcode OR Super Admin
+    if (passcode === 'admin786' || passcode === 'sakhi@admin2026' || passcode === '123456' || isSuperAdminAccount) {
       setIsUnlocked(true);
       sessionStorage.setItem('sunosakhi_admin_session', 'active');
       openAdmin();
@@ -46,8 +60,15 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({ onClose }) => 
               <Shield className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white">SunoSakhi Master Admin Portal</h2>
-              <p className="text-xs text-pink-300">Secret Management & Cloud Sync Console</p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-base font-bold text-white">SunoSakhi Master Admin Portal</h2>
+                {isSuperAdminAccount && (
+                  <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500/20 to-pink-500/20 border border-amber-500/40 text-amber-300 text-[11px] font-black flex items-center gap-1">
+                    👑 Super Admin ({SUPER_ADMIN_PHONE})
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-pink-300">User & Host Directory • Balances • Account Control</p>
             </div>
           </div>
           <button
@@ -60,7 +81,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({ onClose }) => 
         </header>
 
         <main className="flex-1 p-4 max-w-6xl mx-auto w-full">
-          <AdminPanel />
+          <AdminPanel isSuperAdmin={isSuperAdminAccount} />
         </main>
       </div>
     );
@@ -85,6 +106,28 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({ onClose }) => 
           <div className="mb-4 p-3 rounded-xl bg-red-500/20 border border-red-500/40 text-red-300 text-xs flex items-center gap-2">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />
             <span>{errorMsg}</span>
+          </div>
+        )}
+
+        {isSuperAdminAccount && (
+          <div className="mb-4 p-3.5 rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-200 text-xs space-y-2">
+            <p className="font-bold flex items-center gap-1.5 text-amber-300">
+              <span>👑 Super Admin Verified (+91 {SUPER_ADMIN_PHONE})</span>
+            </p>
+            <p className="text-[11px] text-amber-200/80">
+              Aapka mobile number Super Admin ke roop me register hai. Passcode ki zaroorat nahi hai.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setIsUnlocked(true);
+                sessionStorage.setItem('sunosakhi_admin_session', 'active');
+                openAdmin();
+              }}
+              className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-black text-xs shadow-md transition-all"
+            >
+              🚀 Direct Admin Kholein (No Password)
+            </button>
           </div>
         )}
 

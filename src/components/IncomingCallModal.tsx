@@ -360,7 +360,7 @@ export const IncomingCallModal: React.FC = () => {
         {/* Dynamic Role Banner */}
         {session.role === 'host' ? (
           <div className="relative z-10 px-3.5 py-1 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-black mb-3">
-            🎉 60% Share: Aapko milega ₹{earnRate}/minute live!
+            🎉 Host Earning: Aapko milega ₹{earnRate}/minute live!
           </div>
         ) : (
           <div className="relative z-10 px-3.5 py-1 rounded-xl bg-pink-500/20 border border-pink-500/40 text-pink-300 text-xs font-black mb-3">

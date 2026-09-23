@@ -32,7 +32,8 @@ import {
   Clock,
   Copy,
   ShieldAlert,
-  AlertOctagon
+  AlertOctagon,
+  Trash2
 } from 'lucide-react';
 import { useAdmin } from '../context/AdminContext';
 import { useWallet } from '../context/WalletContext';
@@ -56,6 +57,9 @@ import {
   toggleUserBlock,
   toggleHostBlock,
   setHostVerificationStatus,
+  setUserBalanceDirect,
+  deleteUserAccountPermanently,
+  SUPER_ADMIN_PHONE,
   AdminUserDetails
 } from '../services/adminSync';
 import {
@@ -68,9 +72,10 @@ import {
 interface AdminPanelProps {
   isModal?: boolean;
   onClose?: () => void;
+  isSuperAdmin?: boolean;
 }
 
-export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose }) => {
+export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose, isSuperAdmin = false }) => {
   const { settings, isFirebaseActive, updateSettings, closeAdmin } = useAdmin();
   const { balance } = useWallet();
   const { hostProfile } = useHost();
@@ -109,6 +114,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
   const [coinModalUser, setCoinModalUser] = useState<AdminUserDetails | null>(null);
   const [coinAddAmount, setCoinAddAmount] = useState<string>('100');
   const [coinNote, setCoinNote] = useState<string>('Admin Manual Recharge');
+
+  // Super Admin Flexible Balance Adjustment (Kam / Jyada / Exact Set)
+  const [balanceTarget, setBalanceTarget] = useState<{
+    id: string;
+    name: string;
+    phone?: string;
+    role: 'caller' | 'host';
+    currentBalance: number;
+  } | null>(null);
+  const [balanceAdjustType, setBalanceAdjustType] = useState<'add' | 'deduct' | 'exact'>('add');
+  const [balanceAmountInput, setBalanceAmountInput] = useState<string>('100');
+  const [balanceReasonInput, setBalanceReasonInput] = useState<string>('Admin Adjustment');
+
+  // Super Admin Permanent Account Deletion
+  const [deletingTarget, setDeletingTarget] = useState<{
+    id: string;
+    name: string;
+    phone?: string;
+    role: 'caller' | 'host';
+  } | null>(null);
+  const [isDeletingAccount, setIsDeletingAccount] = useState<boolean>(false);
 
   // Direct Payout Form State
   const [directHostId, setDirectHostId] = useState<string>('');
@@ -381,6 +407,65 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
       loadData();
     } else {
       showToast('error', 'Coins add karne me samasya aayi.');
+    }
+  };
+
+  // Handler: Super Admin Flexible Balance Adjustment (Kam / Jyada / Exact)
+  const handleExecuteBalanceAdjustment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!balanceTarget) return;
+
+    const val = parseFloat(balanceAmountInput);
+    if (isNaN(val) || val < 0) {
+      showToast('error', 'Kripya sahi valid amount enter karein.');
+      return;
+    }
+
+    let nextBal = balanceTarget.currentBalance;
+    if (balanceAdjustType === 'add') {
+      nextBal = balanceTarget.currentBalance + val;
+    } else if (balanceAdjustType === 'deduct') {
+      nextBal = Math.max(0, balanceTarget.currentBalance - val);
+    } else {
+      nextBal = val;
+    }
+
+    const res = await setUserBalanceDirect(
+      balanceTarget.phone || balanceTarget.id,
+      nextBal,
+      balanceTarget.role,
+      balanceReasonInput
+    );
+
+    if (res.success) {
+      showToast('success', res.message);
+      setBalanceTarget(null);
+      loadData();
+    } else {
+      showToast('error', 'Balance update nahi ho saka.');
+    }
+  };
+
+  // Handler: Super Admin Permanent Account Deletion
+  const handleConfirmDeleteAccount = async () => {
+    if (!deletingTarget) return;
+    setIsDeletingAccount(true);
+    try {
+      const res = await deleteUserAccountPermanently(
+        deletingTarget.phone || deletingTarget.id,
+        deletingTarget.role
+      );
+      if (res.success) {
+        showToast('success', res.message);
+        setDeletingTarget(null);
+        loadData();
+      } else {
+        showToast('error', res.message);
+      }
+    } catch (e) {
+      showToast('error', 'Account delete karte samay error aaya.');
+    } finally {
+      setIsDeletingAccount(false);
     }
   };
 
@@ -1085,7 +1170,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div>
                   <h3 className="text-base font-black text-white">Registered Host Girls ({hostsList.length})</h3>
-                  <p className="text-xs text-pink-300">Sabhi Host IDs, Mobile Numbers, Call Minutes aur 60% Earnings</p>
+                  <p className="text-xs text-pink-300">Sabhi Host IDs, Mobile Numbers, Call Minutes aur Host Earnings</p>
                 </div>
                 {/* Search Bar */}
                 <div className="relative w-full sm:w-72">
@@ -1164,7 +1249,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
                           </span>
                         </div>
                         <div className="p-2 rounded-xl bg-white/5">
-                          <span className="text-[10px] text-gray-400 block">60% Net Earned</span>
+                          <span className="text-[10px] text-gray-400 block">Host Net Earned</span>
                           <span className="text-xs font-black text-emerald-400">
                             ₹{(host.netIncome || 0).toFixed(2)}
                           </span>
@@ -1200,7 +1285,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
                       })()}
 
                       {/* Host Actions */}
-                      <div className="flex items-center justify-between pt-1 gap-2">
+                      <div className="flex items-center justify-between pt-1 gap-1.5 flex-wrap">
                         <button
                           onClick={() => {
                             setDirectHostId(host.id);
@@ -1208,15 +1293,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
                             setDirectAmount(host.pendingPayout > 0 ? host.pendingPayout.toString() : '500');
                             setActiveTab('payouts');
                           }}
-                          className="flex-1 py-1.5 px-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1 shadow"
+                          className="flex-1 min-w-[100px] py-1.5 px-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1 shadow"
                         >
                           <DollarSign className="w-3.5 h-3.5" />
                           <span>Release Payout</span>
                         </button>
 
+                        {/* Adjust Host Balance / Earnings */}
+                        <button
+                          onClick={() => {
+                            setBalanceTarget({
+                              id: host.id,
+                              name: host.name,
+                              phone: host.phone,
+                              role: 'host',
+                              currentBalance: host.netIncome || 0
+                            });
+                            setBalanceAmountInput('100');
+                            setBalanceAdjustType('add');
+                          }}
+                          className="py-1.5 px-2.5 rounded-xl bg-gradient-to-r from-emerald-700 to-teal-700 hover:from-emerald-600 text-white font-bold text-xs flex items-center justify-center gap-1 shadow"
+                          title="Host Kamai / Balance Kam ya Jyada karein"
+                        >
+                          <Coins className="w-3.5 h-3.5 text-amber-300" />
+                          <span>Bal ±</span>
+                        </button>
+
                         <button
                           onClick={() => handleToggleHostVerification(host)}
-                          className="py-1.5 px-3 rounded-xl bg-blue-950/60 hover:bg-blue-900/60 border border-blue-500/30 text-blue-300 font-bold text-xs"
+                          className="py-1.5 px-2 rounded-xl bg-blue-950/60 hover:bg-blue-900/60 border border-blue-500/30 text-blue-300 font-bold text-xs"
                           title="Toggle Verification"
                         >
                           {host.isVerified ? 'Unverify' : 'Verify ID'}
@@ -1224,10 +1329,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
 
                         <button
                           onClick={() => handleToggleHostBlock(host)}
-                          className="py-1.5 px-3 rounded-xl bg-red-950/50 hover:bg-red-900/50 border border-red-500/30 text-red-300 font-bold text-xs"
+                          className="py-1.5 px-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 font-bold text-xs"
                           title="Block / Unblock Host"
                         >
                           {host.status === 'offline' ? 'Unblock' : 'Block'}
+                        </button>
+
+                        {/* Delete Host Account Button */}
+                        <button
+                          onClick={() => setDeletingTarget({ id: host.id, name: host.name, phone: host.phone, role: 'host' })}
+                          className="py-1.5 px-2 rounded-xl bg-red-600/20 hover:bg-red-600/40 border border-red-500/40 text-red-300 hover:text-white font-bold text-xs flex items-center justify-center gap-1"
+                          title="Permanently Delete Host Account"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Delete</span>
                         </button>
                       </div>
                     </div>
@@ -1306,22 +1421,41 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
 
                       {/* User Actions */}
                       <div className="flex items-center justify-between pt-2 border-t border-white/10 gap-2">
+                        {/* Adjust Balance (Kam / Jyada / Set) */}
                         <button
                           onClick={() => {
-                            setCoinModalUser(u);
-                            setCoinAddAmount('100');
+                            setBalanceTarget({
+                              id: u.id,
+                              name: u.name,
+                              phone: u.phone,
+                              role: 'caller',
+                              currentBalance: u.balance || 0
+                            });
+                            setBalanceAmountInput('100');
+                            setBalanceAdjustType('add');
                           }}
-                          className="flex-1 py-1.5 px-3 rounded-xl bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow"
+                          className="flex-1 py-1.5 px-2.5 rounded-xl bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow"
+                          title="Adjust User Coins (Kam / Jyada / Set)"
                         >
                           <Coins className="w-3.5 h-3.5 text-amber-300" />
-                          <span>Add Coins to Wallet</span>
+                          <span>Balance Kam/Jyada</span>
                         </button>
 
                         <button
                           onClick={() => handleToggleUserBlock(u)}
-                          className="py-1.5 px-3 rounded-xl bg-red-950/50 hover:bg-red-900/50 border border-red-500/30 text-red-300 font-bold text-xs"
+                          className="py-1.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 font-bold text-xs"
                         >
-                          {u.status === 'blocked' ? 'Unblock' : 'Block User'}
+                          {u.status === 'blocked' ? 'Unblock' : 'Block'}
+                        </button>
+
+                        {/* Permanent Account Delete Button */}
+                        <button
+                          onClick={() => setDeletingTarget({ id: u.id, name: u.name, phone: u.phone, role: 'caller' })}
+                          className="py-1.5 px-2.5 rounded-xl bg-red-600/20 hover:bg-red-600/40 border border-red-500/40 text-red-300 hover:text-white font-bold text-xs flex items-center justify-center gap-1"
+                          title="Permanently Delete Caller Account"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Delete</span>
                         </button>
                       </div>
                     </div>
@@ -1344,7 +1478,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
                 </div>
 
                 <div className="p-4 rounded-2xl bg-[#0c2417] border border-emerald-500/30">
-                  <span className="text-xs font-bold text-emerald-300 uppercase">Host 60% Payouts Paid</span>
+                  <span className="text-xs font-bold text-emerald-300 uppercase">Host Payouts Paid</span>
                   <p className="text-2xl sm:text-3xl font-black text-emerald-300 mt-1">₹{totalHostNetPaid.toFixed(2)}</p>
                   <span className="text-[10px] text-emerald-400">Completed Bank & UPI Transfers</span>
                 </div>
@@ -1753,68 +1887,178 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
           </div>
         )}
 
-        {/* MODAL: ADD COINS TO SPECIFIC USER */}
-        {coinModalUser && (
+        {/* MODAL: SUPER ADMIN FLEXIBLE BALANCE ADJUSTMENT (KAM / JYADA / SET) */}
+        {balanceTarget && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
             <div className="w-full max-w-md p-5 rounded-3xl bg-[#180928] border border-pink-500/40 shadow-2xl space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-base font-black text-white flex items-center gap-2">
                   <Coins className="w-5 h-5 text-amber-400" />
-                  <span>Add Coins to Caller ID</span>
+                  <span>Adjust Account Balance (Kam / Jyada)</span>
                 </h3>
                 <button
-                  onClick={() => setCoinModalUser(null)}
+                  onClick={() => setBalanceTarget(null)}
                   className="p-1.5 rounded-full hover:bg-white/10 text-gray-300"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <div className="p-3 rounded-2xl bg-black/40 border border-white/10 space-y-1 text-xs">
-                <p className="text-gray-300">User: <strong className="text-white">{coinModalUser.name}</strong></p>
-                <p className="text-gray-300">User ID: <strong className="text-pink-300 font-mono">{coinModalUser.id}</strong></p>
-                <p className="text-gray-300">Mobile: <strong className="text-white font-mono">+91 {coinModalUser.phone}</strong></p>
-                <p className="text-gray-300">Current Balance: <strong className="text-amber-300 font-black">₹{coinModalUser.balance.toFixed(2)}</strong></p>
+              {/* Target Account Summary */}
+              <div className="p-3.5 rounded-2xl bg-black/40 border border-white/10 space-y-1 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-400">Account Name:</span>
+                  <strong className="text-white">{balanceTarget.name}</strong>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-400">Account Type:</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                    balanceTarget.role === 'host' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-blue-500/20 text-blue-300'
+                  }`}>
+                    {balanceTarget.role === 'host' ? 'Host Girl' : 'Caller User'}
+                  </span>
+                </div>
+                {balanceTarget.phone && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-400">Mobile:</span>
+                    <strong className="text-white font-mono">+91 {balanceTarget.phone}</strong>
+                  </div>
+                )}
+                <div className="flex items-center justify-between pt-1 border-t border-white/10">
+                  <span className="text-gray-300 font-semibold">Current Balance:</span>
+                  <strong className="text-amber-300 font-black text-sm">₹{balanceTarget.currentBalance.toFixed(2)}</strong>
+                </div>
               </div>
 
-              <form onSubmit={handleAddCoinsToUser} className="space-y-3">
-                {/* Quick select buttons */}
-                <div className="grid grid-cols-4 gap-2">
-                  {[50, 100, 250, 500].map((amt) => (
-                    <button
-                      key={amt}
-                      type="button"
-                      onClick={() => setCoinAddAmount(amt.toString())}
-                      className={`py-1.5 px-2 rounded-xl text-xs font-black border transition-all ${
-                        coinAddAmount === amt.toString()
-                          ? 'bg-pink-600 text-white border-pink-400'
-                          : 'bg-white/5 text-gray-300 border-white/10 hover:bg-white/10'
-                      }`}
-                    >
-                      +₹{amt}
-                    </button>
-                  ))}
-                </div>
+              {/* Adjustment Type Switcher (Add / Deduct / Exact Set) */}
+              <div className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-black/60 border border-white/10">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBalanceAdjustType('add');
+                    setBalanceAmountInput('100');
+                  }}
+                  className={`py-2 rounded-xl text-xs font-bold transition-all ${
+                    balanceAdjustType === 'add'
+                      ? 'bg-emerald-600 text-white shadow'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  ➕ Jyada (Add)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBalanceAdjustType('deduct');
+                    setBalanceAmountInput('50');
+                  }}
+                  className={`py-2 rounded-xl text-xs font-bold transition-all ${
+                    balanceAdjustType === 'deduct'
+                      ? 'bg-rose-600 text-white shadow'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  ➖ Kam (Deduct)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBalanceAdjustType('exact');
+                    setBalanceAmountInput(balanceTarget.currentBalance.toString());
+                  }}
+                  className={`py-2 rounded-xl text-xs font-bold transition-all ${
+                    balanceAdjustType === 'exact'
+                      ? 'bg-purple-600 text-white shadow'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  🎯 Exact Set
+                </button>
+              </div>
+
+              <form onSubmit={handleExecuteBalanceAdjustment} className="space-y-3">
+                {/* Quick Presets for Add/Deduct */}
+                {balanceAdjustType === 'add' && (
+                  <div className="grid grid-cols-4 gap-2">
+                    {[50, 100, 250, 500].map((amt) => (
+                      <button
+                        key={amt}
+                        type="button"
+                        onClick={() => setBalanceAmountInput(amt.toString())}
+                        className={`py-1.5 px-2 rounded-xl text-xs font-black border transition-all ${
+                          balanceAmountInput === amt.toString()
+                            ? 'bg-emerald-600 text-white border-emerald-400'
+                            : 'bg-white/5 text-gray-300 border-white/10 hover:bg-white/10'
+                        }`}
+                      >
+                        +₹{amt}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {balanceAdjustType === 'deduct' && (
+                  <div className="grid grid-cols-4 gap-2">
+                    {[50, 100, 250, 500].map((amt) => (
+                      <button
+                        key={amt}
+                        type="button"
+                        onClick={() => setBalanceAmountInput(amt.toString())}
+                        className={`py-1.5 px-2 rounded-xl text-xs font-black border transition-all ${
+                          balanceAmountInput === amt.toString()
+                            ? 'bg-rose-600 text-white border-rose-400'
+                            : 'bg-white/5 text-gray-300 border-white/10 hover:bg-white/10'
+                        }`}
+                      >
+                        -₹{amt}
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                 <div>
-                  <label className="text-xs font-semibold text-gray-300 block mb-1">Coin Amount (₹)</label>
+                  <label className="text-xs font-semibold text-gray-300 block mb-1">
+                    {balanceAdjustType === 'add'
+                      ? 'Add Karne Wali Amount (₹)'
+                      : balanceAdjustType === 'deduct'
+                      ? 'Kam / Katne Wali Amount (₹)'
+                      : 'Naya Exact Balance (₹)'}
+                  </label>
                   <input
                     type="number"
                     required
-                    min={1}
-                    value={coinAddAmount}
-                    onChange={(e) => setCoinAddAmount(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl bg-black/60 border border-pink-500/30 text-white font-mono text-sm font-bold focus:outline-none"
+                    min={0}
+                    step="0.01"
+                    value={balanceAmountInput}
+                    onChange={(e) => setBalanceAmountInput(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl bg-black/60 border border-pink-500/30 text-white font-mono text-base font-bold focus:outline-none"
                   />
                 </div>
 
+                {/* Calculation preview */}
+                {(() => {
+                  const val = parseFloat(balanceAmountInput) || 0;
+                  let calculated = balanceTarget.currentBalance;
+                  if (balanceAdjustType === 'add') calculated += val;
+                  else if (balanceAdjustType === 'deduct') calculated = Math.max(0, calculated - val);
+                  else calculated = Math.max(0, val);
+                  return (
+                    <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between text-xs">
+                      <span className="text-gray-400">Naya Balance Banega:</span>
+                      <strong className="text-emerald-400 font-black text-sm">
+                        ₹{calculated.toFixed(2)}
+                      </strong>
+                    </div>
+                  );
+                })()}
+
                 <div>
-                  <label className="text-xs font-semibold text-gray-300 block mb-1">Reason / Note</label>
+                  <label className="text-xs font-semibold text-gray-300 block mb-1">Reason / Note (Optional)</label>
                   <input
                     type="text"
-                    value={coinNote}
-                    onChange={(e) => setCoinNote(e.target.value)}
-                    placeholder="e.g. Promotional Bonus / Compensation"
+                    value={balanceReasonInput}
+                    onChange={(e) => setBalanceReasonInput(e.target.value)}
+                    placeholder="e.g. Admin Adjustment / Special Gift"
                     className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/10 text-white text-xs focus:outline-none"
                   />
                 </div>
@@ -1822,7 +2066,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
                 <div className="flex items-center gap-2 pt-1">
                   <button
                     type="button"
-                    onClick={() => setCoinModalUser(null)}
+                    onClick={() => setBalanceTarget(null)}
                     className="flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs"
                   >
                     Cancel
@@ -1831,10 +2075,61 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
                     type="submit"
                     className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-pink-600 via-rose-600 to-purple-600 hover:from-pink-500 text-white font-black text-xs shadow-lg"
                   >
-                    Add Coins Now
+                    Confirm & Update Balance
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: PERMANENT ACCOUNT DELETION CONFIRMATION */}
+        {deletingTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+            <div className="w-full max-w-md p-6 rounded-3xl bg-[#1b0816] border-2 border-red-500/60 shadow-2xl shadow-red-950/80 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 rounded-2xl bg-red-600/20 text-red-400 border border-red-500/40">
+                  <Trash2 className="w-6 h-6 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-white">Permanently Delete Account?</h3>
+                  <p className="text-xs text-red-300">Irreversible Action • Data Will Be Erased</p>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-black/50 border border-red-500/30 text-xs space-y-2">
+                <p className="text-gray-300">
+                  Kya aap sach me is {deletingTarget.role === 'host' ? 'Host' : 'User'} ka account permanent delete karna chahte hain?
+                </p>
+                <div className="p-2.5 rounded-xl bg-red-950/40 border border-red-500/20 space-y-1">
+                  <p className="text-white font-bold">Name: {deletingTarget.name}</p>
+                  {deletingTarget.phone && <p className="text-red-300 font-mono">Mobile: +91 {deletingTarget.phone}</p>}
+                  <p className="text-gray-400 font-mono text-[11px]">ID: {deletingTarget.id}</p>
+                </div>
+                <p className="text-red-400/90 text-[11px] font-semibold">
+                  ⚠️ Is account ka wallet balance, call history, chat history aur profile Firestore cloud aur local system se hamesha ke liye delete ho jayega.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  disabled={isDeletingAccount}
+                  onClick={() => setDeletingTarget(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs transition-all disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeletingAccount}
+                  onClick={handleConfirmDeleteAccount}
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 text-white font-black text-xs shadow-lg shadow-red-600/40 flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>{isDeletingAccount ? 'Deleting...' : 'Yes, Delete Account'}</span>
+                </button>
+              </div>
             </div>
           </div>
         )}

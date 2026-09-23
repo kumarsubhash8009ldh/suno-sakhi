@@ -35,7 +35,7 @@ export const GiftTrayModal: React.FC = () => {
                 <Heart className="w-4 h-4 text-pink-400 fill-pink-400" />
               </h3>
               <p className="text-[11px] text-pink-300/80">
-                Host earns 60% income on each gift sent!
+                Host earns direct income on each gift sent!
               </p>
             </div>
           </div>

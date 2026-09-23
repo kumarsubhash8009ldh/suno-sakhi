@@ -142,7 +142,7 @@ export const VoiceCallModal: React.FC = () => {
           {isHostUser ? (
             isCallReceiver ? (
               <span className="text-[11px] font-black text-emerald-400 px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/30">
-                Host Earning: +₹{currentCost.toFixed(2)} (60%)
+                Host Earning: +₹{currentCost.toFixed(2)}
               </span>
             ) : (
               <span className="text-[11px] font-black text-emerald-300 px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/30">

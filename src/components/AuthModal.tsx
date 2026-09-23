@@ -414,7 +414,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       <p className="text-[10px] text-pink-300 font-medium">सखी होस्ट</p>
                     </div>
                     <span className="mt-2 inline-block text-[9px] px-2 py-0.5 rounded-full bg-pink-500/25 text-pink-300 font-black border border-pink-500/30">
-                      60% Kamai Share 👑
+                      Host Kamai Share 👑
                     </span>
                   </button>
                 </div>
@@ -472,7 +472,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 {activeTab === 'signin'
                   ? '🔒 Apna registered mobile number ya email enter karein (Auto Role Detect).'
                   : signupRole === 'host'
-                  ? '🌸 Host account banate hi aapko 60% kamai aur free calls access mil jayega.'
+                  ? '🌸 Host account banate hi aapko direct kamai aur free calls access mil jayega.'
                   : '🎁 Caller banne par aapko ₹50 free bonus coins milenge.'}
               </p>
             </div>

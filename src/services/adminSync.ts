@@ -1,4 +1,4 @@
-import { collection, doc, getDocs, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase';
 import { HostProfile, HostPayoutRecord } from '../types';
 import { UserAccount, getLocalRegisteredUsers, saveUserToLocalRegistry } from './userAuthSync';
@@ -12,6 +12,17 @@ const WALLET_COLLECTION = 'wallets';
 
 const LOCAL_HOST_ACCOUNTS_KEY = 'sunosakhi_host_accounts_store';
 const LOCAL_PAYOUTS_KEY = 'sunosakhi_host_payouts';
+
+export const SUPER_ADMIN_PHONE = '7009600157';
+
+/**
+ * Checks if a phone number belongs to the designated Super Admin
+ */
+export const isAdminUser = (phone?: string | null): boolean => {
+  if (!phone) return false;
+  const clean = phone.replace(/\D/g, '');
+  return clean === SUPER_ADMIN_PHONE || clean.endsWith(SUPER_ADMIN_PHONE);
+};
 
 export interface AdminUserDetails extends UserAccount {
   balance: number;
@@ -493,3 +504,236 @@ export const setHostVerificationStatus = async (
       : '❌ Host profile verification Rejected.'
   };
 };
+
+/**
+ * Set exact balance (kam ya jyada) for any User or Host account directly
+ */
+export const setUserBalanceDirect = async (
+  identifier: string,
+  targetBalance: number,
+  role: 'caller' | 'host' = 'caller',
+  note: string = 'Admin Balance Adjustment'
+): Promise<{ success: boolean; newBalance: number; message: string }> => {
+  const safeBalance = Math.max(0, parseFloat(targetBalance.toFixed(2)));
+
+  if (role === 'caller') {
+    const cleanPhone = identifier.replace(/\D/g, '').slice(-10);
+    const callerKey = 'caller_' + cleanPhone;
+
+    // 1. Cloud Firestore Wallet & Account
+    await syncLiveBalanceToCloud(callerKey, safeBalance);
+    if (isFirebaseConfigured() && db) {
+      try {
+        await updateDoc(doc(db, USER_ACCOUNTS_COLLECTION, cleanPhone), {
+          balance: safeBalance,
+          updatedAt: Date.now()
+        });
+      } catch (e) {
+        console.warn('Error updating user doc in firestore:', e);
+      }
+    }
+
+    // 2. Server Backend (if available)
+    try {
+      const baseUrl = getApiBaseUrl();
+      await fetch(`${baseUrl}/api/admin/users/balance`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: cleanPhone, balance: safeBalance, note })
+      });
+    } catch (e) {}
+
+    // 3. Local Storage Registries & Active State
+    try {
+      const raw = localStorage.getItem('sunosakhi_registered_users');
+      if (raw) {
+        const reg = JSON.parse(raw);
+        if (reg[cleanPhone]) {
+          reg[cleanPhone].balance = safeBalance;
+          localStorage.setItem('sunosakhi_registered_users', JSON.stringify(reg));
+        }
+      }
+      const current = localStorage.getItem('sunosakhi_auth_user');
+      if (current) {
+        const user = JSON.parse(current);
+        if (user.phone && user.phone.replace(/\D/g, '').slice(-10) === cleanPhone) {
+          user.balance = safeBalance;
+          localStorage.setItem('sunosakhi_auth_user', JSON.stringify(user));
+        }
+      }
+      localStorage.setItem(`sunosakhi_wallet_${callerKey}`, safeBalance.toString());
+      window.dispatchEvent(new CustomEvent('wallet-updated', { detail: { balance: safeBalance, phone: cleanPhone } }));
+    } catch (e) {}
+
+    return {
+      success: true,
+      newBalance: safeBalance,
+      message: `✅ User (+91 ${cleanPhone}) ka balance update ho kar ₹${safeBalance.toFixed(2)} ho gaya!`
+    };
+  } else {
+    // HOST BALANCE / EARNINGS ADJUSTMENT
+    const hostId = identifier;
+
+    // 1. Cloud Firestore
+    if (isFirebaseConfigured() && db) {
+      try {
+        await setDoc(
+          doc(db, HOSTS_COLLECTION, hostId),
+          { netIncome: safeBalance, pendingPayout: safeBalance, updatedAt: Date.now() },
+          { merge: true }
+        );
+      } catch (e) {
+        console.warn('Error updating host in firestore:', e);
+      }
+    }
+
+    // 2. Local Storage
+    try {
+      const raw = localStorage.getItem(LOCAL_HOST_ACCOUNTS_KEY);
+      if (raw) {
+        const store = JSON.parse(raw);
+        Object.keys(store).forEach((key) => {
+          if (store[key].hostId === hostId || key === hostId || store[key].phone === hostId) {
+            store[key].netIncome = safeBalance;
+            store[key].pendingPayout = safeBalance;
+          }
+        });
+        localStorage.setItem(LOCAL_HOST_ACCOUNTS_KEY, JSON.stringify(store));
+      }
+
+      const activeProfile = localStorage.getItem('sunosakhi_host_profile_v2');
+      if (activeProfile) {
+        const p = JSON.parse(activeProfile);
+        if (p.id === hostId || p.phone === hostId) {
+          p.netIncome = safeBalance;
+          p.pendingPayout = safeBalance;
+          localStorage.setItem('sunosakhi_host_profile_v2', JSON.stringify(p));
+        }
+      }
+    } catch (e) {}
+
+    return {
+      success: true,
+      newBalance: safeBalance,
+      message: `✅ Host (${hostId}) ki kamai update ho kar ₹${safeBalance.toFixed(2)} ho gayi!`
+    };
+  }
+};
+
+/**
+ * Permanently Delete any User or Host account from Firestore, Server Backend and Local Storage
+ */
+export const deleteUserAccountPermanently = async (
+  identifier: string,
+  role: 'caller' | 'host' = 'caller'
+): Promise<{ success: boolean; message: string }> => {
+  if (role === 'caller') {
+    const cleanPhone = identifier.replace(/\D/g, '').slice(-10);
+    const callerKey = 'caller_' + cleanPhone;
+
+    // 1. Delete from Firestore
+    if (isFirebaseConfigured() && db) {
+      try {
+        await deleteDoc(doc(db, USER_ACCOUNTS_COLLECTION, cleanPhone));
+      } catch (e) {
+        console.warn('Error deleting user_accounts doc from firestore:', e);
+      }
+      try {
+        await deleteDoc(doc(db, WALLET_COLLECTION, callerKey));
+      } catch (e) {}
+    }
+
+    // 2. Delete from Server Backend
+    try {
+      const baseUrl = getApiBaseUrl();
+      await fetch(`${baseUrl}/api/admin/users/${cleanPhone}`, { method: 'DELETE' });
+    } catch (e) {}
+
+    // 3. Delete from Local Storage Registry
+    try {
+      const raw = localStorage.getItem('sunosakhi_registered_users');
+      if (raw) {
+        const reg = JSON.parse(raw);
+        delete reg[cleanPhone];
+        localStorage.setItem('sunosakhi_registered_users', JSON.stringify(reg));
+      }
+      localStorage.removeItem(`sunosakhi_wallet_${callerKey}`);
+
+      // If deleted account is currently logged in, log out
+      const current = localStorage.getItem('sunosakhi_auth_user');
+      if (current) {
+        const u = JSON.parse(current);
+        if (u.phone && u.phone.replace(/\D/g, '').slice(-10) === cleanPhone) {
+          localStorage.removeItem('sunosakhi_auth_user');
+          localStorage.removeItem('sunosakhi_active_session');
+          window.dispatchEvent(new Event('auth-changed'));
+        }
+      }
+    } catch (e) {}
+
+    return {
+      success: true,
+      message: `🗑️ Caller User (+91 ${cleanPhone}) ka account permanent delete kar diya gaya.`
+    };
+  } else {
+    // HOST ACCOUNT DELETION
+    const hostId = identifier;
+    let hostPhone = '';
+
+    // 1. Delete from Firestore
+    if (isFirebaseConfigured() && db) {
+      try {
+        const hostDoc = await getDoc(doc(db, HOSTS_COLLECTION, hostId));
+        if (hostDoc.exists()) {
+          hostPhone = (hostDoc.data()?.phone || '').replace(/\D/g, '').slice(-10);
+        }
+        await deleteDoc(doc(db, HOSTS_COLLECTION, hostId));
+      } catch (e) {
+        console.warn('Error deleting host doc from firestore:', e);
+      }
+      try {
+        await deleteDoc(doc(db, 'host_accounts', hostId));
+      } catch (e) {}
+      try {
+        await deleteDoc(doc(db, WALLET_COLLECTION, 'host_' + hostId));
+      } catch (e) {}
+    }
+
+    // 2. Delete from Server Backend
+    try {
+      const baseUrl = getApiBaseUrl();
+      await fetch(`${baseUrl}/api/admin/hosts/${hostId}`, { method: 'DELETE' });
+    } catch (e) {}
+
+    // 3. Delete from Local Storage Store
+    try {
+      const raw = localStorage.getItem(LOCAL_HOST_ACCOUNTS_KEY);
+      if (raw) {
+        const store = JSON.parse(raw);
+        Object.keys(store).forEach((key) => {
+          if (store[key].hostId === hostId || key === hostId || (hostPhone && store[key].phone === hostPhone)) {
+            delete store[key];
+          }
+        });
+        localStorage.setItem(LOCAL_HOST_ACCOUNTS_KEY, JSON.stringify(store));
+      }
+
+      // If active host profile matches, clear it
+      const savedHost = localStorage.getItem('sunosakhi_host_profile_v2');
+      if (savedHost) {
+        const p = JSON.parse(savedHost);
+        if (p.id === hostId || (hostPhone && p.phone === hostPhone)) {
+          localStorage.removeItem('sunosakhi_host_profile_v2');
+          localStorage.removeItem('sunosakhi_host_logged_in');
+          window.dispatchEvent(new Event('auth-changed'));
+        }
+      }
+    } catch (e) {}
+
+    return {
+      success: true,
+      message: `🗑️ Host ID (${hostId}) ka account permanent delete kar diya gaya.`
+    };
+  }
+};
+

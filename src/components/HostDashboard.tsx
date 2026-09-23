@@ -514,7 +514,7 @@ export const HostDashboard: React.FC = () => {
               />
             </div>
             <div>
-              <label className="text-[11px] text-gray-400 block mb-1">UPI ID for 60% Payouts</label>
+              <label className="text-[11px] text-gray-400 block mb-1">UPI ID for Host Payouts</label>
               <input
                 type="text"
                 value={upiId}
@@ -561,7 +561,7 @@ export const HostDashboard: React.FC = () => {
           }`}
         >
           <DollarSign className="w-4 h-4" />
-          <span>Earnings & Passbook (60%)</span>
+          <span>Earnings & Passbook</span>
         </button>
 
         <button
@@ -710,18 +710,18 @@ export const HostDashboard: React.FC = () => {
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 <DollarSign className="w-5 h-5 text-emerald-400" />
-                <span>Host Income & Earnings Overview (60% Share)</span>
+                <span>Host Income & Earnings Overview</span>
               </h2>
               <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold">
-                60% Commission Rate Active
+                Host Commission Active
               </span>
             </div>
 
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5">
-              {/* Card 1: 60% Net Income */}
+              {/* Card 1: Net Income */}
               <div className="p-4 rounded-3xl bg-gradient-to-b from-[#1c2c20] to-[#101b13] border border-emerald-500/40 shadow-xl">
                 <div className="flex items-center justify-between text-emerald-300 mb-1">
-                  <span className="text-[10px] uppercase font-bold tracking-wider">Your 60% Income</span>
+                  <span className="text-[10px] uppercase font-bold tracking-wider">Your Host Income</span>
                   <TrendingUp className="w-4 h-4 text-emerald-400" />
                 </div>
                 <div className="flex items-baseline gap-1 mt-1">
@@ -765,7 +765,7 @@ export const HostDashboard: React.FC = () => {
                   <span className="text-xs text-purple-200">gifts</span>
                 </div>
                 <p className="text-[10px] text-purple-300/80 mt-1">
-                  60% on all gifts
+                  Direct on all gifts
                 </p>
               </div>
 
@@ -782,7 +782,7 @@ export const HostDashboard: React.FC = () => {
                   <span className="text-xs text-blue-200">msgs</span>
                 </div>
                 <p className="text-[10px] text-blue-300/80 mt-1">
-                  ₹1.20 (60%) per Sakhi Chat
+                  ₹1.20 per Sakhi Chat
                 </p>
               </div>
 
@@ -856,7 +856,7 @@ export const HostDashboard: React.FC = () => {
             <div className="flex items-center justify-between pb-3 border-b border-white/10">
               <div>
                 <h3 className="text-base font-bold text-white">Host Income Passbook</h3>
-                <p className="text-xs text-gray-400">Live record of calls, gifts and messages with 60% share calculation</p>
+                <p className="text-xs text-gray-400">Live record of calls, gifts and messages with host share calculation</p>
               </div>
               <span className="text-xs text-emerald-400 font-bold">
                 Total Records: {hostProfile.incomeHistory.length}
@@ -884,7 +884,7 @@ export const HostDashboard: React.FC = () => {
                     <div>
                       <p className="text-xs font-bold text-white">{item.description}</p>
                       <p className="text-[10px] text-gray-400">
-                        Gross: ₹{(item.grossAmount || 0).toFixed(2)} • Host Cut: {item.hostSharePercent || 60}% •{' '}
+                        Gross: ₹{(item.grossAmount || 0).toFixed(2)} • Host Earning •{' '}
                         {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </p>
                     </div>
@@ -894,7 +894,7 @@ export const HostDashboard: React.FC = () => {
                     <span className="text-sm font-black text-emerald-400 block">
                       +₹{(item.hostEarned || 0).toFixed(2)}
                     </span>
-                    <span className="text-[10px] text-gray-400">60% credited</span>
+                    <span className="text-[10px] text-gray-400">Credited</span>
                   </div>
                 </div>
               ))}
@@ -1104,7 +1104,7 @@ export const HostDashboard: React.FC = () => {
                       <span className="hidden sm:inline">Video</span>
                     </button>
                     <span className="text-[11px] px-2.5 py-1 rounded-full bg-pink-500/20 text-pink-300 font-bold border border-pink-500/30 hidden xs:inline">
-                      60% Earn
+                      Host Earn
                     </span>
                   </div>
                 </div>

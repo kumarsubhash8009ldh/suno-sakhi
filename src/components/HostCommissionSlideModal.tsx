@@ -87,7 +87,7 @@ export const HostCommissionSlideModal: React.FC<HostCommissionSlideModalProps> =
         '⚡ Instant UPI Transfer: Google Pay, Paytm, PhonePe ya Bank Account.',
         '💵 Minimum ₹500 per day direct withdrawal (Aadhaar Card Verified).',
         '📊 Real-Time Dashboard: Har call ki second-by-second kamai live dekhein.',
-        '💯 0% Platform Deduction on Payouts—60% Poora Aapka Haq!'
+        '💯 0% Platform Deduction on Payouts—Poori Kamai Aapka Haq!'
       ],
       highlight: '🚀 Same-day bank credit with zero delays'
     },
@@ -265,7 +265,7 @@ export const HostCommissionSlideModal: React.FC<HostCommissionSlideModalProps> =
             className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-pink-600 via-rose-500 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white font-black text-sm sm:text-base shadow-xl shadow-pink-600/50 flex items-center justify-center gap-2 transform active:scale-98 transition-all hover:scale-[1.02] border border-pink-300/40 animate-pulse"
           >
             <Crown className="w-5 h-5 text-amber-300" />
-            <span>🌸 Abhi Host Banein - 60% Kamai Shuru Karein</span>
+            <span>🌸 Abhi Host Banein - Kamai Shuru Karein</span>
             <ArrowRight className="w-5 h-5" />
           </button>
 
@@ -289,14 +289,14 @@ export const HostCommissionSlideModal: React.FC<HostCommissionSlideModalProps> =
 };
 
 /**
- * Floating trigger button for opening the 60% Commission Slide Popup anytime
+ * Floating trigger button for opening the Host Commission Slide Popup anytime
  */
 export const HostRecruitmentPill: React.FC<{ onClick: () => void }> = ({ onClick }) => {
   return (
     <button
       onClick={onClick}
       className="fixed bottom-20 right-4 z-40 flex items-center gap-2 px-3.5 py-2 rounded-full bg-gradient-to-r from-amber-500 via-pink-600 to-purple-600 text-white font-black text-xs shadow-2xl shadow-pink-900/60 border-2 border-amber-300/80 hover:scale-105 active:scale-95 transition-all animate-bounce duration-1000"
-      title="Host Banein - 60% Commission Payein"
+      title="Host Banein - Direct Commission Payein"
     >
       <Crown className="w-4 h-4 text-amber-300 animate-spin-slow" />
       <span className="tracking-tight">Host Banein • ₹3/min Voice</span>

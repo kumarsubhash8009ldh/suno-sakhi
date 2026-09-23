@@ -25,7 +25,7 @@ import { useHost } from '../context/HostContext';
 import { InCallChatDrawer } from './InCallChatDrawer';
 import { useActiveSession } from '../services/userAuthSync';
 import { routeAudioOutput } from '../utils/audioOutput';
-import { CallVolumeControls } from './CallVolumeControls';
+import { FloatingVideoCallSideDock } from './FloatingVideoCallSideDock';
 import { submitNudityReport } from '../services/safetyService';
 
 export const VideoCallModal: React.FC = () => {
@@ -298,28 +298,8 @@ export const VideoCallModal: React.FC = () => {
         </div>
       )}
 
-      {/* Companion Info Banner with Speaker Status */}
-      <div className="relative z-10 px-6 mb-2 flex items-center justify-between">
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/50 backdrop-blur-md border border-white/10">
-          <div className="w-2 h-2 rounded-full bg-emerald-400"></div>
-          <span className="text-sm font-bold text-white">{activeSakhi.name}</span>
-          <span className="text-[11px] font-mono text-pink-300">ID: {activeSakhi.id}</span>
-          <Heart className="w-3.5 h-3.5 text-pink-400 fill-pink-400 ml-1" />
-        </div>
-
-        <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full backdrop-blur-md border ${
-          isSpeakerOn
-            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-            : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-        }`}>
-          {isSpeakerOn ? '🔊 Speaker ON' : '🔈 Earpiece / Soft'}
-        </span>
-      </div>
-
-      {/* Interactive Volume & Speaker Control Bar */}
-      <div className="relative z-20 flex flex-col items-center my-1">
-        <CallVolumeControls />
-      </div>
+      {/* Floating Side Dock for Sakhi Host ID, Speaker ON/OFF & Volume Controls */}
+      <FloatingVideoCallSideDock />
 
       {/* Bottom Floating Control Bar with Chat & Gifts */}
       <div className="relative z-10 flex flex-col items-center pb-6 pt-1">
@@ -337,10 +317,10 @@ export const VideoCallModal: React.FC = () => {
             {isMuted ? <MicOff className="w-4 h-4 sm:w-5 sm:h-5" /> : <Mic className="w-4 h-4 sm:w-5 sm:h-5" />}
           </button>
 
-          {/* Speaker Button */}
+          {/* Auxiliary Speaker Button (Desktop) */}
           <button
             onClick={toggleSpeaker}
-            className={`p-2.5 sm:p-3 rounded-full transition-all flex items-center justify-center ${
+            className={`hidden sm:flex p-2.5 sm:p-3 rounded-full transition-all items-center justify-center ${
               isSpeakerOn
                 ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/50 border border-emerald-400'
                 : 'bg-white/15 hover:bg-white/25 text-amber-300 border border-white/20'

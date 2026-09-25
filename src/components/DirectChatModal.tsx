@@ -5,6 +5,7 @@ import { useWallet } from '../context/WalletContext';
 import { useCall } from '../context/CallContext';
 import { markThreadAsRead, getChatClientId, subscribeToCloudChat, getChatThreadId } from '../services/chatSync';
 import { getCurrentUser, useActiveSession } from '../services/userAuthSync';
+import { formatHostId, formatUserId } from '../utils/idFormatter';
 import { ChatMessage } from '../types';
 
 const renderWhatsAppStatusTick = (status?: 'sent' | 'delivered' | 'read') => {
@@ -121,11 +122,12 @@ export const DirectChatModal: React.FC = () => {
 
     const res = sendMessage(directChatSakhi.id, directChatSakhi.name, inputText);
     if (res.success) {
+      const interlocutorUserLabel = `User ID: ${formatUserId(directChatSakhi.id, directChatSakhi.phone)}`;
       const optimisticMsg: ChatMessage = {
         id: 'msg-' + Date.now(),
         sakhiId: isHostViewer ? (hostProfile?.id || `sakhi-user-${hostPhone}`) : directChatSakhi.id,
         callerId: isHostViewer ? directChatSakhi.id : `caller_${callerPhone}`,
-        callerName: isHostViewer ? directChatSakhi.name : (session.name || 'You'),
+        callerName: isHostViewer ? interlocutorUserLabel : (session.name || 'You'),
         sender: isHostViewer ? 'sakhi' : 'user',
         senderId: myClientId,
         text: inputText.trim(),
@@ -152,7 +154,11 @@ export const DirectChatModal: React.FC = () => {
             </div>
             <div>
               <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
-                <span>{directChatSakhi.name}</span>
+                <span>
+                  {isHostViewer
+                    ? `User ID: ${formatUserId(directChatSakhi.id, directChatSakhi.phone)}`
+                    : `${directChatSakhi.name} (Host ID: ${formatHostId(directChatSakhi.id, directChatSakhi.phone)})`}
+                </span>
                 <Heart className="w-3.5 h-3.5 text-pink-400 fill-pink-400" />
               </h3>
               <p className="text-[11px] text-emerald-400 flex items-center gap-1.5 font-medium">
@@ -278,7 +284,13 @@ export const DirectChatModal: React.FC = () => {
                               isSentByMe ? 'bg-emerald-400' : 'bg-pink-400'
                             }`}
                           ></span>
-                          <span>{isSentByMe ? 'Aap (Sender)' : `${directChatSakhi.name} (${isHostViewer ? 'Caller' : 'Sakhi'})`}</span>
+                          <span>
+                            {isSentByMe
+                              ? 'Aap (Sender)'
+                              : isHostViewer
+                              ? `User ID: ${formatUserId(directChatSakhi.id, directChatSakhi.phone)}`
+                              : `${directChatSakhi.name} (Host ID: ${formatHostId(directChatSakhi.id, directChatSakhi.phone)})`}
+                          </span>
                         </span>
                       </div>
 

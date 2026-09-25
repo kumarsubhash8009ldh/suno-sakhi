@@ -4,6 +4,7 @@ import { useCall } from '../context/CallContext';
 import { useWallet } from '../context/WalletContext';
 import { useHost } from '../context/HostContext';
 import { useActiveSession } from '../services/userAuthSync';
+import { formatHostId, formatUserId } from '../utils/idFormatter';
 
 export const CallSummaryModal: React.FC = () => {
   const { lastSummary, isSummaryOpen, closeSummary, endReason } = useCall();
@@ -61,7 +62,12 @@ export const CallSummaryModal: React.FC = () => {
 
         <h3 className="text-xl font-bold mt-3">Call Summary</h3>
         <p className="text-xs text-pink-300 font-medium">
-          {lastSummary.type === 'voice' ? '🎙️ Live Voice Call' : '📹 Live Video Call'} with {lastSummary.sakhi.name}
+          {lastSummary.type === 'voice' ? '🎙️ Live Voice Call' : '📹 Live Video Call'} with{' '}
+          <strong className="text-white">
+            {isHost
+              ? `User ID: ${formatUserId(lastSummary.sakhi.id, lastSummary.sakhi.phone)}`
+              : `${lastSummary.sakhi.name} (Host ID: ${formatHostId(lastSummary.sakhi.id, lastSummary.sakhi.phone)})`}
+          </strong>
         </p>
 
         {/* Stats Grid */}

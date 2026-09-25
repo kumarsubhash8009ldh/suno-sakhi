@@ -14,6 +14,9 @@ import {
 import { RecentCallLog, CallType, Sakhi } from '../types';
 import { getRecentCalls, clearRecentCalls } from '../services/callLogService';
 import { useCall } from '../context/CallContext';
+import { useHost } from '../context/HostContext';
+import { useActiveSession } from '../services/userAuthSync';
+import { formatHostId, formatUserId } from '../utils/idFormatter';
 
 interface RecentCallsViewProps {
   onExploreSakhis: () => void;
@@ -24,6 +27,9 @@ export const RecentCallsView: React.FC<RecentCallsViewProps> = ({ onExploreSakhi
   const [calls, setCalls] = useState<RecentCallLog[]>([]);
   const [filter, setFilter] = useState<'all' | 'voice' | 'video' | 'missed'>('all');
   const { startCall } = useCall();
+  const { userRole, isHostLoggedIn } = useHost();
+  const session = useActiveSession();
+  const isHostViewer = Boolean(session.role === 'host' || userRole === 'host' || isHostLoggedIn);
 
   useEffect(() => {
     setCalls(getRecentCalls());
@@ -61,15 +67,18 @@ export const RecentCallsView: React.FC<RecentCallsViewProps> = ({ onExploreSakhi
   };
 
   const handleRedial = (log: RecentCallLog) => {
-    // Look up if Sakhi is in online list
-    const found = onlineSakhis.find((s) => s.id === log.sakhiId);
+    const targetId = isHostViewer ? (log.callerId || log.sakhiId) : log.sakhiId;
+    const found = onlineSakhis.find((s) => s.id === targetId);
     if (found) {
       startCall(found, log.type);
     } else {
+      const redialName = isHostViewer
+        ? `User ID: ${formatUserId(targetId)}`
+        : log.sakhiName;
       // Create temporary Sakhi profile to place call
       const fallbackSakhi: Sakhi = {
-        id: log.sakhiId,
-        name: log.sakhiName,
+        id: targetId,
+        name: redialName,
         age: 23,
         city: 'India',
         avatar: log.sakhiAvatar,
@@ -78,12 +87,12 @@ export const RecentCallsView: React.FC<RecentCallsViewProps> = ({ onExploreSakhi
         rating: 5.0,
         totalCalls: 1,
         languages: ['Hindi'],
-        bio: 'Connecting live...',
+        bio: isHostViewer ? 'Registered Caller' : 'Connecting live...',
         interests: ['Friendly Talk'],
-        voiceRatePerMin: 5,
-        videoRatePerMin: 10,
+        voiceRatePerMin: isHostViewer ? 0 : 5,
+        videoRatePerMin: isHostViewer ? 0 : 10,
         audioSnippet: '',
-        tagline: 'Voice Connects Hearts ♡'
+        tagline: isHostViewer ? redialName : 'Voice Connects Hearts ♡'
       };
       startCall(fallbackSakhi, log.type);
     }
@@ -181,10 +190,17 @@ export const RecentCallsView: React.FC<RecentCallsViewProps> = ({ onExploreSakhi
                   </div>
 
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h4 className="text-sm font-bold text-white truncate group-hover:text-pink-300 transition-colors">
-                        {log.sakhiName}
+                        {isHostViewer
+                          ? `User ID: ${formatUserId(log.callerId || log.sakhiId)}`
+                          : log.sakhiName}
                       </h4>
+                      {!isHostViewer && (
+                        <span className="px-2 py-0.5 rounded-full bg-pink-500/20 text-pink-300 text-[10px] font-bold border border-pink-500/30">
+                          Host ID: {formatHostId(log.sakhiId)}
+                        </span>
+                      )}
                       {isMissed && (
                         <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-red-500/20 text-red-300 border border-red-500/30">
                           Missed

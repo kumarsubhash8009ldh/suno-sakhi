@@ -1,9 +1,10 @@
 import React from 'react';
-import { Phone, Video, MessageCircle, Coins } from 'lucide-react';
+import { Phone, Video, MessageCircle, Coins, ShieldCheck } from 'lucide-react';
 import { Sakhi } from '../types';
 import { useCall } from '../context/CallContext';
 import { useHost } from '../context/HostContext';
 import { getActiveSession } from '../services/userAuthSync';
+import { formatHostId } from '../utils/idFormatter';
 
 interface SakhiCardProps {
   sakhi: Sakhi;
@@ -22,9 +23,9 @@ export const SakhiCard: React.FC<SakhiCardProps> = ({ sakhi }) => {
     (hostProfile?.phone && String(hostProfile.phone).replace(/\D/g, '').length >= 10)
   );
 
-  const isOnline = sakhi.status === 'online';
-
+  const isOnline = sakhi.status !== 'offline';
   const isTopHost = (sakhi.rating || 5) >= 4.9;
+  const hostDisplayId = formatHostId(sakhi.id, sakhi.phone);
 
   return (
     <div className="rounded-3xl p-4 sm:p-5 bg-[#170a2c]/90 hover:bg-[#1d0d36]/90 border border-pink-500/25 hover:border-pink-500/45 shadow-xl transition-all duration-300 flex flex-col justify-between gap-4 group">
@@ -43,12 +44,12 @@ export const SakhiCard: React.FC<SakhiCardProps> = ({ sakhi }) => {
           {/* Online status indicator dot */}
           <span
             className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-[#170a2c] ${
-              isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'
+              isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-pink-400'
             }`}
           />
         </div>
 
-        {/* Name, Age, Rating, Online Badge */}
+        {/* Name, Age, Rating, Host ID Badge */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-1">
             <h3 className="text-base sm:text-lg font-bold text-white truncate flex items-center gap-1.5">
@@ -63,8 +64,11 @@ export const SakhiCard: React.FC<SakhiCardProps> = ({ sakhi }) => {
           </div>
 
           <div className="flex items-center gap-2 mt-0.5">
+            <span className="px-2 py-0.5 rounded-md bg-pink-600/20 border border-pink-500/30 text-[10px] font-black text-pink-300 tracking-wider">
+              Host ID: {hostDisplayId}
+            </span>
             <p className="text-xs text-pink-200/80 truncate">
-              {sakhi.city || 'India'}
+              • {sakhi.city || 'India'}
             </p>
           </div>
 
@@ -82,12 +86,10 @@ export const SakhiCard: React.FC<SakhiCardProps> = ({ sakhi }) => {
               </span>
             )}
 
-            {isOnline && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-semibold">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span>Online</span>
-              </span>
-            )}
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-semibold">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span>Available</span>
+            </span>
 
             {sakhi.languages && sakhi.languages.length > 0 && (
               <span className="text-[10px] text-pink-300/70 font-medium">
@@ -115,8 +117,7 @@ export const SakhiCard: React.FC<SakhiCardProps> = ({ sakhi }) => {
         <button
           type="button"
           onClick={() => startCall(sakhi, 'voice')}
-          disabled={!isOnline}
-          className="flex-1 py-2.5 px-3 rounded-2xl bg-gradient-to-r from-purple-700 via-indigo-700 to-pink-600 hover:from-purple-600 hover:to-pink-500 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-purple-950/50 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex-1 py-2.5 px-3 rounded-2xl bg-gradient-to-r from-purple-700 via-indigo-700 to-pink-600 hover:from-purple-600 hover:to-pink-500 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-purple-950/50 transition-all active:scale-95"
           title={isHostViewer ? 'Free Voice Call (Host Account)' : 'Live Voice Call (₹7.00/min)'}
         >
           <Coins className="w-4 h-4 text-amber-300" />
@@ -128,8 +129,7 @@ export const SakhiCard: React.FC<SakhiCardProps> = ({ sakhi }) => {
         <button
           type="button"
           onClick={() => startCall(sakhi, 'video')}
-          disabled={!isOnline}
-          className="p-2.5 rounded-2xl bg-pink-600/30 hover:bg-pink-600/50 border border-pink-500/40 text-pink-300 hover:text-white transition-all active:scale-95 disabled:opacity-50 flex items-center gap-1"
+          className="p-2.5 rounded-2xl bg-pink-600/30 hover:bg-pink-600/50 border border-pink-500/40 text-pink-300 hover:text-white transition-all active:scale-95 flex items-center gap-1"
           title={isHostViewer ? 'Free Video Call (Host Account)' : 'Video Call (₹15.00/min)'}
         >
           <Video className="w-4 h-4" />

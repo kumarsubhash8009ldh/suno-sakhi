@@ -13,6 +13,7 @@ import {
 import { useCall } from '../context/CallContext';
 import { sounds } from '../utils/soundEffects';
 import { useActiveSession } from '../services/userAuthSync';
+import { formatHostId, formatUserId } from '../utils/idFormatter';
 
 interface CallSwipeSliderProps {
   onAccept: () => void;
@@ -364,7 +365,7 @@ export const IncomingCallModal: React.FC = () => {
           </div>
         ) : (
           <div className="relative z-10 px-3.5 py-1 rounded-xl bg-pink-500/20 border border-pink-500/40 text-pink-300 text-xs font-black mb-3">
-            🌸 Sakhi {incomingCall.callerName} Calling You!
+            🌸 Sakhi {incomingCall.callerName} (Host ID: {formatHostId(incomingCall.callerId, incomingCall.callerPhone)}) Calling You!
           </div>
         )}
 
@@ -388,14 +389,23 @@ export const IncomingCallModal: React.FC = () => {
 
           <div className="relative w-24 h-24 rounded-full p-1 bg-gradient-to-tr from-pink-500 via-rose-500 to-purple-600 shadow-xl shadow-pink-600/50 flex items-center justify-center">
             <div className="w-full h-full rounded-full bg-[#180928] flex items-center justify-center text-3xl font-black text-pink-300">
-              {incomingCall.callerName ? incomingCall.callerName.charAt(0).toUpperCase() : 'U'}
+              {session.role === 'host' ? 'U' : (incomingCall.callerName ? incomingCall.callerName.charAt(0).toUpperCase() : 'S')}
             </div>
           </div>
         </div>
 
         {/* Caller Name & ID */}
         <div className="relative z-10 mb-5">
-          <h3 className="text-2xl font-black text-white">{incomingCall.callerName || 'Caller'}</h3>
+          <h3 className="text-2xl font-black text-white">
+            {session.role === 'host'
+              ? `User ID: ${formatUserId(incomingCall.callerId, incomingCall.callerPhone)}`
+              : (incomingCall.callerName || 'Sakhi Host')}
+          </h3>
+          {session.role !== 'host' && (
+            <p className="text-xs font-mono text-pink-300 mt-0.5">
+              Host ID: {formatHostId(incomingCall.callerId, incomingCall.callerPhone)}
+            </p>
+          )}
           <p className="text-xs text-pink-300/80 mt-1 flex items-center justify-center gap-1">
             <Heart className="w-3 h-3 text-pink-400 fill-pink-400" />
             <span>Aap se live judna chahte hain...</span>

@@ -7,6 +7,7 @@ import { InCallChatDrawer } from './InCallChatDrawer';
 import { useActiveSession } from '../services/userAuthSync';
 import { routeAudioOutput } from '../utils/audioOutput';
 import { CallVolumeControls } from './CallVolumeControls';
+import { formatHostId, formatUserId } from '../utils/idFormatter';
 
 export const VoiceCallModal: React.FC = () => {
   const session = useActiveSession();
@@ -126,10 +127,16 @@ export const VoiceCallModal: React.FC = () => {
           </div>
           <div>
             <h3 className="font-bold text-base flex items-center gap-1.5">
-              {activeSakhi.name}
+              {isHostUser
+                ? `User ID: ${formatUserId(activeSakhi.id, activeSakhi.phone)}`
+                : activeSakhi.name}
               <Sparkles className="w-3.5 h-3.5 text-pink-400" />
             </h3>
-            <p className="text-xs text-pink-300/80">{activeSakhi.city} • Verified</p>
+            <p className="text-xs text-pink-300/80 font-mono">
+              {isHostUser
+                ? `User ID: ${formatUserId(activeSakhi.id, activeSakhi.phone)}`
+                : `Host ID: ${formatHostId(activeSakhi.id, activeSakhi.phone)}`}
+            </p>
           </div>
         </div>
 

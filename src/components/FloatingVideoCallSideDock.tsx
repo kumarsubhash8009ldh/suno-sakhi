@@ -13,8 +13,14 @@ import {
   X
 } from 'lucide-react';
 import { useCall } from '../context/CallContext';
+import { useHost } from '../context/HostContext';
+import { useActiveSession } from '../services/userAuthSync';
+import { formatHostId, formatUserId } from '../utils/idFormatter';
 
 export const FloatingVideoCallSideDock: React.FC = () => {
+  const session = useActiveSession();
+  const { isHostLoggedIn, userRole } = useHost();
+  const isHost = session.role === 'host' || userRole === 'host' || isHostLoggedIn;
   const {
     activeSakhi,
     isSpeakerOn,
@@ -131,7 +137,7 @@ export const FloatingVideoCallSideDock: React.FC = () => {
             className="px-2.5 py-1.5 rounded-full bg-black/80 backdrop-blur-xl border border-pink-500/50 text-white text-[11px] font-bold shadow-2xl flex items-center gap-1.5 animate-pulse"
           >
             <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-            <span>{activeSakhi.name}</span>
+            <span>{isHost ? `User ID: ${formatUserId(activeSakhi.id, activeSakhi.phone)}` : activeSakhi.name}</span>
             <span className="text-pink-400">({percent}%)</span>
           </button>
         ) : (
@@ -153,9 +159,16 @@ export const FloatingVideoCallSideDock: React.FC = () => {
 
               <div className="flex flex-col min-w-0">
                 <div className="flex items-center gap-1">
-                  <span className="text-xs font-bold text-white truncate">{activeSakhi.name}</span>
+                  <span className="text-xs font-bold text-white truncate">
+                    {isHost ? `User ID: ${formatUserId(activeSakhi.id, activeSakhi.phone)}` : activeSakhi.name}
+                  </span>
                   <Heart className="w-2.5 h-2.5 text-pink-400 fill-pink-400 shrink-0" />
                 </div>
+                <span className="text-[10px] font-mono text-pink-300">
+                  {isHost
+                    ? `User ID: ${formatUserId(activeSakhi.id, activeSakhi.phone)}`
+                    : `Host ID: ${formatHostId(activeSakhi.id, activeSakhi.phone)}`}
+                </span>
               </div>
             </div>
 

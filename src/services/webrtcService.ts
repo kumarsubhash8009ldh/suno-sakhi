@@ -105,9 +105,9 @@ export class WebRTCService {
   }
 
   /**
-   * Acquire camera & microphone stream
+   * Acquire camera & microphone stream with automatic fallback synthesis
    */
-  public async getMediaStream(callType: CallType): Promise<MediaStream | null> {
+  public async getMediaStream(callType: CallType): Promise<MediaStream> {
     try {
       if (this.localStream) {
         const liveTracks = this.localStream.getTracks().filter((t) => t.readyState === 'live');
@@ -118,7 +118,7 @@ export class WebRTCService {
           return this.localStream;
         }
       }
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      if (typeof navigator !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         try {
           const stream = await navigator.mediaDevices.getUserMedia({
             audio: {
@@ -147,19 +147,51 @@ export class WebRTCService {
         }
       }
     } catch (err) {
-      console.warn('Microphone/Camera permission not available:', err);
-      if (callType === 'video') {
-        try {
-          const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-          audioStream.getAudioTracks().forEach((t) => {
-            t.enabled = true;
-          });
-          this.localStream = audioStream;
-          return audioStream;
-        } catch {}
-      }
+      console.warn('Microphone/Camera permission pending or blocked, generating resilient placeholder track:', err);
     }
-    return null;
+
+    // Resilient Fallback: Synthesize silent audio track (+ canvas video track if video)
+    // This allows WebRTC RTCPeerConnection to ALWAYS generate complete SDP media offers/answers
+    try {
+      const syntheticStream = new MediaStream();
+      if (typeof window !== 'undefined') {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioContextClass) {
+          const ctx = new AudioContextClass();
+          const osc = ctx.createOscillator();
+          const dst = ctx.createMediaStreamDestination();
+          const gain = ctx.createGain();
+          gain.gain.value = 0.0001; // inaudible
+          osc.connect(gain);
+          gain.connect(dst);
+          osc.start();
+          const audioTrack = dst.stream.getAudioTracks()[0];
+          if (audioTrack) syntheticStream.addTrack(audioTrack);
+        }
+
+        if (callType === 'video') {
+          const canvas = document.createElement('canvas');
+          canvas.width = 640;
+          canvas.height = 480;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.fillStyle = '#120520';
+            ctx.fillRect(0, 0, 640, 480);
+          }
+          const canvasStream = (canvas as any).captureStream ? (canvas as any).captureStream(15) : null;
+          if (canvasStream && canvasStream.getVideoTracks()[0]) {
+            syntheticStream.addTrack(canvasStream.getVideoTracks()[0]);
+          }
+        }
+      }
+      this.localStream = syntheticStream;
+      return syntheticStream;
+    } catch (synthErr) {
+      console.warn('Fallback stream synthesis error:', synthErr);
+      const empty = new MediaStream();
+      this.localStream = empty;
+      return empty;
+    }
   }
 
   /**
@@ -211,23 +243,30 @@ export class WebRTCService {
       }
     };
 
-    // Buffer ICE candidates until call doc is created
+    // Buffer ICE candidates until call doc is created and batch them cleanly
     const queuedCandidates: any[] = [];
     let isDocCreated = false;
+    let candidateBatchTimer: any = null;
 
-    pc.onicecandidate = async (event) => {
+    const flushCandidates = async () => {
+      if (queuedCandidates.length === 0 || !isDocCreated || !isFirebaseConfigured() || !db) return;
+      const toSend = queuedCandidates.splice(0, queuedCandidates.length);
+      try {
+        await updateDoc(doc(db, 'calls', callId), {
+          callerCandidates: arrayUnion(...toSend)
+        });
+      } catch (e) {
+        console.warn('Caller ICE candidate flush error:', e);
+      }
+    };
+
+    pc.onicecandidate = (event) => {
       if (event.candidate) {
         const cJson = event.candidate.toJSON();
-        if (isDocCreated && isFirebaseConfigured() && db) {
-          try {
-            await updateDoc(doc(db, 'calls', callId), {
-              callerCandidates: arrayUnion(cJson)
-            });
-          } catch (e) {
-            console.warn('Caller ICE candidate error:', e);
-          }
-        } else {
-          queuedCandidates.push(cJson);
+        queuedCandidates.push(cJson);
+        if (isDocCreated) {
+          if (candidateBatchTimer) clearTimeout(candidateBatchTimer);
+          candidateBatchTimer = setTimeout(flushCandidates, 150);
         }
       }
     };
@@ -289,12 +328,28 @@ export class WebRTCService {
         await setDoc(doc(db, 'calls', callId), callSessionDoc);
         isDocCreated = true;
         console.log('✅ [WebRTC] Call Session published to Cloud Firestore:', callId);
+        flushCandidates();
       } catch (err) {
         console.warn('Error saving call session in Firestore:', err);
       }
 
       // 5. Listen to Call Session Doc for Answer & ICE Candidates
       const addedCalleeCandidates = new Set<string>();
+      const pendingCalleeCandidates: any[] = [];
+      let isRemoteDescSet = false;
+
+      const drainCalleeCandidates = async () => {
+        if (!pc || !isRemoteDescSet) return;
+        while (pendingCalleeCandidates.length > 0) {
+          const c = pendingCalleeCandidates.shift();
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(c));
+          } catch (e) {
+            console.warn('Drain callee ICE candidate error:', e);
+          }
+        }
+      };
+
       const unsub = onSnapshot(doc(db, 'calls', callId), async (docSnap) => {
         if (!docSnap.exists()) return;
         const session = docSnap.data() as CallSessionDoc;
@@ -304,7 +359,9 @@ export class WebRTCService {
           if (pc.signalingState === 'have-local-offer' && !pc.currentRemoteDescription) {
             try {
               await pc.setRemoteDescription(new RTCSessionDescription(session.answer));
+              isRemoteDescSet = true;
               console.log('📡 [WebRTC] Remote Answer description set successfully on Caller!');
+              await drainCalleeCandidates();
               if (this.onCallConnected) this.onCallConnected();
             } catch (sdpErr) {
               console.warn('Caller set remote description error:', sdpErr);
@@ -318,9 +375,13 @@ export class WebRTCService {
             const key = JSON.stringify(c);
             if (!addedCalleeCandidates.has(key)) {
               addedCalleeCandidates.add(key);
-              try {
-                await pc.addIceCandidate(new RTCIceCandidate(c));
-              } catch (e) {}
+              if (isRemoteDescSet && pc.currentRemoteDescription) {
+                try {
+                  await pc.addIceCandidate(new RTCIceCandidate(c));
+                } catch (e) {}
+              } else {
+                pendingCalleeCandidates.push(c);
+              }
             }
           }
         }
@@ -390,14 +451,27 @@ export class WebRTCService {
       }
     };
 
-    // Capture Callee ICE Candidates and push to Firestore
-    pc.onicecandidate = async (event) => {
-      if (event.candidate && isFirebaseConfigured() && db) {
-        try {
-          await updateDoc(doc(db, 'calls', callSession.id), {
-            calleeCandidates: arrayUnion(event.candidate.toJSON())
-          });
-        } catch (e) {}
+    // Capture Callee ICE Candidates and batch push to Firestore
+    const calleeQueuedCandidates: any[] = [];
+    let calleeBatchTimer: any = null;
+
+    const flushCalleeCandidates = async () => {
+      if (calleeQueuedCandidates.length === 0 || !isFirebaseConfigured() || !db) return;
+      const toSend = calleeQueuedCandidates.splice(0, calleeQueuedCandidates.length);
+      try {
+        await updateDoc(doc(db, 'calls', callSession.id), {
+          calleeCandidates: arrayUnion(...toSend)
+        });
+      } catch (e) {
+        console.warn('Callee ICE candidate flush error:', e);
+      }
+    };
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        calleeQueuedCandidates.push(event.candidate.toJSON());
+        if (calleeBatchTimer) clearTimeout(calleeBatchTimer);
+        calleeBatchTimer = setTimeout(flushCalleeCandidates, 150);
       }
     };
 
@@ -422,11 +496,29 @@ export class WebRTCService {
       }
     };
 
-    // 1. Set Remote Description from Offer
+    // 1. Set Remote Description from Offer & Drain Caller Candidates
+    let isRemoteDescSet = false;
+    const pendingCallerCandidates: any[] = [];
+    const addedCallerCandidates = new Set<string>();
+
+    const drainCallerCandidates = async () => {
+      if (!pc || !isRemoteDescSet) return;
+      while (pendingCallerCandidates.length > 0) {
+        const c = pendingCallerCandidates.shift();
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(c));
+        } catch (e) {
+          console.warn('Drain caller ICE candidate error:', e);
+        }
+      }
+    };
+
     if (callSession.offer) {
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(callSession.offer));
+        isRemoteDescSet = true;
         console.log('📡 [WebRTC] Callee set remote offer description');
+        await drainCallerCandidates();
       } catch (err) {
         console.warn('Remote offer set error on callee:', err);
       }
@@ -445,12 +537,12 @@ export class WebRTCService {
           connectedAt: Date.now()
         });
         console.log('✅ [WebRTC] Call Answer published to Firestore');
+        flushCalleeCandidates();
       } catch (err) {
         console.warn('Error answering call on Firestore:', err);
       }
 
       // 4. Listen for Caller ICE Candidates and Call End
-      const addedCallerCandidates = new Set<string>();
       const unsub = onSnapshot(doc(db, 'calls', callSession.id), async (docSnap) => {
         if (!docSnap.exists()) return;
         const data = docSnap.data() as CallSessionDoc;
@@ -466,9 +558,13 @@ export class WebRTCService {
             const cKey = JSON.stringify(c);
             if (!addedCallerCandidates.has(cKey)) {
               addedCallerCandidates.add(cKey);
-              try {
-                await pc.addIceCandidate(new RTCIceCandidate(c));
-              } catch (e) {}
+              if (isRemoteDescSet && pc.currentRemoteDescription) {
+                try {
+                  await pc.addIceCandidate(new RTCIceCandidate(c));
+                } catch (e) {}
+              } else {
+                pendingCallerCandidates.push(c);
+              }
             }
           }
         }
@@ -629,15 +725,22 @@ export const subscribeToIncomingCallsForHost = (
             const callSakhiId = String(call.sakhiId || '');
             const callCallerDigits = String(call.callerPhone || call.callerId || '').replace(/\D/g, '').slice(-10);
 
-            // Match host receiver (standard incoming call) or caller receiver
-            const isMatch = (
+            // 1. Strictly ignore if the receiver is the caller who initiated this call!
+            if (
+              (call.callerId && call.callerId === receiverId) ||
+              (cleanReceiverDigits && callCallerDigits && cleanReceiverDigits === callCallerDigits)
+            ) {
+              return;
+            }
+
+            // 2. Callee match: Current receiver is the intended recipient (Host or Caller callee)
+            const isCalleeMatch = (
               callSakhiId === receiverId ||
-              (cleanReceiverDigits && callHostDigits === cleanReceiverDigits) ||
-              (cleanReceiverDigits && callSakhiId.includes(cleanReceiverDigits)) ||
-              (cleanReceiverDigits && callCallerDigits === cleanReceiverDigits)
+              (cleanReceiverDigits && callHostDigits && cleanReceiverDigits === callHostDigits) ||
+              (cleanReceiverDigits && callSakhiId.includes(cleanReceiverDigits))
             );
 
-            if (isMatch) {
+            if (isCalleeMatch) {
               activeIncoming = { ...call, id: docSnap.id };
             }
           });

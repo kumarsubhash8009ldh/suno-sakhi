@@ -26,6 +26,7 @@ import { HostMessageToast } from './components/HostMessageToast';
 import { CallerCard } from './components/CallerCard';
 import { HostCommissionSlideModal, HostRecruitmentPill } from './components/HostCommissionSlideModal';
 import { ApkInstallGuideModal } from './components/ApkInstallGuideModal';
+import { formatUserId } from './utils/idFormatter';
 import { WalletProvider, useWallet } from './context/WalletContext';
 import { CallProvider, useCall } from './context/CallContext';
 import { HostProvider, useHost } from './context/HostContext';
@@ -382,10 +383,11 @@ const MainContent: React.FC = () => {
                     <div className="flex flex-col gap-2.5 mb-6">
                       {hostConversations.map((conv) => {
                         const cleanPhone = String(conv.callerPhone || conv.callerId || '').replace(/\D/g, '').slice(-10);
-                        const callerName = conv.callerName && conv.callerName !== 'Caller' ? conv.callerName : 'Caller';
+                        const callerUserId = formatUserId(conv.callerId, conv.callerPhone);
+                        const callerDisplayName = `User ID: ${callerUserId}`;
                         const callerCompanion: Sakhi = {
                           id: conv.callerId || `caller-${cleanPhone}`,
-                          name: callerName,
+                          name: callerDisplayName,
                           phone: cleanPhone,
                           avatar: conv.callerAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
                           videoPoster: conv.callerAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
@@ -400,7 +402,7 @@ const MainContent: React.FC = () => {
                           voiceRatePerMin: 5,
                           videoRatePerMin: 10,
                           audioSnippet: '',
-                          tagline: 'Active Caller',
+                          tagline: callerDisplayName,
                           isVerified: true
                         };
 
@@ -417,7 +419,7 @@ const MainContent: React.FC = () => {
                                 <div className="w-12 h-12 rounded-2xl overflow-hidden border-2 border-emerald-500/60 p-0.5 bg-black">
                                   <img
                                     src={conv.callerAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80'}
-                                    alt={callerName}
+                                    alt={callerDisplayName}
                                     className="w-full h-full object-cover rounded-[12px]"
                                   />
                                 </div>
@@ -426,8 +428,8 @@ const MainContent: React.FC = () => {
 
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center justify-between gap-2">
-                                  <h4 className="text-xs sm:text-sm font-extrabold text-white truncate">
-                                    {callerName}
+                                  <h4 className="text-xs sm:text-sm font-extrabold text-white truncate font-mono text-emerald-400">
+                                    {callerDisplayName}
                                   </h4>
                                   <span className="text-[10px] text-gray-400 flex-shrink-0">
                                     {new Date(conv.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

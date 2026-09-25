@@ -1,9 +1,10 @@
 import React from 'react';
-import { Phone, Video, MessageCircle, ShieldCheck, Sparkles } from 'lucide-react';
+import { Phone, Video, MessageCircle, ShieldCheck, Sparkles, User } from 'lucide-react';
 import { UserAccount } from '../services/userAuthSync';
 import { Sakhi } from '../types';
 import { useCall } from '../context/CallContext';
 import { useHost } from '../context/HostContext';
+import { formatUserId } from '../utils/idFormatter';
 
 interface CallerCardProps {
   caller: UserAccount;
@@ -14,7 +15,8 @@ export const CallerCard: React.FC<CallerCardProps> = ({ caller }) => {
   const { openDirectChat } = useHost();
 
   const cleanPhone = String(caller.phone || '').replace(/\D/g, '');
-  const callerName = caller.name?.trim() || 'Caller';
+  const userDisplayId = formatUserId(caller.id, caller.phone);
+  const userLabel = `User ID: ${userDisplayId}`;
   const avatarUrl =
     caller.avatar ||
     'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80';
@@ -22,7 +24,7 @@ export const CallerCard: React.FC<CallerCardProps> = ({ caller }) => {
   // Convert caller into Sakhi structure so startCall and openDirectChat work seamlessly
   const callerAsSakhi: Sakhi = {
     id: caller.id || `caller-${cleanPhone}`,
-    name: callerName,
+    name: userLabel,
     age: 24,
     city: 'India',
     avatar: avatarUrl,
@@ -31,12 +33,12 @@ export const CallerCard: React.FC<CallerCardProps> = ({ caller }) => {
     rating: 5.0,
     totalCalls: 1,
     languages: ['Hindi'],
-    bio: 'Dil Se Baat • Registered Caller',
+    bio: 'Registered Caller',
     interests: ['Friendly Chat', 'Life Talk'],
     voiceRatePerMin: 5,
     videoRatePerMin: 10,
     audioSnippet: '',
-    tagline: 'Registered Caller',
+    tagline: userLabel,
     phone: cleanPhone
   };
 
@@ -48,7 +50,7 @@ export const CallerCard: React.FC<CallerCardProps> = ({ caller }) => {
           <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-2xl p-0.5 bg-gradient-to-tr from-pink-500 via-rose-500 to-purple-600 flex-shrink-0 shadow-lg shadow-pink-900/40">
             <img
               src={avatarUrl}
-              alt={callerName}
+              alt={userLabel}
               className="w-full h-full object-cover rounded-[14px]"
             />
             {/* Online Green Indicator */}
@@ -60,8 +62,8 @@ export const CallerCard: React.FC<CallerCardProps> = ({ caller }) => {
 
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-base font-extrabold text-white truncate">
-                {callerName}
+              <h3 className="text-base font-extrabold text-white truncate flex items-center gap-1.5">
+                <span className="font-mono text-emerald-400">{userLabel}</span>
               </h3>
               <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>

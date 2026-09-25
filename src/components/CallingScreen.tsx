@@ -5,6 +5,7 @@ import { useHost } from '../context/HostContext';
 import { useActiveSession } from '../services/userAuthSync';
 import { sounds } from '../utils/soundEffects';
 import { CallVolumeControls } from './CallVolumeControls';
+import { formatHostId, formatUserId } from '../utils/idFormatter';
 
 export const CallingScreen: React.FC = () => {
   const session = useActiveSession();
@@ -77,14 +78,22 @@ export const CallingScreen: React.FC = () => {
             </>
           )}
         </div>
-        <h2 className="text-3xl font-extrabold tracking-tight">{activeSakhi.name}</h2>
-        <p className="text-pink-300/80 text-sm mt-0.5">
-          {activeSakhi.city || 'India'}{' '}
-          {activeSakhi.tagline ? `• "${activeSakhi.tagline}"` : ''}
-        </p>
+        <h2 className="text-3xl font-extrabold tracking-tight">
+          {isHost ? `User ID: ${formatUserId(activeSakhi.id, activeSakhi.phone)}` : activeSakhi.name}
+        </h2>
+        <div className="flex items-center gap-2 mt-1">
+          <span className="px-2.5 py-0.5 rounded-full bg-pink-600/30 border border-pink-500/40 text-xs font-mono font-bold text-pink-300">
+            {isHost
+              ? `User ID: ${formatUserId(activeSakhi.id, activeSakhi.phone)}`
+              : `Host ID: ${formatHostId(activeSakhi.id, activeSakhi.phone)}`}
+          </span>
+          {!isHost && activeSakhi.city && (
+            <span className="text-pink-300/80 text-xs">• {activeSakhi.city}</span>
+          )}
+        </div>
         <p className="text-sm font-medium text-pink-400 animate-pulse mt-3 flex items-center gap-1.5">
           <Sparkles className="w-4 h-4" />
-          <span>{isHost ? `Calling ${activeSakhi.name}...` : 'Ringing... Connecting with Sakhi'}</span>
+          <span>{isHost ? `Connecting to User...` : 'Ringing... Connecting with Sakhi'}</span>
         </p>
       </div>
 

@@ -104,6 +104,34 @@ export const saveUserToCloud = async (user: UserAccount): Promise<boolean> => {
   return false;
 };
 
+export const updateUserOnlinePresence = async (isOnline: boolean): Promise<boolean> => {
+  const current = getCurrentUser();
+  if (!current) return false;
+  const p = current.phone ? String(current.phone).replace(/\D/g, '') : '';
+  const em = current.email ? String(current.email).trim().toLowerCase() : '';
+  const cleanPhone = p.length >= 10 ? p.slice(-10) : '';
+  if (!cleanPhone && !em) return false;
+
+  const docKey = cleanPhone || em.replace(/[^a-z0-9]/g, '_');
+  if (isFirebaseConfigured() && db) {
+    try {
+      await setDoc(
+        doc(db, USER_ACCOUNTS_COLLECTION, docKey),
+        {
+          isOnline,
+          status: isOnline ? 'online' : 'offline',
+          lastActiveAt: Date.now()
+        },
+        { merge: true }
+      );
+      return true;
+    } catch (err) {
+      console.warn('Could not update user presence:', err);
+    }
+  }
+  return false;
+};
+
 export const syncUserToServer = async (user: UserAccount): Promise<boolean> => {
   if (!user) return false;
   // Push to Cloud Firestore so hosts can see this caller in real-time
@@ -1087,6 +1115,11 @@ export const subscribeToAllRealCallers = (
               const cleanPhone = phone;
               const cleanEmail = String(email || '').trim().toLowerCase();
               if (cleanPhone.length === 10 || (cleanEmail && cleanEmail.includes('@'))) {
+                const now = Date.now();
+                const lastActive = Number(data.lastActiveAt || data.lastLoginAt || 0);
+                const isRecentlyActive = lastActive > 0 && (now - lastActive) < 60 * 1000;
+                const isUserOnline = data.status !== 'blocked' && data.status !== 'offline' && (data.isOnline === true || isRecentlyActive);
+
                 const user: UserAccount = {
                   id: data.id || ('caller-' + (cleanPhone || cleanEmail.replace(/[^a-z0-9]/g, '_'))),
                   phone: cleanPhone,
@@ -1094,10 +1127,10 @@ export const subscribeToAllRealCallers = (
                   name: data.name && data.name.trim() ? data.name.trim() : 'Caller',
                   avatar: data.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
                   createdAt: data.createdAt || Date.now(),
-                  lastLoginAt: data.lastLoginAt || data.lastActiveAt || Date.now(),
+                  lastLoginAt: data.lastLoginAt || lastActive || Date.now(),
                   referredBy: data.referredBy || '',
-                  status: data.status === 'blocked' ? 'blocked' : (data.status || 'online'),
-                  isOnline: data.status !== 'offline',
+                  status: data.status === 'blocked' ? 'blocked' : (isUserOnline ? 'online' : 'offline'),
+                  isOnline: isUserOnline,
                   balance: typeof data.balance === 'number' ? data.balance : 50.0
                 };
                 const key = cleanPhone || cleanEmail || user.id;

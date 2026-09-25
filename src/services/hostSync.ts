@@ -124,6 +124,10 @@ export const subscribeToAllRealHosts = (
                   ? data.name.trim()
                   : 'Sakhi Host';
 
+                const lastActive = Number(data.lastActiveAt || 0);
+                const isRecentlyActive = lastActive > 0 && (Date.now() - lastActive) < 60 * 1000;
+                const isHostOnline = data.status !== 'offline' && (data.status === 'online' || isRecentlyActive);
+
                 const sakhi: Sakhi = {
                   id: docId,
                   name: displayName,
@@ -131,7 +135,7 @@ export const subscribeToAllRealHosts = (
                   city: data.city || 'India',
                   avatar: data.avatar || data.selfieUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
                   videoPoster: data.videoPoster || data.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
-                  status: data.status === 'offline' ? 'offline' : 'online',
+                  status: isHostOnline ? 'online' : 'offline',
                   rating: typeof data.rating === 'number' ? data.rating : 5.0,
                   totalCalls: data.totalCalls || 0,
                   languages: Array.isArray(data.languages) && data.languages.length > 0 ? data.languages : ['Hindi', 'English'],

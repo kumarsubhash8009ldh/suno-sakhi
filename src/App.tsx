@@ -33,7 +33,7 @@ import { HostProvider, useHost } from './context/HostContext';
 import { AdminProvider } from './context/AdminContext';
 import { Sakhi } from './types';
 import { subscribeToAllRealHosts, saveHostProfileToCloud } from './services/hostSync';
-import { getCurrentUser, syncUserToServer, saveUserToCloud, getActiveSession, useActiveSession, UserAccount, subscribeToAllRealCallers } from './services/userAuthSync';
+import { getCurrentUser, syncUserToServer, saveUserToCloud, getActiveSession, useActiveSession, UserAccount, subscribeToAllRealCallers, updateUserOnlinePresence } from './services/userAuthSync';
 import { getApiBaseUrl } from './services/apiConfig';
 import { Sparkles, Phone, Video, Search, ShieldCheck, Heart, Users, MessageCircleHeart, Award, UserCheck, MessageCircle, Headphones, Shield, Shuffle, LogIn, ArrowRight, X, ShieldAlert } from 'lucide-react';
 
@@ -141,6 +141,40 @@ const MainContent: React.FC = () => {
       if (unsub) unsub();
     };
   }, []);
+
+  // Real-time Caller (User) presence heartbeat across all connected devices
+  useEffect(() => {
+    const isCaller = session.isLoggedIn && (session.role === 'caller' || userRole === 'caller');
+    if (!isCaller) return;
+
+    updateUserOnlinePresence(true);
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        updateUserOnlinePresence(true);
+      }
+    }, 6000);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        updateUserOnlinePresence(true);
+      } else {
+        updateUserOnlinePresence(false);
+      }
+    };
+
+    const handleUnload = () => {
+      updateUserOnlinePresence(false);
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('beforeunload', handleUnload);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('beforeunload', handleUnload);
+    };
+  }, [session.isLoggedIn, session.role, userRole]);
 
   useEffect(() => {
     if (isLoginModalOpen) {

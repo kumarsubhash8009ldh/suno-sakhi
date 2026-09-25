@@ -14,6 +14,7 @@ export const CallerCard: React.FC<CallerCardProps> = ({ caller }) => {
   const { startCall } = useCall();
   const { openDirectChat } = useHost();
 
+  const isOnline = caller.isOnline === true && caller.status !== 'offline';
   const cleanPhone = String(caller.phone || '').replace(/\D/g, '');
   const userDisplayId = formatUserId(caller.id, caller.phone);
   const userLabel = `User ID: ${userDisplayId}`;
@@ -29,7 +30,7 @@ export const CallerCard: React.FC<CallerCardProps> = ({ caller }) => {
     city: 'India',
     avatar: avatarUrl,
     videoPoster: avatarUrl,
-    status: 'online',
+    status: isOnline ? 'online' : 'offline',
     rating: 5.0,
     totalCalls: 1,
     languages: ['Hindi'],
@@ -53,10 +54,12 @@ export const CallerCard: React.FC<CallerCardProps> = ({ caller }) => {
               alt={userLabel}
               className="w-full h-full object-cover rounded-[14px]"
             />
-            {/* Online Green Indicator */}
+            {/* Online Indicator */}
             <span
-              className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-[#170a2c] animate-pulse"
-              title="Caller Online"
+              className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-[#170a2c] ${
+                isOnline ? 'bg-emerald-500 ring-2 ring-emerald-500/50 animate-pulse' : 'bg-gray-400'
+              }`}
+              title={isOnline ? '🟢 Caller Online' : '⚪ Caller Offline'}
             ></span>
           </div>
 
@@ -65,10 +68,17 @@ export const CallerCard: React.FC<CallerCardProps> = ({ caller }) => {
               <h3 className="text-base font-extrabold text-white truncate flex items-center gap-1.5">
                 <span className="font-mono text-emerald-400">{userLabel}</span>
               </h3>
-              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                <span>Active Caller</span>
-              </span>
+              {isOnline ? (
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 flex items-center gap-1 shadow-sm">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span>🟢 Live Online</span>
+                </span>
+              ) : (
+                <span className="px-2.5 py-0.5 rounded-full bg-gray-500/20 text-gray-400 text-[10px] font-medium border border-gray-500/30 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
+                  <span>Offline</span>
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-2 mt-1.5 text-[11px] text-gray-400">

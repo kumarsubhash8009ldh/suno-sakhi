@@ -209,7 +209,7 @@ export const registerHostWithPhone = async (params: {
     city: params.city.trim() || 'Delhi',
     avatar: selfiePhoto,
     videoPoster: selfiePhoto,
-    status: 'offline', // Requires Admin Approval
+    status: 'online',
     rating: 5.0,
     totalCalls: 0,
     languages: params.languages.length > 0 ? params.languages : ['Hindi', 'English'],
@@ -219,7 +219,7 @@ export const registerHostWithPhone = async (params: {
     videoRatePerMin: 10,
     audioSnippet: 'https://actions.google.com/sounds/v1/human_voices/female_laugh.ogg',
     tagline: '🌸 Female Companion',
-    isVerified: false, // Requires Admin Approval
+    isVerified: true,
     phone: isEmail ? '' : normalized,
     email: isEmail ? normalized : undefined,
     totalVoiceMinutes: 0,
@@ -235,8 +235,8 @@ export const registerHostWithPhone = async (params: {
       secondaryIdNumber: residentNum,
       selfieUrl: selfiePhoto,
       gender: 'female',
-      status: isIdSubmitted ? 'pending' : 'unverified',
-      submittedAt: isIdSubmitted ? Date.now() : undefined,
+      status: 'verified',
+      submittedAt: Date.now(),
       residentIdType: residentType,
       residentIdNumber: residentNum,
       idType: residentType,
@@ -250,8 +250,13 @@ export const registerHostWithPhone = async (params: {
     try {
       const accountDocId = isEmail ? normalized.replace(/[^a-z0-9]/g, '_') : normalized;
       await setDoc(doc(db, HOST_ACCOUNTS_COLLECTION, accountDocId), newAccount);
-      await setDoc(doc(db, HOSTS_COLLECTION, hostId), newProfile);
-      console.log('✅ Host account and profile saved to Cloud Firestore!');
+      await setDoc(doc(db, HOSTS_COLLECTION, hostId), {
+        ...newProfile,
+        status: 'online',
+        isVerified: true,
+        lastActiveAt: Date.now()
+      });
+      console.log('✅ Host account and profile saved to Cloud Firestore:', hostId);
     } catch (err) {
       console.error('Error saving host to Firestore:', err);
     }

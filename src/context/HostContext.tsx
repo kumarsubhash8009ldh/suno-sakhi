@@ -351,10 +351,16 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }) => {
     const res = await registerHostWithPhone(params);
     if (res.success && res.hostProfile) {
-      setHostProfile(res.hostProfile);
-      localStorage.setItem(HOST_STORAGE_KEY, JSON.stringify(res.hostProfile));
+      const activeHost: HostProfile = {
+        ...res.hostProfile,
+        status: 'online',
+        isVerified: true
+      };
+      setHostProfile(activeHost);
+      localStorage.setItem(HOST_STORAGE_KEY, JSON.stringify(activeHost));
       localStorage.setItem('sunosakhi_host_logged_in', 'true');
-      await saveHostProfileToCloud(res.hostProfile);
+      await saveHostProfileToCloud(activeHost);
+      await updateHostOnlineStatus(activeHost.id, 'online');
       setIsHostLoggedIn(true);
       setUserRole('host');
       broadcastAuthChange();
@@ -577,8 +583,10 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Keep Host status 'online' in real-time as long as host is logged in
   useEffect(() => {
     if (!isHostLoggedIn || !hostProfile.id) return;
-    const sendHostHeartbeat = () => {
-      updateHostOnlineStatus(hostProfile.id, hostProfile.status || 'online', {
+    const sendHostHeartbeat = (forceStatus?: 'online' | 'offline') => {
+      const isVisible = document.visibilityState === 'visible';
+      const targetStatus = forceStatus || (isVisible ? 'online' : 'offline');
+      updateHostOnlineStatus(hostProfile.id, targetStatus, {
         name: hostProfile.name,
         phone: hostProfile.phone,
         avatar: hostProfile.avatar,
@@ -587,10 +595,31 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
         bio: hostProfile.bio
       });
     };
-    sendHostHeartbeat();
-    const interval = setInterval(sendHostHeartbeat, 6000);
-    return () => clearInterval(interval);
-  }, [isHostLoggedIn, hostProfile.id, hostProfile.status, hostProfile.name, hostProfile.phone, hostProfile.avatar]);
+
+    sendHostHeartbeat('online');
+    const interval = setInterval(() => sendHostHeartbeat(), 6000);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        sendHostHeartbeat('online');
+      } else {
+        sendHostHeartbeat('offline');
+      }
+    };
+
+    const handleUnload = () => {
+      sendHostHeartbeat('offline');
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('beforeunload', handleUnload);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('beforeunload', handleUnload);
+    };
+  }, [isHostLoggedIn, hostProfile.id, hostProfile.name, hostProfile.phone, hostProfile.avatar]);
 
   // Sync active direct chat messages from Backend Server
   useEffect(() => {

@@ -23,7 +23,7 @@ export const SakhiCard: React.FC<SakhiCardProps> = ({ sakhi }) => {
     (hostProfile?.phone && String(hostProfile.phone).replace(/\D/g, '').length >= 10)
   );
 
-  const isOnline = sakhi.status !== 'offline';
+  const isOnline = sakhi.status === 'online';
   const isTopHost = (sakhi.rating || 5) >= 4.9;
   const hostDisplayId = formatHostId(sakhi.id, sakhi.phone);
 
@@ -33,7 +33,7 @@ export const SakhiCard: React.FC<SakhiCardProps> = ({ sakhi }) => {
       <div className="flex items-center gap-3.5">
         {/* Circular Avatar with Online Ring */}
         <div className="relative flex-shrink-0">
-          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full overflow-hidden border-2 border-pink-500/40 shadow-md">
+          <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full overflow-hidden border-2 ${isOnline ? 'border-emerald-500/60 shadow-lg shadow-emerald-950/50' : 'border-white/20'} shadow-md`}>
             <img
               src={sakhi.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80'}
               alt={sakhi.name}
@@ -44,8 +44,9 @@ export const SakhiCard: React.FC<SakhiCardProps> = ({ sakhi }) => {
           {/* Online status indicator dot */}
           <span
             className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-[#170a2c] ${
-              isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-pink-400'
+              isOnline ? 'bg-emerald-400 ring-2 ring-emerald-500/50 animate-pulse' : 'bg-gray-400'
             }`}
+            title={isOnline ? '🟢 Host Online' : '⚪ Host Offline'}
           />
         </div>
 
@@ -86,10 +87,17 @@ export const SakhiCard: React.FC<SakhiCardProps> = ({ sakhi }) => {
               </span>
             )}
 
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-semibold">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span>Available</span>
-            </span>
+            {isOnline ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold shadow-sm">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>🟢 Live Online</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-gray-500/20 text-gray-400 border border-gray-500/30 text-[10px] font-medium">
+                <span className="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
+                <span>Offline</span>
+              </span>
+            )}
 
             {sakhi.languages && sakhi.languages.length > 0 && (
               <span className="text-[10px] text-pink-300/70 font-medium">

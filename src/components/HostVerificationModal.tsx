@@ -20,6 +20,7 @@ import { useHost } from '../context/HostContext';
 import { compressImageFile } from '../utils/imageCompressor';
 import { getApiBaseUrl } from '../services/apiConfig';
 import { HostVerificationData } from '../types';
+import { setVideoScreenSecurity } from '../utils/screenSecurity';
 
 export const HostVerificationModal: React.FC = () => {
   const {
@@ -100,6 +101,7 @@ export const HostVerificationModal: React.FC = () => {
           videoRef.current.srcObject = stream;
         }
         setIsCameraActive(true);
+        setVideoScreenSecurity(true);
       }
     } catch (err) {
       setCameraError('Camera access nahi mila. Kripya browser me permission allow karein ya photo upload karein.');
@@ -126,6 +128,9 @@ export const HostVerificationModal: React.FC = () => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
+    }
+    if (isCameraActive) {
+      setVideoScreenSecurity(false);
     }
     setIsCameraActive(false);
   };

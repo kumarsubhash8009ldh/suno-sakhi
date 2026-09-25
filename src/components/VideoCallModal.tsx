@@ -15,6 +15,7 @@ import {
   Volume1,
   ShieldAlert,
   Shield,
+  ShieldCheck,
   EyeOff,
   X,
   AlertOctagon
@@ -27,6 +28,7 @@ import { useActiveSession } from '../services/userAuthSync';
 import { routeAudioOutput } from '../utils/audioOutput';
 import { FloatingVideoCallSideDock } from './FloatingVideoCallSideDock';
 import { submitNudityReport } from '../services/safetyService';
+import { onSecurityViolation, onWindowBlurChange, setVideoScreenSecurity } from '../utils/screenSecurity';
 
 export const VideoCallModal: React.FC = () => {
   const session = useActiveSession();
@@ -68,6 +70,8 @@ export const VideoCallModal: React.FC = () => {
   const [reportReason, setReportReason] = useState('Nudity / Obscene Exposure');
   const [showSafetyNotice, setShowSafetyNotice] = useState(true);
   const [submittingReport, setSubmittingReport] = useState(false);
+  const [isWindowBlurred, setIsWindowBlurred] = useState(false);
+  const [securityWarning, setSecurityWarning] = useState<string | null>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -75,6 +79,30 @@ export const VideoCallModal: React.FC = () => {
   useEffect(() => {
     const t = setTimeout(() => setShowSafetyNotice(false), 5000);
     return () => clearTimeout(t);
+  }, []);
+
+  // Screen Security (Android FLAG_SECURE + Web anti-screenshot / screen-recording safeguards)
+  useEffect(() => {
+    setVideoScreenSecurity(true);
+
+    const unsubViolation = onSecurityViolation((type) => {
+      if (type === 'screenshot') {
+        setSecurityWarning('⚠️ SCREENSHOT PROHIBITED: Video call me screenshot lena sakht mana hai!');
+      } else {
+        setSecurityWarning('⚠️ SCREEN RECORDING BAN: Recording attempt detect & block ki gayi hai!');
+      }
+      setTimeout(() => setSecurityWarning(null), 4000);
+    });
+
+    const unsubBlur = onWindowBlurChange((blurred) => {
+      setIsWindowBlurred(blurred);
+    });
+
+    return () => {
+      setVideoScreenSecurity(false);
+      unsubViolation();
+      unsubBlur();
+    };
   }, []);
 
   useEffect(() => {
@@ -142,7 +170,34 @@ export const VideoCallModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-between bg-black text-white overflow-hidden">
+    <div
+      onContextMenu={(e) => e.preventDefault()}
+      className="fixed inset-0 z-50 flex flex-col justify-between bg-black text-white overflow-hidden select-none"
+    >
+      {/* Anti-Screen Recording & Window Inactive Blackout Veil */}
+      {isWindowBlurred && (
+        <div className="absolute inset-0 z-40 bg-black/95 backdrop-blur-3xl flex flex-col items-center justify-center p-6 text-center space-y-3 animate-in fade-in duration-100">
+          <div className="w-16 h-16 rounded-full bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400">
+            <ShieldAlert className="w-8 h-8 animate-pulse" />
+          </div>
+          <h4 className="text-base font-black text-white">🔒 Video Stream Protected</h4>
+          <p className="text-xs text-rose-300 max-w-xs font-semibold">
+            Screenshot / Screen Recording ke protection ke liye video stream hide kar di gayi hai.
+          </p>
+          <p className="text-[11px] text-gray-400">
+            Wapas video call dekhne ke liye screen par touch ya click karein.
+          </p>
+        </div>
+      )}
+
+      {/* Screenshot / Screen Recording Violation Toast */}
+      {securityWarning && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl bg-rose-600/95 border-2 border-rose-300 text-white text-xs font-black shadow-2xl flex items-center gap-2 animate-in zoom-in-95 duration-150">
+          <ShieldAlert className="w-5 h-5 text-amber-300 animate-bounce flex-shrink-0" />
+          <span>{securityWarning}</span>
+        </div>
+      )}
+
       {/* Companion Main Video Stream (Full Screen Real-Time WebRTC) */}
       <div className="absolute inset-0 z-0 bg-[#0c0414] flex items-center justify-center">
         {remoteStream ? (
@@ -229,14 +284,17 @@ export const VideoCallModal: React.FC = () => {
           )}
         </div>
 
-        {/* Anti-Nudity Zero Tolerance Safety Warning Badge */}
-        <div className="flex flex-col items-center">
-          <div className="px-3 py-1 rounded-full bg-red-950/80 border border-red-500/60 backdrop-blur-md flex items-center gap-1.5 text-[10px] font-black text-red-200 shadow-xl shadow-red-950/80">
-            <span className="w-2 h-2 rounded-full bg-red-500 animate-ping"></span>
-            <ShieldAlert className="w-3.5 h-3.5 text-red-400" />
-            <span>🚫 NUDITY BAN ACTIVE</span>
+        {/* Anti-Nudity & Anti-Screenshot/Recording Badges */}
+        <div className="flex flex-col items-center gap-1">
+          <div className="px-2.5 py-1 rounded-full bg-red-950/80 border border-red-500/60 backdrop-blur-md flex items-center gap-1.5 text-[10px] font-black text-red-200 shadow-xl shadow-red-950/80">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping"></span>
+            <ShieldAlert className="w-3 h-3 text-red-400" />
+            <span>🚫 NUDITY BAN</span>
           </div>
-          <span className="text-[9px] text-gray-400 mt-0.5 font-medium">Zero Tolerance • Instant Ban</span>
+          <div className="px-2.5 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/50 backdrop-blur-md flex items-center gap-1 text-[9px] font-black text-emerald-300 shadow">
+            <ShieldCheck className="w-3 h-3 text-emerald-400" />
+            <span>🔒 NO SCREENSHOT / RECORDING</span>
+          </div>
         </div>
 
         {/* Floating User Self-Video PiP */}
@@ -261,7 +319,7 @@ export const VideoCallModal: React.FC = () => {
         </div>
       </div>
 
-      {/* 5-second Auto-Dismiss Nudity Safety Alert */}
+      {/* 5-second Auto-Dismiss Nudity & Screenshot Safety Alert */}
       {showSafetyNotice && (
         <div className="relative z-30 mx-4 my-1 p-2.5 rounded-2xl bg-gradient-to-r from-red-950/90 via-black/80 to-rose-950/90 border border-red-500/60 backdrop-blur-md flex items-center justify-between gap-2 shadow-2xl animate-in fade-in slide-in-from-top-2">
           <div className="flex items-center gap-2">
@@ -269,8 +327,8 @@ export const VideoCallModal: React.FC = () => {
               <ShieldAlert className="w-4 h-4" />
             </div>
             <div className="text-[11px] leading-tight">
-              <span className="font-black text-red-300">STRICT ZERO TOLERANCE:</span>{' '}
-              <span className="text-gray-200">Video call par kisi bhi tarah ki Nudity ya Vulgarity 100% Ban hai. Violation karne par account aur device turant permanent ban hoga.</span>
+              <span className="font-black text-red-300">PRIVACY & SAFETY POLICY:</span>{' '}
+              <span className="text-gray-200">Video call par Nudity, Vulgarity, Screenshot lena ya Screen Recording karna 100% BANNED hai. Violation par account aur device permanent ban hoga.</span>
             </div>
           </div>
           <button

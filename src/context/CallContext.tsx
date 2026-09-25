@@ -13,6 +13,7 @@ import {
 import { recordHostIncomeToCloud } from '../services/hostSync';
 import { getHostRankTier } from '../utils/hostRankTiers';
 import { streamAudioController, routeAudioOutput } from '../utils/audioOutput';
+import { setVideoScreenSecurity } from '../utils/screenSecurity';
 
 const getGlobalCallAudio = (): HTMLAudioElement | null => {
   if (typeof document === 'undefined') return null;
@@ -125,6 +126,17 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const activeCallIntervalRef = useRef<number | null>(null);
   const durationRef = useRef<number>(0);
   const costRef = useRef<number>(0);
+
+  // Activate Android FLAG_SECURE and web anti-screenshot/recording safeguards ONLY during video calls
+  useEffect(() => {
+    const isVideoActive = callType === 'video' && (callStatus === 'connected' || callStatus === 'calling');
+    setVideoScreenSecurity(isVideoActive);
+    return () => {
+      if (isVideoActive) {
+        setVideoScreenSecurity(false);
+      }
+    };
+  }, [callType, callStatus]);
 
   // Rate lookup
   const getRate = (type: CallType): number => {

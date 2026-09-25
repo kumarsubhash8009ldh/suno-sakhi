@@ -72,3 +72,18 @@
 .animate-wave-pulse {
   animation: wavePulse 2s cubic-bezier(0, 0.2, 0.8, 1) infinite;
 }
+
+/* Security mode for video calls: blocks text selection, dragging, and touch callouts */
+body.video-secure-active {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none !important;
+}
+
+body.video-secure-active video {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none !important;
+  pointer-events: auto;
+}
+

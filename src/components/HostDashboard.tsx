@@ -121,7 +121,7 @@ export const HostDashboard: React.FC = () => {
     const cleanPhone = String(caller.phone || '').replace(/\D/g, '');
     const callerCompanion: Sakhi = {
       id: caller.id || ('caller-' + cleanPhone),
-      name: caller.name || `Caller ${cleanPhone.slice(-4) || ''}`,
+      name: caller.name || 'Caller',
       phone: cleanPhone,
       avatar: caller.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
       videoPoster: caller.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
@@ -1018,9 +1018,6 @@ export const HostDashboard: React.FC = () => {
                       </div>
                       <div className="min-w-0">
                         <h4 className="text-sm font-black text-white truncate">{caller.name || 'Caller'}</h4>
-                        <p className="text-[11px] text-pink-300/90 font-mono">
-                          ID: {caller.id || `caller-${cleanPhone.slice(-4)}`}
-                        </p>
                         <span className="text-[10px] text-emerald-400 font-semibold inline-block">
                           Active Verified Caller
                         </span>

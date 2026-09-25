@@ -169,7 +169,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
       if (signupRole === 'host') {
         // Register brand new Sakhi Host
-        const hostName = userName.trim() || (isEmail ? 'Sakhi Host' : `Sakhi ${clean.slice(-4)}`);
+        const hostName = userName.trim() || 'Sakhi Host';
         const regHostRes = await registerHost({
           phone: clean,
           name: hostName,

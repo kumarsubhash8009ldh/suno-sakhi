@@ -156,12 +156,6 @@ export const FloatingVideoCallSideDock: React.FC = () => {
                   <span className="text-xs font-bold text-white truncate">{activeSakhi.name}</span>
                   <Heart className="w-2.5 h-2.5 text-pink-400 fill-pink-400 shrink-0" />
                 </div>
-                {/* Host ID Badge - Privacy Safe (No Mobile / No Email) */}
-                <div className="flex items-center gap-1 mt-0.5">
-                  <span className="text-[10px] font-mono font-black text-pink-300 bg-pink-500/20 px-1.5 py-0.2 rounded border border-pink-500/30">
-                    ID: {activeSakhi.id}
-                  </span>
-                </div>
               </div>
             </div>
 

@@ -78,7 +78,7 @@ export const saveUserToCloud = async (user: UserAccount): Promise<boolean> => {
     email: em || undefined,
     name: user.name && user.name.trim() && user.name !== 'Sakhi Host'
       ? user.name.trim()
-      : (cleanPhone ? `Caller ${cleanPhone.slice(-4)}` : 'User'),
+      : 'Caller',
     status: user.status === 'blocked' ? 'blocked' : 'online',
     isOnline: true,
     lastLoginAt: user.lastLoginAt || Date.now()
@@ -414,7 +414,7 @@ export const registerNewUser = async (
     }
   }
 
-  const displayName = customName || (cleanPhone ? `Caller ${cleanPhone.slice(-4)}` : `User ${cleanEmail.split('@')[0]}`);
+  const displayName = customName || 'Caller';
 
   const newAccount: UserAccount = {
     id: userId,
@@ -619,7 +619,7 @@ export const loginExistingUser = async (
     const pDigits = hostMatch.phone ? String(hostMatch.phone).replace(/\D/g, '').slice(-10) : cleanPhone;
     const hostProfile: HostProfile = {
       id: hostMatch.id || (pDigits ? `sakhi-user-${pDigits}` : `sakhi-host-${cleanEmail.replace(/[^a-z0-9]/g, '_')}`),
-      name: hostMatch.name && hostMatch.name !== 'Sakhi Host' ? hostMatch.name : (pDigits ? `Sakhi ${pDigits.slice(-4)}` : 'Sakhi Host'),
+      name: hostMatch.name && hostMatch.name !== 'Sakhi Host' ? hostMatch.name : 'Sakhi Host',
       gender: 'female',
       age: hostMatch.age || 22,
       city: hostMatch.city || 'India',
@@ -857,7 +857,7 @@ export const getActiveSession = (): ActiveSession => {
             isLoggedIn: true,
             role: 'host',
             id: host?.id || (hostPhone ? 'sakhi-user-' + hostPhone : 'host_' + hostEmail.replace(/[^a-z0-9]/g, '_')),
-            name: host?.name && host.name !== 'Sakhi Host' ? host.name : `Host ${hostPhone.slice(-4) || 'Sakhi'}`,
+            name: host?.name && host.name !== 'Sakhi Host' ? host.name : 'Sakhi Host',
             phone: hostPhone,
             email: hostEmail,
             avatar: host?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=80',
@@ -879,7 +879,7 @@ export const getActiveSession = (): ActiveSession => {
           isLoggedIn: true,
           role: 'caller',
           id: caller.id || (cleanPhone ? 'caller-' + cleanPhone : 'caller-' + cleanEmail.replace(/[^a-z0-9]/g, '_')),
-          name: caller.name || (cleanPhone ? `Caller ${cleanPhone.slice(-4)}` : `User ${cleanEmail.split('@')[0]}`),
+          name: caller.name || 'Caller',
           phone: cleanPhone,
           email: cleanEmail,
           avatar: caller.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
@@ -1091,7 +1091,7 @@ export const subscribeToAllRealCallers = (
                   id: data.id || ('caller-' + (cleanPhone || cleanEmail.replace(/[^a-z0-9]/g, '_'))),
                   phone: cleanPhone,
                   email: cleanEmail,
-                  name: data.name && data.name.trim() ? data.name.trim() : (cleanPhone ? `Caller ${cleanPhone.slice(-4)}` : `User ${cleanEmail.split('@')[0]}`),
+                  name: data.name && data.name.trim() ? data.name.trim() : 'Caller',
                   avatar: data.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
                   createdAt: data.createdAt || Date.now(),
                   lastLoginAt: data.lastLoginAt || data.lastActiveAt || Date.now(),
@@ -1135,7 +1135,7 @@ export const subscribeToAllRealCallers = (
                     currentSnapshotMap.set(cp, {
                       id: c.callerId || `caller-${cp}`,
                       phone: cp,
-                      name: c.callerName && c.callerName !== 'Caller' ? c.callerName : `Caller ${cp.slice(-4)}`,
+                      name: c.callerName && c.callerName !== 'Caller' ? c.callerName : 'Caller',
                       avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
                       createdAt: c.updatedAt || Date.now(),
                       lastLoginAt: c.updatedAt || Date.now(),
@@ -1196,7 +1196,7 @@ export const subscribeToAllRealCallers = (
           if (c) {
             const cp = String(c.callerPhone || c.callerId || '').replace(/\D/g, '').slice(-10);
             if (cp.length === 10) {
-              const callerName = c.callerName && c.callerName !== 'Caller' ? c.callerName : `Caller ${cp.slice(-4)}`;
+              const callerName = c.callerName && c.callerName !== 'Caller' ? c.callerName : 'Caller';
               // Ensure in user_accounts in firestore
               setDoc(doc(db!, USER_ACCOUNTS_COLLECTION, cp), {
                 id: c.callerId || `caller-${cp}`,

@@ -63,8 +63,6 @@ export const SakhiCard: React.FC<SakhiCardProps> = ({ sakhi }) => {
           </div>
 
           <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-[11px] text-pink-400 font-mono font-bold">ID: {sakhi.id}</span>
-            <span className="text-gray-500 text-xs">•</span>
             <p className="text-xs text-pink-200/80 truncate">
               {sakhi.city || 'India'}
             </p>

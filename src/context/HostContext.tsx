@@ -282,7 +282,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ...hostProfile,
         ...(account || {}),
         id: account?.hostId || 'sakhi-user-' + normalized,
-        name: account?.name || hostProfile.name || `Host ${normalized.slice(-4)}`,
+        name: account?.name || hostProfile.name || 'Sakhi Host',
         phone: normalized,
         status: 'online',
         isVerified: true
@@ -312,7 +312,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ...hostProfile,
         ...(res.hostProfile || {}),
         id: res.hostProfile?.id || 'sakhi-user-' + normalized,
-        name: res.hostProfile?.name || hostProfile.name || `Host ${normalized.slice(-4)}`,
+        name: res.hostProfile?.name || hostProfile.name || 'Sakhi Host',
         phone: normalized,
         status: 'online',
         isVerified: true
@@ -774,7 +774,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const senderRole: 'user' | 'sakhi' = isHost ? 'sakhi' : 'user';
     const effectiveSakhiId = isHost ? (hostProfile.id || `sakhi-user-${hostPhone}`) : sakhiId;
     const effectiveCallerId = isHost ? sakhiId : `caller_${callerPhone}`;
-    const effectiveCallerName = isHost ? sakhiName : (session.name || `Caller ${callerPhone.slice(-4)}`);
+    const effectiveCallerName = isHost ? sakhiName : (session.name || 'Caller');
 
     const newCallerMsg: ChatMessage = {
       id: 'msg-' + Date.now(),

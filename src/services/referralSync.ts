@@ -12,15 +12,11 @@ export const REFERRAL_BONUS_COINS = 50; // ₹50 Coins as requested!
 /**
  * Generate or get user's persistent referral code
  */
-export const getMyReferralCode = (userIdOrPhone?: string): string => {
+export const getMyReferralCode = (_userIdOrPhone?: string): string => {
   let saved = localStorage.getItem(REF_STORAGE_KEY);
   if (!saved) {
-    if (userIdOrPhone && userIdOrPhone.length >= 4) {
-      saved = 'SAKHI' + userIdOrPhone.slice(-4).toUpperCase();
-    } else {
-      const rand = Math.floor(1000 + Math.random() * 9000);
-      saved = 'SAKHI' + rand;
-    }
+    const rand = Math.floor(1000 + Math.random() * 9000);
+    saved = 'SAKHI' + rand;
     localStorage.setItem(REF_STORAGE_KEY, saved);
   }
   return saved;

@@ -396,9 +396,6 @@ export const IncomingCallModal: React.FC = () => {
         {/* Caller Name & ID */}
         <div className="relative z-10 mb-5">
           <h3 className="text-2xl font-black text-white">{incomingCall.callerName || 'Caller'}</h3>
-          <p className="text-xs font-mono text-pink-400 font-bold mt-0.5">
-            ID: {incomingCall.callerId || 'caller'}
-          </p>
           <p className="text-xs text-pink-300/80 mt-1 flex items-center justify-center gap-1">
             <Heart className="w-3 h-3 text-pink-400 fill-pink-400" />
             <span>Aap se live judna chahte hain...</span>

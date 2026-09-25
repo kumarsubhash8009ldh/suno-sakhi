@@ -257,8 +257,7 @@ const MainContent: React.FC = () => {
       const q = searchQuery.toLowerCase().trim();
       if (!q) return true;
       const matchesName = (caller.name || '').toLowerCase().includes(q);
-      const matchesPhone = cleanPhone.includes(q);
-      return matchesName || matchesPhone;
+      return matchesName;
     });
 
     // Sort: Online callers first, then recently active
@@ -383,7 +382,7 @@ const MainContent: React.FC = () => {
                     <div className="flex flex-col gap-2.5 mb-6">
                       {hostConversations.map((conv) => {
                         const cleanPhone = String(conv.callerPhone || conv.callerId || '').replace(/\D/g, '').slice(-10);
-                        const callerName = conv.callerName && conv.callerName !== 'Caller' ? conv.callerName : `Caller ${cleanPhone.slice(-4) || ''}`;
+                        const callerName = conv.callerName && conv.callerName !== 'Caller' ? conv.callerName : 'Caller';
                         const callerCompanion: Sakhi = {
                           id: conv.callerId || `caller-${cleanPhone}`,
                           name: callerName,
@@ -577,7 +576,7 @@ const MainContent: React.FC = () => {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="🔍 Search caller by name or phone (e.g. Caller 0157, 70096...)..."
+                placeholder="🔍 Search caller by name..."
                 className="w-full pl-10 pr-10 py-3 rounded-2xl bg-[#170a2c] border-2 border-emerald-500/40 text-white placeholder-gray-400 text-xs sm:text-sm focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 shadow-lg shadow-emerald-950/40 transition-all"
               />
               {searchQuery && (
@@ -617,7 +616,7 @@ const MainContent: React.FC = () => {
                 </h3>
                 <p className="text-gray-300 text-xs max-w-sm mx-auto mb-4">
                   {searchQuery
-                    ? 'Kripya dusra mobile number ya naam search karein.'
+                    ? 'Kripya dusra naam search karein.'
                     : 'Jaise hi koi user caller ban kar login karega, wo aapki screen par live show hoga.'}
                 </p>
                 {searchQuery && (
@@ -880,7 +879,7 @@ const MainContent: React.FC = () => {
             const cleanPhone = String(notif.callerPhone || notif.callerId || '').replace(/\D/g, '').slice(-10);
             openDirectChat({
               id: notif.callerId || `caller-${cleanPhone}`,
-              name: notif.callerName || `Caller ${cleanPhone.slice(-4) || ''}`,
+              name: notif.callerName || 'Caller',
               age: 24,
               city: 'India',
               avatar: notif.senderAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',

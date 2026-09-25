@@ -14,7 +14,7 @@ export const CallerCard: React.FC<CallerCardProps> = ({ caller }) => {
   const { openDirectChat } = useHost();
 
   const cleanPhone = String(caller.phone || '').replace(/\D/g, '');
-  const callerName = caller.name?.trim() || `Caller ${cleanPhone.slice(-4)}`;
+  const callerName = caller.name?.trim() || 'Caller';
   const avatarUrl =
     caller.avatar ||
     'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80';
@@ -69,12 +69,7 @@ export const CallerCard: React.FC<CallerCardProps> = ({ caller }) => {
               </span>
             </div>
 
-            <p className="text-xs text-pink-300/90 font-mono mt-0.5 flex items-center gap-1">
-              <span className="text-[10px] text-gray-400 uppercase tracking-wider">ID:</span>
-              <span className="font-bold">{caller.id || `caller-${cleanPhone.slice(-4)}`}</span>
-            </p>
-
-            <div className="flex items-center gap-2 mt-1 text-[11px] text-gray-400">
+            <div className="flex items-center gap-2 mt-1.5 text-[11px] text-gray-400">
               <span className="flex items-center gap-1 text-emerald-400 font-semibold">
                 <ShieldCheck className="w-3 h-3" />
                 <span>Verified Account</span>

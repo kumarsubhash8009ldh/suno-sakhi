@@ -78,7 +78,6 @@ export const CallingScreen: React.FC = () => {
           )}
         </div>
         <h2 className="text-3xl font-extrabold tracking-tight">{activeSakhi.name}</h2>
-        <p className="text-xs font-mono text-pink-400 font-bold mt-1">ID: {activeSakhi.id}</p>
         <p className="text-pink-300/80 text-sm mt-0.5">
           {activeSakhi.city || 'India'}{' '}
           {activeSakhi.tagline ? `• "${activeSakhi.tagline}"` : ''}

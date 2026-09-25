@@ -122,7 +122,7 @@ export const subscribeToAllRealHosts = (
               if (phone.length === 10 || email) {
                 const displayName = data.name && data.name.trim() !== '' && data.name !== 'Sakhi Host'
                   ? data.name.trim()
-                  : (phone ? `Sakhi ${phone.slice(-4)}` : 'Sakhi Host');
+                  : 'Sakhi Host';
 
                 const sakhi: Sakhi = {
                   id: docId,
@@ -164,7 +164,7 @@ export const subscribeToAllRealHosts = (
                 if (!currentSnapshotMap.has(k)) {
                   currentSnapshotMap.set(k, {
                     id: hp.id || `sakhi-user-${p}`,
-                    name: hp.name || `Sakhi ${p.slice(-4)}`,
+                    name: hp.name || 'Sakhi Host',
                     age: hp.age || 22,
                     city: hp.city || 'India',
                     avatar: hp.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
@@ -247,7 +247,7 @@ export const updateHostOnlineStatus = async (
   const matched = localList.find((h) => h.id === hostId || (pDigits.length === 10 && h.phone === pDigits));
 
   const phone = extraProfile?.phone || matched?.phone || (pDigits.length === 10 ? pDigits : '');
-  const name = extraProfile?.name || matched?.name || (phone ? `Sakhi ${phone.slice(-4)}` : 'Sakhi Host');
+  const name = extraProfile?.name || matched?.name || 'Sakhi Host';
   const avatar = extraProfile?.avatar || matched?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400';
 
   // 1. Update in Cloud Firestore
@@ -313,7 +313,7 @@ export const saveHostProfileToCloud = async (
 
   const displayName = profile.name && profile.name.trim() !== '' && profile.name !== 'Sakhi Host'
     ? profile.name.trim()
-    : (phone ? `Sakhi ${phone.slice(-4)}` : 'Sakhi Host');
+    : 'Sakhi Host';
 
   const sakhiObj: Sakhi = {
     id: profile.id,

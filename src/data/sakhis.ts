@@ -16,6 +16,7 @@ export const RECHARGE_PACKS: RechargePack[] = [
     id: 'pack-50',
     amount: 50,
     bonus: 2.5,
+    starter: true,
     voiceMinutes: 7,
     videoMinutes: 3.5
   },

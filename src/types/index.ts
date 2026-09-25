@@ -51,6 +51,7 @@ export interface RechargePack {
   bonus: number;
   popular?: boolean;
   bestValue?: boolean;
+  starter?: boolean;
   voiceMinutes: number;
   videoMinutes: number;
 }

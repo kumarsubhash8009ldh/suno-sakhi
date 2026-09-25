@@ -37,7 +37,7 @@ export const WalletModal: React.FC = () => {
   } = useWallet();
   const { settings } = useAdmin();
 
-  const [selectedPack, setSelectedPack] = useState<RechargePack>(RECHARGE_PACKS[1]); // Default ₹100
+  const [selectedPack, setSelectedPack] = useState<RechargePack>(RECHARGE_PACKS[0]); // Default ₹50 (Minimum recharge pack)
   const [step, setStep] = useState<'pack' | 'utr' | 'success'>('pack');
   const [utrInput, setUtrInput] = useState('');
   const [copied, setCopied] = useState(false);
@@ -67,6 +67,10 @@ export const WalletModal: React.FC = () => {
   };
 
   const handleProceedToUtr = () => {
+    if (selectedPack.amount < 50) {
+      setSubmitError('Minimum recharge amount ₹50 hai.');
+      return;
+    }
     setStep('utr');
     setSubmitError(null);
     setUtrInput('');
@@ -75,6 +79,11 @@ export const WalletModal: React.FC = () => {
   const handleSubmitUtr = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitError(null);
+
+    if (selectedPack.amount < 50) {
+      setSubmitError('Minimum recharge amount ₹50 hona anivarya hai.');
+      return;
+    }
 
     const clean = utrInput.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (!clean || clean.length < 6) {
@@ -194,16 +203,16 @@ export const WalletModal: React.FC = () => {
                     <span className="text-2xl">🎁</span>
                     <div>
                       <p className="text-xs font-black text-amber-300 flex items-center gap-1.5">
-                        <span>FLAT 5% EXTRA BONUS ON EVERY RECHARGE!</span>
+                        <span>FLAT 5% EXTRA BONUS • MIN RECHARGE ₹50!</span>
                         <span className="px-1.5 py-0.2 rounded-full bg-emerald-500 text-black text-[9px] font-black uppercase">Live</span>
                       </p>
                       <p className="text-[10px] text-gray-300">
-                        Har recharge par flat 5% extra coins automatic aapke wallet me judenge.
+                        Minimum recharge sirf ₹50 se shuru. Har recharge par flat 5% extra coins automatic judenge.
                       </p>
                     </div>
                   </div>
-                  <span className="px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-400 to-orange-400 text-black font-black text-[10px] uppercase shadow flex-shrink-0">
-                    +5% Free
+                  <span className="px-2.5 py-1 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-400 text-black font-black text-[10px] uppercase shadow flex-shrink-0">
+                    Min ₹50
                   </span>
                 </div>
 
@@ -212,7 +221,7 @@ export const WalletModal: React.FC = () => {
                     Step 1: Select Top-Up Pack
                   </span>
                   <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
-                    <Zap className="w-3 h-3" /> Flat 5% Extra Bonus Added
+                    <Zap className="w-3 h-3" /> Min ₹50 • Flat 5% Extra Bonus
                   </span>
                 </div>
 
@@ -231,6 +240,11 @@ export const WalletModal: React.FC = () => {
                             : 'bg-[#1b0d2e]/70 border-white/10 hover:border-pink-500/40'
                         }`}
                       >
+                        {pack.starter && (
+                          <span className="absolute -top-2.5 right-3 px-2 py-0.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 text-[10px] font-extrabold text-white uppercase tracking-wider shadow">
+                            Min Recharge ₹50
+                          </span>
+                        )}
                         {pack.popular && (
                           <span className="absolute -top-2.5 right-3 px-2 py-0.5 rounded-full bg-gradient-to-r from-pink-500 to-rose-500 text-[10px] font-extrabold text-white uppercase tracking-wider shadow">
                             Most Popular
@@ -265,9 +279,9 @@ export const WalletModal: React.FC = () => {
                   <ShieldAlert className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
                   <div className="text-xs text-amber-200/90 leading-relaxed">
                     <strong className="text-amber-300 font-bold block mb-0.5">
-                      ⚠️ Suraksha Suchna (No Automatic Add):
+                      ⚠️ Suraksha Suchna (Minimum Recharge ₹50):
                     </strong>
-                    Wallet me bina UTR verification ke automatic paise add nahi hote. Payment karke 12-digit UTR enter karein, Admin dwara verify hone par balance credit ho jayega.
+                    Minimum recharge amount ₹50 hai. Wallet me bina UTR verification ke automatic paise add nahi hote. Payment karke 12-digit UTR enter karein, Admin dwara verify hone par balance credit ho jayega.
                   </div>
                 </div>
 

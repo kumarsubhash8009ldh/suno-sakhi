@@ -62,10 +62,10 @@ export const submitRechargeRequest = async (params: {
     };
   }
 
-  if (params.amount <= 0) {
+  if (params.amount < 50) {
     return {
       success: false,
-      message: 'Kripya valid recharge amount select karein.'
+      message: 'Minimum recharge amount ₹50 hona anivarya hai.'
     };
   }
 

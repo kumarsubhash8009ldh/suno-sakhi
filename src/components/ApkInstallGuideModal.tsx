@@ -114,7 +114,7 @@ export const ApkInstallGuideModal: React.FC<ApkInstallGuideModalProps> = ({
         {/* Action Buttons */}
         <div className="space-y-2">
           <a
-            href="https://github.com/kumarsubhash8009ldh/suno-sakhi/releases/latest/download/Suno-Sakhi.apk"
+            href="/download"
             download="Suno-Sakhi.apk"
             className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-pink-600 via-rose-500 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white font-black text-xs sm:text-sm shadow-xl shadow-pink-600/40 flex items-center justify-center gap-2 transition-all border border-pink-300/30"
           >

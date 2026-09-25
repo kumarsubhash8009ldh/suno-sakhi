@@ -869,7 +869,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </button>
 
           <a
-            href="https://github.com/kumarsubhash8009ldh/suno-sakhi/releases/latest/download/Suno-Sakhi.apk"
+            href="/download"
             download="Suno-Sakhi.apk"
             className="p-3.5 rounded-2xl bg-[#241238] hover:bg-[#321850] border border-purple-500/20 text-left space-y-1 transition-all group block"
           >

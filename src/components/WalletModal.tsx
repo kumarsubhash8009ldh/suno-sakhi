@@ -361,7 +361,7 @@ export const WalletModal: React.FC = () => {
                     name={adminName}
                     amount={selectedPack.amount}
                     customQrUrl={settings.adminQrCodeUrl}
-                    size={190}
+                    size={220}
                     showDetails={true}
                     showDownload={true}
                   />

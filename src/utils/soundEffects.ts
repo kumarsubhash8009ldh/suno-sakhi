@@ -76,6 +76,8 @@ class SoundSynthesizer {
   private isRinging: boolean = false;
   private isUnlocked: boolean = false;
   private ringVolume: number = 1.0;
+  private paymentAlarmInterval: number | null = null;
+  private isPaymentAlarmActive: boolean = false;
 
   public setRingtoneVolume(vol: number) {
     this.ringVolume = Math.max(0, Math.min(1.5, vol));
@@ -460,6 +462,149 @@ class SoundSynthesizer {
     } catch (e) {
       console.warn('playMessageReceived error:', e);
     }
+  }
+
+  // Loud, crystal-clear 5-tone melodious Soundbox chime (Paytm / PhonePe Soundbox style)
+  public playPaymentReceivedSound(amount?: number) {
+    try {
+      const ctx = this.initCtx();
+      if (!ctx) return;
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+
+      const now = ctx.currentTime;
+      // Resonant 6-bell melodic fanfare (C5, E5, G5, C6, E6, G6) + metallic sparkle
+      const notes = [
+        { freq: 523.25, time: 0, dur: 0.22, vol: 0.75 },    // C5
+        { freq: 659.25, time: 0.12, dur: 0.22, vol: 0.8 },  // E5
+        { freq: 783.99, time: 0.24, dur: 0.25, vol: 0.85 }, // G5
+        { freq: 1046.5, time: 0.36, dur: 0.35, vol: 0.9 },  // C6
+        { freq: 1318.51, time: 0.52, dur: 0.5, vol: 0.95 }, // E6
+        { freq: 1567.98, time: 0.68, dur: 0.7, vol: 1.0 },  // G6
+        { freq: 2093.00, time: 0.84, dur: 0.9, vol: 0.85 }  // High harmonic bell
+      ];
+
+      notes.forEach((n) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(n.freq, now + n.time);
+
+        gain.gain.setValueAtTime(0, now + n.time);
+        gain.gain.linearRampToValueAtTime(n.vol, now + n.time + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + n.time + n.dur);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + n.time);
+        osc.stop(now + n.time + n.dur + 0.05);
+      });
+
+      // Cash register harmonic shimmer (2637Hz & 3136Hz)
+      const shimmer = ctx.createOscillator();
+      const shimmerGain = ctx.createGain();
+      shimmer.type = 'sine';
+      shimmer.frequency.setValueAtTime(2637, now + 0.8);
+      shimmerGain.gain.setValueAtTime(0, now + 0.8);
+      shimmerGain.gain.linearRampToValueAtTime(0.45, now + 0.82);
+      shimmerGain.gain.exponentialRampToValueAtTime(0.001, now + 1.4);
+      shimmer.connect(shimmerGain);
+      shimmerGain.connect(ctx.destination);
+      shimmer.start(now + 0.8);
+      shimmer.stop(now + 1.45);
+
+      // Hardware vibration on mobile
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate([600, 200, 600, 200, 800]);
+      }
+    } catch (e) {
+      console.warn('playPaymentReceivedSound error:', e);
+    }
+  }
+
+  // Long looping alarm / ringtone + Voice announcement for Admin when payment is received
+  public startPaymentReceivedAlarm(amount?: number, info?: string) {
+    if (this.isPaymentAlarmActive) return;
+    this.isPaymentAlarmActive = true;
+
+    // 1. Play immediate soundbox chime
+    this.playPaymentReceivedSound(amount);
+
+    // 2. Speak announcement via Web Speech API (Paytm/PhonePe Soundbox style announcement)
+    const speakAnnouncement = () => {
+      try {
+        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+          const announcement = amount && amount > 0
+            ? `Suno Sakhi par ${amount} rupaye ka naya payment prapt hua hai. Kripya UTR verify karein.`
+            : 'Suno Sakhi par naya payment prapt hua hai. Kripya check karein.';
+          const utter = new SpeechSynthesisUtterance(announcement);
+          utter.rate = 1.0;
+          utter.pitch = 1.05;
+          utter.volume = 1.0;
+          const voices = window.speechSynthesis.getVoices();
+          const hiVoice = voices.find((v) => v.lang.startsWith('hi') || v.lang.startsWith('en-IN') || v.lang.startsWith('en'));
+          if (hiVoice) utter.voice = hiVoice;
+          window.speechSynthesis.speak(utter);
+        }
+      } catch (err) {
+        console.warn('Speech synthesis warning:', err);
+      }
+    };
+
+    // Small delay so initial bell chime finishes before speech starts
+    setTimeout(() => {
+      if (this.isPaymentAlarmActive) speakAnnouncement();
+    }, 1200);
+
+    // 3. Show system push notification on desktop/mobile
+    try {
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        new Notification('💰 Naya Payment Prapt Hua! - SunoSakhi', {
+          body: amount ? `₹${amount} ka payment verify karne ke liye aaya hai.` : 'Naya payment request prapt hua hai.',
+          icon: '/favicon.ico'
+        });
+      }
+    } catch {}
+
+    // 4. Repeat alarm cycle every 5 seconds for a long ringtone (up to 35 seconds max)
+    let elapsed = 0;
+    if (this.paymentAlarmInterval) clearInterval(this.paymentAlarmInterval);
+    this.paymentAlarmInterval = window.setInterval(() => {
+      if (!this.isPaymentAlarmActive) {
+        if (this.paymentAlarmInterval) clearInterval(this.paymentAlarmInterval);
+        return;
+      }
+      elapsed += 5;
+      if (elapsed > 35) {
+        this.stopPaymentReceivedAlarm();
+        return;
+      }
+      this.playPaymentReceivedSound(amount);
+      speakAnnouncement();
+    }, 5000);
+  }
+
+  // Stop the payment alarm / ringtone immediately
+  public stopPaymentReceivedAlarm() {
+    this.isPaymentAlarmActive = false;
+    if (this.paymentAlarmInterval) {
+      clearInterval(this.paymentAlarmInterval);
+      this.paymentAlarmInterval = null;
+    }
+    try {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate(0);
+      }
+    } catch {}
+  }
+
+  public isPaymentAlarmPlaying(): boolean {
+    return this.isPaymentAlarmActive;
   }
 }
 

@@ -43,8 +43,13 @@ import {
   Eye,
   FileText,
   Camera,
-  Edit3
+  Edit3,
+  Bell,
+  BellRing,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
+import { sounds } from '../utils/soundEffects';
 import { useAdmin } from '../context/AdminContext';
 import { useWallet } from '../context/WalletContext';
 import { useHost } from '../context/HostContext';
@@ -115,6 +120,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
 
   // Success / Error alerts
   const [toastMsg, setToastMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Real-time Payment Received Alert & Long Ringtone
+  const [activePaymentAlert, setActivePaymentAlert] = useState<RechargeRequest | null>(null);
+  const seenRechargeIdsRef = React.useRef<Set<string>>(new Set());
+  const isInitialRechargeLoadRef = React.useRef<boolean>(true);
 
   // Action Modals / Forms
   const [releasingPayout, setReleasingPayout] = useState<HostPayoutRecord | null>(null);
@@ -258,13 +268,42 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
   useEffect(() => {
     loadData();
 
+    // Request desktop/mobile notification permission
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'default') {
+        Notification.requestPermission().catch(() => {});
+      }
+    }
+
     // Subscribe to live recharge requests from Firestore/LocalStorage
     const unsub = subscribeToAllRechargeRequests((list) => {
       setRechargeRequestsList(list);
+
+      if (isInitialRechargeLoadRef.current) {
+        // Initial load: populate seen IDs so we don't ring for previous historical requests
+        list.forEach((r) => seenRechargeIdsRef.current.add(r.id));
+        isInitialRechargeLoadRef.current = false;
+        return;
+      }
+
+      // Detect any new pending recharge requests submitted by users
+      const newPending = list.filter(
+        (r) => r.status === 'pending' && !seenRechargeIdsRef.current.has(r.id)
+      );
+
+      if (newPending.length > 0) {
+        newPending.forEach((r) => seenRechargeIdsRef.current.add(r.id));
+        const latest = newPending[0];
+        setActivePaymentAlert(latest);
+
+        // Sound the loud, long Payment Received Ringtone + Speech announcement!
+        sounds.startPaymentReceivedAlarm(latest.amount, latest.userName || latest.userPhone);
+      }
     });
 
     return () => {
       if (unsub) unsub();
+      sounds.stopPaymentReceivedAlarm();
     };
   }, []);
 
@@ -1028,6 +1067,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
 
           <div className="flex items-center gap-2">
             <button
+              onClick={() => {
+                if (sounds.isPaymentAlarmPlaying()) {
+                  sounds.stopPaymentReceivedAlarm();
+                  showToast('success', 'Ringtone stopped.');
+                } else {
+                  sounds.startPaymentReceivedAlarm(50, 'Demo User');
+                  showToast('success', '🔔 Payment Received Ringtone playing (Paytm Soundbox style)...');
+                }
+              }}
+              className="p-2 px-3 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 transition-all text-xs flex items-center gap-1.5 shadow"
+              title="Test Payment Received Ringtone"
+            >
+              <BellRing className="w-4 h-4 text-emerald-400 animate-pulse" />
+              <span className="font-bold">
+                {sounds.isPaymentAlarmPlaying() ? '⏹️ Stop' : '🔔 Test Ringtone'}
+              </span>
+            </button>
+
+            <button
               onClick={loadData}
               disabled={refreshing}
               className="p-2 rounded-xl bg-white/10 hover:bg-white/15 text-gray-300 hover:text-white transition-all text-xs flex items-center gap-1.5"
@@ -1046,6 +1104,60 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
             )}
           </div>
         </div>
+
+        {/* Real-Time Payment Received Ringtone Alert Banner */}
+        {activePaymentAlert && (
+          <div className="mx-4 mt-3 p-4 rounded-3xl bg-gradient-to-r from-emerald-950 via-[#1b082d] to-pink-950 border-2 border-emerald-400 shadow-2xl shadow-emerald-500/50 flex flex-col sm:flex-row items-center justify-between gap-4 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 w-full sm:w-auto">
+              <div className="p-3 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 animate-bounce flex-shrink-0">
+                <BellRing className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                  <h4 className="text-sm sm:text-base font-black text-emerald-300">
+                    💰 NAYA PAYMENT PRAPT HUA!
+                  </h4>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500 text-black font-black text-[10px] uppercase">
+                    Ringing
+                  </span>
+                </div>
+                <p className="text-xs text-white font-bold mt-0.5">
+                  Amount: <span className="text-emerald-400 text-sm font-black">₹{activePaymentAlert.amount}</span> (+Bonus: ₹{activePaymentAlert.bonus}) • User: {activePaymentAlert.userName || activePaymentAlert.userPhone}
+                </p>
+                <p className="text-[11px] text-pink-300 font-mono mt-0.5 select-all">
+                  UTR: <strong>{activePaymentAlert.utr}</strong>
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  sounds.stopPaymentReceivedAlarm();
+                  setActivePaymentAlert(null);
+                }}
+                className="flex-1 sm:flex-initial py-2 px-3.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold text-gray-200 flex items-center justify-center gap-1.5 transition-all"
+              >
+                <VolumeX className="w-3.5 h-3.5 text-gray-300" />
+                <span>Stop Ringtone</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  sounds.stopPaymentReceivedAlarm();
+                  handleApproveRecharge(activePaymentAlert);
+                  setActivePaymentAlert(null);
+                }}
+                className="flex-1 sm:flex-initial py-2 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-xs font-black text-white shadow-lg shadow-emerald-950/50 flex items-center justify-center gap-1.5 transition-all"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Verify & Approve Now</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Global Alert Notification Toast */}
         {toastMsg && (

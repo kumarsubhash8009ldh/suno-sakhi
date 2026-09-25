@@ -206,7 +206,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         if (res.success && res.user) {
           setUserRole('caller');
           creditLoginBonus(res.user.phone || res.user.email || clean, true, Boolean(referredBy));
-          setSuccessMessage('🎉 Welcome to SunoSakhi! Aapka Caller account ban gaya hai. ₹50 Free Coins add ho gaye!');
+          setSuccessMessage('🎉 Welcome to SunoSakhi! Aapka Caller account ban gaya hai. ₹20 Free Coins add ho gaye!');
           broadcastAuthChange();
           setTimeout(closeAndNotify, 700);
         } else {
@@ -397,7 +397,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       <p className="text-[10px] text-emerald-300 font-medium">बात करने वाला</p>
                     </div>
                     <span className="mt-2 inline-block text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/25 text-emerald-300 font-black border border-emerald-500/30">
-                      ₹50 Free Coins 🎁
+                      ₹20 Free Coins 🎁
                     </span>
                   </button>
 
@@ -484,7 +484,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   ? '🔒 Apna registered mobile number ya email enter karein (Auto Role Detect).'
                   : signupRole === 'host'
                   ? '🌸 Host account banate hi aapko direct kamai aur free calls access mil jayega.'
-                  : '🎁 Caller banne par aapko ₹50 free bonus coins milenge.'}
+                  : '🎁 Caller banne par aapko ₹20 free bonus coins milenge.'}
               </p>
             </div>
 

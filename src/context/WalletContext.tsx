@@ -65,9 +65,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const saved = localStorage.getItem(`sunosakhi_wallet_bal_${s.phone.replace(/\D/g, '')}`);
     if (saved !== null) {
       const parsed = parseFloat(saved);
-      return !isNaN(parsed) ? parsed : 50;
+      return !isNaN(parsed) ? parsed : 20;
     }
-    return 50;
+    return 20;
   });
 
   const [transactions, setTransactions] = useState<WalletTransaction[]>(() => {
@@ -83,7 +83,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       {
         id: 'tx-welcome-01',
         type: 'credit',
-        amount: 50,
+        amount: 20,
         description: '🎁 Welcome Bonus - SunoSakhi Free Talk Time',
         timestamp: Date.now() - 3600000
       }
@@ -93,7 +93,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
   const [rechargeRequests, setRechargeRequests] = useState<RechargeRequest[]>([]);
 
-  // Function to credit Welcome Bonus (₹50) and Referral Bonus (+₹25)
+  // Function to credit Welcome Bonus (₹20) and Referral Bonus (+₹25)
   const creditLoginBonus = (phone: string, isNewUser: boolean, hasReferral: boolean, playSound: boolean = false) => {
     try {
       const cleanPhone = phone.replace(/\D/g, '');
@@ -114,7 +114,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
 
       // New user or initial login bonus credit
-      const welcomeAmount = 50.0;
+      const welcomeAmount = 20.0;
       const referralBonus = hasReferral ? 25.0 : 0.0;
       const totalCredit = welcomeAmount + referralBonus;
 
@@ -138,7 +138,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         });
       }
 
-      setBalance(!isNaN(totalCredit) ? totalCredit : 50);
+      setBalance(!isNaN(totalCredit) ? totalCredit : 20);
       setTransactions(newTxs);
       localStorage.setItem(keyBal, totalCredit.toString());
       localStorage.setItem(keyTxs, JSON.stringify(newTxs));
@@ -327,16 +327,16 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const resetToDefault = () => {
-    setBalance(50.0);
+    setBalance(20.0);
     const welcomeTx: WalletTransaction = {
       id: 'tx-welcome-01',
       type: 'credit',
-      amount: 50.0,
+      amount: 20.0,
       description: '🎁 Welcome Bonus - SunoSakhi Free Talk Time',
       timestamp: Date.now()
     };
     setTransactions([welcomeTx]);
-    syncTransactionToCloud(userId, 50.0, welcomeTx);
+    syncTransactionToCloud(userId, 20.0, welcomeTx);
   };
 
   const claimShareBonus = (): { success: boolean; message: string; bonus: number } => {

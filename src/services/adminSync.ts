@@ -155,7 +155,7 @@ export const fetchAllRegisteredUsers = async (): Promise<AdminUserDetails[]> => 
     if (!usersMap[phone]) {
       usersMap[phone] = {
         ...u,
-        balance: 50.0 // default welcome coins
+        balance: 20.0 // default welcome coins
       };
     }
   });
@@ -170,7 +170,7 @@ export const fetchAllRegisteredUsers = async (): Promise<AdminUserDetails[]> => 
         usersMap[phone] = {
           ...(usersMap[phone] || {}),
           ...u,
-          balance: usersMap[phone]?.balance || 50.0
+          balance: usersMap[phone]?.balance || 20.0
         };
       });
     } catch (err) {

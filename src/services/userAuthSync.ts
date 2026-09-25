@@ -455,7 +455,7 @@ export const registerNewUser = async (
     referredBy: referredBy || undefined,
     status: 'online',
     isOnline: true,
-    balance: 50.0
+    balance: 20.0
   };
 
   // 1. Sync to server backend (generates sessionToken)
@@ -1174,7 +1174,7 @@ export const subscribeToAllRealCallers = (
                       lastLoginAt: c.updatedAt || Date.now(),
                       status: 'online',
                       isOnline: true,
-                      balance: 50.0
+                      balance: 20.0
                     });
                   }
                 });
@@ -1240,7 +1240,7 @@ export const subscribeToAllRealCallers = (
                 isOnline: true,
                 lastLoginAt: c.updatedAt || Date.now(),
                 lastActiveAt: c.updatedAt || Date.now(),
-                balance: 50.0
+                balance: 20.0
               }, { merge: true }).catch(() => {});
             }
           }

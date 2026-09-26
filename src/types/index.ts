@@ -191,6 +191,7 @@ export interface PlatformSettings {
   adminQrCodeUrl?: string;
   callHelplines?: HelplineContact[];
   whatsappHelplines?: HelplineContact[];
+  adminPassword?: string;
 }
 
 export interface RecentCallLog {

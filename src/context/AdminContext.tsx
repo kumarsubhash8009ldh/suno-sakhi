@@ -30,6 +30,7 @@ const defaultSettings: PlatformSettings = {
   adminUpiId: 'sunosakhi@okaxis',
   adminUpiName: 'Suno Sakhi Official',
   adminQrCodeUrl: '',
+  adminPassword: 'admin786',
   callHelplines: [
     { id: 'call-1', title: '24x7 Direct Phone Helpline', number: '+91 7009600157', type: 'call', isPrimary: true }
   ],
@@ -49,6 +50,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const [settings, setSettings] = useState<PlatformSettings>(() => {
     const saved = localStorage.getItem(SETTINGS_KEY);
+    const savedPassword = localStorage.getItem('sunosakhi_admin_password');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -67,6 +69,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return {
           ...defaultSettings,
           ...parsed,
+          adminPassword: parsed.adminPassword || savedPassword || defaultSettings.adminPassword,
           callHelplines: parsed.callHelplines || defaultSettings.callHelplines,
           whatsappHelplines: parsed.whatsappHelplines || defaultSettings.whatsappHelplines
         };
@@ -74,7 +77,10 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         // fallback
       }
     }
-    return defaultSettings;
+    return {
+      ...defaultSettings,
+      adminPassword: savedPassword || defaultSettings.adminPassword
+    };
   });
 
   // Subscribe to real-time settings from Firestore
@@ -89,9 +95,13 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (Array.isArray(waH)) {
         waH = waH.map((w: any) => w.number === '+91 98765 43210' ? { ...w, number: '+91 7009600157' } : w);
       }
+      if (cloudSettings.adminPassword) {
+        localStorage.setItem('sunosakhi_admin_password', cloudSettings.adminPassword);
+      }
       setSettings((prev) => ({
         ...prev,
         ...cloudSettings,
+        adminPassword: cloudSettings.adminPassword || prev.adminPassword || defaultSettings.adminPassword,
         supportPhone: (cloudSettings.supportPhone === '+91 98765 43210' || !cloudSettings.supportPhone) ? (prev.supportPhone || '+91 7009600157') : cloudSettings.supportPhone,
         supportWhatsApp: (cloudSettings.supportWhatsApp === '+91 98765 43210' || !cloudSettings.supportWhatsApp) ? (prev.supportWhatsApp || '+91 7009600157') : cloudSettings.supportWhatsApp,
         callHelplines: callH || prev.callHelplines || defaultSettings.callHelplines,

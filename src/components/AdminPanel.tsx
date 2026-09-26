@@ -27,6 +27,7 @@ import {
   Check,
   X,
   Lock,
+  KeyRound,
   ArrowLeft,
   ChevronRight,
   Clock,
@@ -85,20 +86,29 @@ import {
   adminDirectDeposit
 } from '../services/rechargeSync';
 import { UpiQrScanner } from './UpiQrScanner';
+import { AdminChangePasswordModal } from './AdminChangePasswordModal';
 
 interface AdminPanelProps {
   isModal?: boolean;
   onClose?: () => void;
   isSuperAdmin?: boolean;
   initialTab?: 'recharges' | 'payouts' | 'hosts' | 'users' | 'helpline' | 'analytics' | 'settings' | 'nudity';
+  onOpenChangePassword?: () => void;
 }
 
-export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose, isSuperAdmin = false, initialTab }) => {
+export const AdminPanel: React.FC<AdminPanelProps> = ({
+  isModal = false,
+  onClose,
+  isSuperAdmin = false,
+  initialTab,
+  onOpenChangePassword
+}) => {
   const { settings, isFirebaseActive, updateSettings, closeAdmin } = useAdmin();
   const { balance } = useWallet();
   const { hostProfile } = useHost();
 
   const [activeTab, setActiveTab] = useState<'recharges' | 'payouts' | 'hosts' | 'users' | 'helpline' | 'analytics' | 'settings' | 'nudity'>(initialTab || 'recharges');
+  const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false);
 
   // Live Data States
   const [hostsList, setHostsList] = useState<HostProfile[]>([]);
@@ -2802,6 +2812,38 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
           {/* ========================================================================= */}
           {activeTab === 'settings' && (
             <form onSubmit={handleSaveSettings} className="space-y-4 max-w-2xl">
+              {/* Admin Master Password Security Card */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-950/70 via-[#260e3a] to-pink-950/50 border border-purple-500/40 flex items-center justify-between gap-4 flex-wrap shadow-lg">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-purple-500/20 text-purple-300">
+                      <Lock className="w-4 h-4" />
+                    </div>
+                    <h5 className="text-sm font-black text-white">
+                      Admin Master Password Security
+                    </h5>
+                  </div>
+                  <p className="text-xs text-gray-300">
+                    Admin Portal kholne ke liye security password. Naya password set karne ke liye samne button par click karein.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onOpenChangePassword) {
+                      onOpenChangePassword();
+                    } else {
+                      setIsChangePasswordModalOpen(true);
+                    }
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 via-rose-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-black text-xs shadow-lg shadow-purple-900/50 flex items-center gap-1.5 transition-all active:scale-95 border border-purple-400/30"
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                  <span>Password Badlein (Change Password)</span>
+                </button>
+              </div>
+
               <div className="p-4 rounded-2xl bg-gradient-to-r from-[#200e36] to-[#140822] border border-pink-500/30">
                 <h4 className="text-sm font-bold text-white flex items-center gap-2">
                   <Settings className="w-4 h-4 text-pink-400" />
@@ -4711,6 +4753,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isModal = false, onClose
             </div>
           </div>
         )}
+        {/* Change Password Modal */}
+        <AdminChangePasswordModal
+          isOpen={isChangePasswordModalOpen}
+          onClose={() => setIsChangePasswordModalOpen(false)}
+          onSuccess={() => showToast('success', 'Admin Password safaltapoorvak update ho gaya hai!')}
+        />
       </div>
     </div>
   );

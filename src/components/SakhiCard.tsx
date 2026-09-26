@@ -3,6 +3,7 @@ import { Phone, Video, MessageCircle, Coins, ShieldCheck } from 'lucide-react';
 import { Sakhi } from '../types';
 import { useCall } from '../context/CallContext';
 import { useHost } from '../context/HostContext';
+import { useAdmin } from '../context/AdminContext';
 import { getActiveSession } from '../services/userAuthSync';
 import { formatHostId } from '../utils/idFormatter';
 
@@ -13,6 +14,7 @@ interface SakhiCardProps {
 export const SakhiCard: React.FC<SakhiCardProps> = ({ sakhi }) => {
   const { startCall } = useCall();
   const { openDirectChat, isHostLoggedIn, hostProfile, userRole } = useHost();
+  const { settings } = useAdmin();
   const session = getActiveSession();
   const isHostViewer = Boolean(
     session.role === 'host' ||
@@ -22,6 +24,10 @@ export const SakhiCard: React.FC<SakhiCardProps> = ({ sakhi }) => {
     localStorage.getItem('sunosakhi_active_role') === 'host' ||
     (hostProfile?.phone && String(hostProfile.phone).replace(/\D/g, '').length >= 10)
   );
+
+  const voiceRate = sakhi.voiceRatePerMin || settings?.voiceRatePerMin || 7;
+  const videoRate = sakhi.videoRatePerMin || settings?.videoRatePerMin || 15;
+  const chatRate = settings?.sakhiChatRate || 3;
 
   const isOnline = sakhi.status === 'online';
   const isTopHost = (sakhi.rating || 5) >= 4.9;
@@ -108,40 +114,68 @@ export const SakhiCard: React.FC<SakhiCardProps> = ({ sakhi }) => {
         </div>
       </div>
 
-      {/* Bottom Row: 2 Action Buttons (Chat & Voice Call) */}
-      <div className="flex items-center gap-2.5 pt-1">
-        {/* Left: Chat Outline Button */}
+      {/* Caller Rates Display Badge Strip */}
+      {!isHostViewer && (
+        <div className="grid grid-cols-3 gap-1.5 py-1.5 px-2.5 rounded-2xl bg-black/50 border border-pink-500/20 text-center items-center shadow-inner">
+          <div className="flex flex-col items-center justify-center p-1 rounded-xl bg-pink-500/10 border border-pink-500/20">
+            <div className="flex items-center gap-1 text-[10px] text-pink-300 font-semibold">
+              <Phone className="w-3 h-3 text-pink-400" />
+              <span>Voice</span>
+            </div>
+            <span className="text-xs font-black text-white font-mono">₹{voiceRate}/m</span>
+          </div>
+
+          <div className="flex flex-col items-center justify-center p-1 rounded-xl bg-purple-500/10 border border-purple-500/20">
+            <div className="flex items-center gap-1 text-[10px] text-purple-300 font-semibold">
+              <Video className="w-3 h-3 text-purple-400" />
+              <span>Video</span>
+            </div>
+            <span className="text-xs font-black text-white font-mono">₹{videoRate}/m</span>
+          </div>
+
+          <div className="flex flex-col items-center justify-center p-1 rounded-xl bg-blue-500/10 border border-blue-500/20">
+            <div className="flex items-center gap-1 text-[10px] text-blue-300 font-semibold">
+              <MessageCircle className="w-3 h-3 text-blue-400" />
+              <span>Message</span>
+            </div>
+            <span className="text-xs font-black text-white font-mono">₹{chatRate}/msg</span>
+          </div>
+        </div>
+      )}
+
+      {/* Bottom Row: 3 Action Buttons with Rates (Chat, Voice, Video) */}
+      <div className="flex items-center gap-2 pt-1">
+        {/* Left: Chat Button with rate */}
         <button
           type="button"
           onClick={() => openDirectChat(sakhi)}
-          className="flex-1 py-2.5 px-3 rounded-2xl border border-pink-500/30 hover:border-pink-400 bg-white/5 hover:bg-white/10 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all active:scale-95 shadow-sm"
-          title={isHostViewer ? 'Free Chat (Host Account)' : 'Direct Chat'}
+          className="flex-1 py-2.5 px-2 rounded-2xl border border-blue-500/30 hover:border-blue-400 bg-blue-950/20 hover:bg-blue-950/40 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-sm"
+          title={isHostViewer ? 'Free Chat (Host Account)' : `Direct Chat (₹${chatRate}/message)`}
         >
-          <MessageCircle className="w-4 h-4 text-pink-400" />
-          <span>{isHostViewer ? 'Chat (Free)' : 'Chat'}</span>
+          <MessageCircle className="w-4 h-4 text-blue-400" />
+          <span>{isHostViewer ? 'Chat (Free)' : `Chat ₹${chatRate}`}</span>
         </button>
 
-        {/* Right: Voice Call Primary Pill Button */}
+        {/* Center: Voice Call Primary Button with rate */}
         <button
           type="button"
           onClick={() => startCall(sakhi, 'voice')}
-          className="flex-1 py-2.5 px-3 rounded-2xl bg-gradient-to-r from-purple-700 via-indigo-700 to-pink-600 hover:from-purple-600 hover:to-pink-500 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-purple-950/50 transition-all active:scale-95"
-          title={isHostViewer ? 'Free Voice Call (Host Account)' : 'Live Voice Call (₹7.00/min)'}
+          className="flex-1 py-2.5 px-2 rounded-2xl bg-gradient-to-r from-purple-700 via-indigo-700 to-pink-600 hover:from-purple-600 hover:to-pink-500 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-lg shadow-purple-950/50 transition-all active:scale-95"
+          title={isHostViewer ? 'Free Voice Call (Host Account)' : `Live Voice Call (₹${voiceRate}/min)`}
         >
-          <Coins className="w-4 h-4 text-amber-300" />
-          <span>{isHostViewer ? 'Free Call' : '₹7/min'}</span>
           <Phone className="w-4 h-4 text-white" />
+          <span>{isHostViewer ? 'Free Call' : `Call ₹${voiceRate}/m`}</span>
         </button>
 
-        {/* Optional Video Call Icon Button */}
+        {/* Right: Video Call Button with rate */}
         <button
           type="button"
           onClick={() => startCall(sakhi, 'video')}
-          className="p-2.5 rounded-2xl bg-pink-600/30 hover:bg-pink-600/50 border border-pink-500/40 text-pink-300 hover:text-white transition-all active:scale-95 flex items-center gap-1"
-          title={isHostViewer ? 'Free Video Call (Host Account)' : 'Video Call (₹15.00/min)'}
+          className="py-2.5 px-3 rounded-2xl bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 border border-pink-400/40 text-white font-black text-xs sm:text-sm shadow-md shadow-pink-950/50 flex items-center justify-center gap-1 transition-all active:scale-95"
+          title={isHostViewer ? 'Free Video Call (Host Account)' : `Video Call (₹${videoRate}/min)`}
         >
-          <Video className="w-4 h-4" />
-          <span className="text-[10px] font-bold sm:inline">{isHostViewer ? 'Free' : '₹15'}</span>
+          <Video className="w-4 h-4 text-white" />
+          <span>{isHostViewer ? 'Free' : `₹${videoRate}/m`}</span>
         </button>
       </div>
     </div>

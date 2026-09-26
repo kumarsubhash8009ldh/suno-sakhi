@@ -25,6 +25,7 @@ import { useWallet } from '../context/WalletContext';
 import { useHost } from '../context/HostContext';
 import { InCallChatDrawer } from './InCallChatDrawer';
 import { useActiveSession } from '../services/userAuthSync';
+import { useAdmin } from '../context/AdminContext';
 import { routeAudioOutput } from '../utils/audioOutput';
 import { FloatingVideoCallSideDock } from './FloatingVideoCallSideDock';
 import { submitNudityReport } from '../services/safetyService';
@@ -55,6 +56,7 @@ export const VideoCallModal: React.FC = () => {
 
   const { balance, openWalletModal } = useWallet();
   const { openGiftTray, activeGifts, isHostLoggedIn, hostProfile, userRole } = useHost();
+  const { settings } = useAdmin();
   const isHostUser =
     isCallReceiver ||
     userRole === 'host' ||
@@ -279,7 +281,7 @@ export const VideoCallModal: React.FC = () => {
             )
           ) : (
             <span className="text-[11px] font-semibold text-pink-300 drop-shadow">
-              Video: ₹15/min • Bal: ₹{balance.toFixed(2)}
+              Video: ₹{activeSakhi?.videoRatePerMin || settings?.videoRatePerMin || 15}/min • Bal: ₹{balance.toFixed(2)}
             </span>
           )}
         </div>

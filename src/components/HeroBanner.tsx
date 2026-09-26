@@ -1,6 +1,7 @@
 import React from 'react';
-import { PhoneCall, Video, Heart, ShieldCheck, Sparkles, Mic, Download, Gift, Crown } from 'lucide-react';
+import { PhoneCall, Video, Heart, ShieldCheck, Sparkles, Mic, Download, Gift, Crown, MessageCircle } from 'lucide-react';
 import { Sakhi } from '../types';
+import { useAdmin } from '../context/AdminContext';
 
 interface HeroBannerProps {
   onQuickCall: () => void;
@@ -10,6 +11,11 @@ interface HeroBannerProps {
 }
 
 export const HeroBanner: React.FC<HeroBannerProps> = ({ onQuickCall, onOpenReferral, onOpenHostSlide, onOpenApkGuide }) => {
+  const { settings } = useAdmin();
+  const voiceRate = settings?.voiceRatePerMin || 7;
+  const videoRate = settings?.videoRatePerMin || 15;
+  const chatRate = settings?.sakhiChatRate || 3;
+
   return (
     <div className="relative overflow-hidden rounded-3xl mx-4 sm:mx-6 my-4 bg-gradient-to-br from-[#1c0d2e] via-[#150a24] to-[#0d0617] border border-pink-500/30 p-4 sm:p-8 shadow-2xl shadow-purple-950/50">
       {/* Background ambient lighting */}
@@ -36,30 +42,45 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onQuickCall, onOpenRefer
             Jab mann udas ho, ya koi apna baat sunne wala chahiye—humare verified Sakhis hamesha aapke saath hain. Instant 1-on-1 private voice aur video calls, bilkul transparent pricing ke saath.
           </p>
 
-          {/* Pricing Highlight Badges */}
-          <div className="grid grid-cols-2 gap-3 my-2 max-w-md">
-            <div className="p-3 sm:p-4 rounded-2xl bg-gradient-to-b from-[#281340]/90 to-[#1b0d2c]/90 border border-pink-500/30 shadow-lg">
-              <div className="flex items-center gap-2 text-pink-400 mb-1">
-                <Mic className="w-4 h-4" />
-                <span className="text-xs uppercase font-bold tracking-wider">Voice Call</span>
+          {/* Pricing Highlight Badges (Voice, Video, Chat) */}
+          <div className="grid grid-cols-3 gap-2 sm:gap-3 my-2 max-w-lg">
+            {/* 1. Voice Call Rate */}
+            <div className="p-2.5 sm:p-3.5 rounded-2xl bg-gradient-to-b from-[#281340]/90 to-[#1b0d2c]/90 border border-pink-500/30 shadow-lg text-center sm:text-left">
+              <div className="flex items-center justify-center sm:justify-start gap-1.5 text-pink-400 mb-1">
+                <Mic className="w-3.5 h-3.5" />
+                <span className="text-[10px] sm:text-xs uppercase font-bold tracking-wider">Voice</span>
               </div>
-              <div className="flex items-baseline gap-1">
-                <span className="text-2xl sm:text-3xl font-black text-white">₹7</span>
-                <span className="text-xs text-pink-200/80 font-medium">/ minute</span>
+              <div className="flex items-baseline justify-center sm:justify-start gap-0.5">
+                <span className="text-xl sm:text-2xl font-black text-white font-mono">₹{voiceRate}</span>
+                <span className="text-[10px] text-pink-200/80 font-medium">/min</span>
               </div>
-              <p className="text-[11px] text-pink-300/60 mt-0.5">Talk Freely & Privately</p>
+              <p className="text-[10px] text-pink-300/60 mt-0.5 hidden sm:block">Audio Call</p>
             </div>
 
-            <div className="p-3 sm:p-4 rounded-2xl bg-gradient-to-b from-[#35154c]/90 to-[#220d33]/90 border border-purple-500/30 shadow-lg">
-              <div className="flex items-center gap-2 text-purple-300 mb-1">
-                <Video className="w-4 h-4" />
-                <span className="text-xs uppercase font-bold tracking-wider">Video Call</span>
+            {/* 2. Video Call Rate */}
+            <div className="p-2.5 sm:p-3.5 rounded-2xl bg-gradient-to-b from-[#35154c]/90 to-[#220d33]/90 border border-purple-500/30 shadow-lg text-center sm:text-left">
+              <div className="flex items-center justify-center sm:justify-start gap-1.5 text-purple-300 mb-1">
+                <Video className="w-3.5 h-3.5" />
+                <span className="text-[10px] sm:text-xs uppercase font-bold tracking-wider">Video</span>
               </div>
-              <div className="flex items-baseline gap-1">
-                <span className="text-2xl sm:text-3xl font-black text-white">₹15</span>
-                <span className="text-xs text-purple-200/80 font-medium">/ minute</span>
+              <div className="flex items-baseline justify-center sm:justify-start gap-0.5">
+                <span className="text-xl sm:text-2xl font-black text-white font-mono">₹{videoRate}</span>
+                <span className="text-[10px] text-purple-200/80 font-medium">/min</span>
               </div>
-              <p className="text-[11px] text-purple-300/60 mt-0.5">Face-to-Face Live Chat</p>
+              <p className="text-[10px] text-purple-300/60 mt-0.5 hidden sm:block">HD Face-to-Face</p>
+            </div>
+
+            {/* 3. Sakhi Chat Rate */}
+            <div className="p-2.5 sm:p-3.5 rounded-2xl bg-gradient-to-b from-[#10243d]/90 to-[#0a1727]/90 border border-blue-500/30 shadow-lg text-center sm:text-left">
+              <div className="flex items-center justify-center sm:justify-start gap-1.5 text-blue-300 mb-1">
+                <MessageCircle className="w-3.5 h-3.5" />
+                <span className="text-[10px] sm:text-xs uppercase font-bold tracking-wider">Chat</span>
+              </div>
+              <div className="flex items-baseline justify-center sm:justify-start gap-0.5">
+                <span className="text-xl sm:text-2xl font-black text-white font-mono">₹{chatRate}</span>
+                <span className="text-[10px] text-blue-200/80 font-medium">/msg</span>
+              </div>
+              <p className="text-[10px] text-blue-300/60 mt-0.5 hidden sm:block">150 Words Msg</p>
             </div>
           </div>
 

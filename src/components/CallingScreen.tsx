@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { PhoneOff, Mic, MicOff, Video, Sparkles, Volume2, Volume1 } from 'lucide-react';
 import { useCall } from '../context/CallContext';
 import { useHost } from '../context/HostContext';
+import { useAdmin } from '../context/AdminContext';
 import { useActiveSession } from '../services/userAuthSync';
 import { sounds } from '../utils/soundEffects';
 import { CallVolumeControls } from './CallVolumeControls';
@@ -10,6 +11,7 @@ import { formatHostId, formatUserId } from '../utils/idFormatter';
 export const CallingScreen: React.FC = () => {
   const session = useActiveSession();
   const { isHostLoggedIn, hostProfile, userRole } = useHost();
+  const { settings } = useAdmin();
   const {
     activeSakhi,
     callType,
@@ -48,7 +50,9 @@ export const CallingScreen: React.FC = () => {
 
   if (callStatus !== 'calling' || !activeSakhi) return null;
 
-  const rate = callType === 'voice' ? 7 : 15;
+  const voiceRate = activeSakhi.voiceRatePerMin || settings?.voiceRatePerMin || 7;
+  const videoRate = activeSakhi.videoRatePerMin || settings?.videoRatePerMin || 15;
+  const rate = callType === 'voice' ? voiceRate : videoRate;
 
   return (
     <div
@@ -69,12 +73,12 @@ export const CallingScreen: React.FC = () => {
           ) : callType === 'voice' ? (
             <>
               <Mic className="w-3.5 h-3.5 text-pink-400" />
-              <span>Voice Call • ₹7 / min</span>
+              <span>Voice Call • ₹{voiceRate} / min</span>
             </>
           ) : (
             <>
               <Video className="w-3.5 h-3.5 text-purple-400" />
-              <span>Video Call • ₹15 / min</span>
+              <span>Video Call • ₹{videoRate} / min</span>
             </>
           )}
         </div>

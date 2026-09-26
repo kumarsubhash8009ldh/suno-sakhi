@@ -1,6 +1,7 @@
 import { Wallet, Sparkles, Plus, UserCheck, PhoneCall, TrendingUp, Headphones, Shield, LogIn, LogOut, Download, Gift, User, Clock } from 'lucide-react';
 import { useWallet } from '../context/WalletContext';
 import { useHost } from '../context/HostContext';
+import { useAdmin } from '../context/AdminContext';
 import { getCurrentUser, useActiveSession, logoutCurrentUser, broadcastAuthChange } from '../services/userAuthSync';
 import { isAdminUser } from '../services/adminSync';
 
@@ -21,6 +22,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const { balance, openWalletModal } = useWallet();
   const { userRole, setUserRole, hostProfile, isHostLoggedIn, openLoginModal, logoutHost, hostConversations } = useHost();
+  const { settings } = useAdmin();
   const session = useActiveSession();
   const unreadCount = hostConversations ? hostConversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0) : 0;
 
@@ -100,13 +102,16 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
             <button
               onClick={() => onSelectTab('rates')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
                 currentTab === 'rates'
                   ? 'bg-gradient-to-r from-pink-600 to-purple-600 text-white shadow'
                   : 'text-gray-300 hover:text-white'
               }`}
             >
-              🏷️ Rate Card
+              <span>🏷️ Rates</span>
+              <span className="hidden xl:inline-flex text-[10px] px-1.5 py-0.5 rounded-md bg-white/10 text-pink-200 font-mono">
+                📞₹{settings?.voiceRatePerMin || 7}/m • 📹₹{settings?.videoRatePerMin || 15}/m • 💬₹{settings?.sakhiChatRate || 3}/msg
+              </span>
             </button>
             <button
               onClick={() => onSelectTab('helpline')}

@@ -3,6 +3,7 @@ import { Phone, Video, MessageCircle, Gift, TrendingUp, ShieldCheck, ArrowRight,
 import { HOST_RANK_TIERS } from '../utils/hostRankTiers';
 import { useHost } from '../context/HostContext';
 import { useWallet } from '../context/WalletContext';
+import { useAdmin } from '../context/AdminContext';
 
 interface RateCardAndCommissionViewProps {
   onExploreSakhis: () => void;
@@ -16,6 +17,11 @@ export const RateCardAndCommissionView: React.FC<RateCardAndCommissionViewProps>
   const [activeSubTab, setActiveSubTab] = useState<'all' | 'rates' | 'commission'>('all');
   const { isHostLoggedIn, openLoginModal } = useHost();
   const { openWalletModal } = useWallet();
+  const { settings } = useAdmin();
+
+  const voiceRate = settings?.voiceRatePerMin || 7;
+  const videoRate = settings?.videoRatePerMin || 15;
+  const chatRate = settings?.sakhiChatRate || 3;
 
   const GIFTS_LIST = [
     { name: 'Red Rose 🌹', price: 10, hostEarns: 6 },
@@ -126,7 +132,7 @@ export const RateCardAndCommissionView: React.FC<RateCardAndCommissionViewProps>
                     </div>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <span className="text-base font-black text-pink-300">₹7.00</span>
+                    <span className="text-base font-black text-pink-300">₹{voiceRate.toFixed(2)}</span>
                     <span className="text-[10px] text-gray-400 block">/ minute</span>
                   </div>
                 </div>
@@ -143,7 +149,7 @@ export const RateCardAndCommissionView: React.FC<RateCardAndCommissionViewProps>
                     </div>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <span className="text-base font-black text-purple-300">₹15.00</span>
+                    <span className="text-base font-black text-purple-300">₹{videoRate.toFixed(2)}</span>
                     <span className="text-[10px] text-gray-400 block">/ minute</span>
                   </div>
                 </div>
@@ -160,7 +166,7 @@ export const RateCardAndCommissionView: React.FC<RateCardAndCommissionViewProps>
                     </div>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <span className="text-base font-black text-blue-300">₹3.00</span>
+                    <span className="text-base font-black text-blue-300">₹{chatRate.toFixed(2)}</span>
                     <span className="text-[10px] text-gray-400 block">/ message</span>
                   </div>
                 </div>

@@ -3,6 +3,7 @@ import { X, Send, MessageCircle, AlertCircle, Heart, Phone, Video, ShieldCheck, 
 import { useHost, MESSAGE_RATE, MAX_MESSAGE_WORDS } from '../context/HostContext';
 import { useWallet } from '../context/WalletContext';
 import { useCall } from '../context/CallContext';
+import { useAdmin } from '../context/AdminContext';
 import { markThreadAsRead, getChatClientId, subscribeToCloudChat, getChatThreadId } from '../services/chatSync';
 import { getCurrentUser, useActiveSession } from '../services/userAuthSync';
 import { formatHostId, formatUserId } from '../utils/idFormatter';
@@ -35,6 +36,12 @@ export const DirectChatModal: React.FC = () => {
   const { directChatSakhi, closeDirectChat, messages, sendMessage, userRole, isHostLoggedIn, hostProfile } = useHost();
   const { balance, openWalletModal } = useWallet();
   const { startCall } = useCall();
+  const { settings } = useAdmin();
+
+  const voiceRate = directChatSakhi?.voiceRatePerMin || settings?.voiceRatePerMin || 7;
+  const videoRate = directChatSakhi?.videoRatePerMin || settings?.videoRatePerMin || 15;
+  const chatRate = settings?.sakhiChatRate || MESSAGE_RATE || 3;
+
   const [inputText, setInputText] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [liveMessages, setLiveMessages] = useState<ChatMessage[]>([]);
@@ -163,7 +170,7 @@ export const DirectChatModal: React.FC = () => {
               </h3>
               <p className="text-[11px] text-emerald-400 flex items-center gap-1.5 font-medium">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span>online • {isHostViewer ? 'Host Account (100% Free • ₹0 Charges)' : `Sakhi Chat (₹${MESSAGE_RATE}/msg)`}</span>
+                <span>online • {isHostViewer ? 'Host Account (100% Free • ₹0 Charges)' : `Sakhi Chat (₹${chatRate}/msg)`}</span>
               </p>
             </div>
           </div>
@@ -175,7 +182,7 @@ export const DirectChatModal: React.FC = () => {
                 startCall(directChatSakhi, 'voice');
               }}
               className="p-2 rounded-xl bg-pink-600/30 hover:bg-pink-600/50 text-pink-300 border border-pink-500/40 transition-colors"
-              title={isHostViewer ? 'Free Voice Call' : 'Voice Call (₹5/min)'}
+              title={isHostViewer ? 'Free Voice Call' : `Voice Call (₹${voiceRate}/min)`}
             >
               <Phone className="w-4 h-4" />
             </button>
@@ -185,7 +192,7 @@ export const DirectChatModal: React.FC = () => {
                 startCall(directChatSakhi, 'video');
               }}
               className="p-2 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 text-purple-300 border border-purple-500/40 transition-colors"
-              title={isHostViewer ? 'Free Video Call' : 'Video Call (₹10/min)'}
+              title={isHostViewer ? 'Free Video Call' : `Video Call (₹${videoRate}/min)`}
             >
               <Video className="w-4 h-4" />
             </button>
@@ -357,7 +364,7 @@ export const DirectChatModal: React.FC = () => {
                 </span>
               ) : (
                 <span className="text-gray-400">
-                  Wallet Balance: <strong className="text-white">₹{((balance ?? 0) || 0).toFixed(2)}</strong> (₹{MESSAGE_RATE}/msg)
+                  Wallet Balance: <strong className="text-white">₹{((balance ?? 0) || 0).toFixed(2)}</strong> (₹{chatRate}/msg)
                 </span>
               )}
               <span
@@ -374,9 +381,9 @@ export const DirectChatModal: React.FC = () => {
             </div>
 
             {/* Low balance alert for caller with direct recharge */}
-            {!isHostViewer && balance < MESSAGE_RATE && (
+            {!isHostViewer && balance < chatRate && (
               <div className="flex items-center justify-between p-2 px-3 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[11px] font-bold animate-pulse">
-                <span>⚠️ Message bhejne ke liye ₹{MESSAGE_RATE.toFixed(2)} balance hona chahiye.</span>
+                <span>⚠️ Message bhejne ke liye ₹{chatRate.toFixed(2)} balance hona chahiye.</span>
                 <button
                   type="button"
                   onClick={openWalletModal}
@@ -390,7 +397,7 @@ export const DirectChatModal: React.FC = () => {
             <div className="flex items-center gap-2">
               <input
                 type="text"
-                placeholder={isHostViewer ? `Host reply (100% Free, max ${MAX_MESSAGE_WORDS} words)...` : `Type a message (Sakhi Chat: ₹${MESSAGE_RATE} per msg, max ${MAX_MESSAGE_WORDS} words)...`}
+                placeholder={isHostViewer ? `Host reply (100% Free, max ${MAX_MESSAGE_WORDS} words)...` : `Type a message (Sakhi Chat: ₹${chatRate} per msg, max ${MAX_MESSAGE_WORDS} words)...`}
                 value={inputText}
                 onChange={(e) => {
                   setInputText(e.target.value);
@@ -408,7 +415,7 @@ export const DirectChatModal: React.FC = () => {
                 className="py-3 px-5 rounded-2xl bg-gradient-to-r from-pink-600 via-rose-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white font-extrabold text-xs shadow-lg shadow-pink-900/40 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 transition-all flex-shrink-0"
               >
                 <Send className="w-3.5 h-3.5" />
-                <span>{isHostViewer ? 'Send (Free)' : `Send (₹${MESSAGE_RATE})`}</span>
+                <span>{isHostViewer ? 'Send (Free)' : `Send (₹${chatRate})`}</span>
               </button>
             </div>
           </form>

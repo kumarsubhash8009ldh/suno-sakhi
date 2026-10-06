@@ -14,7 +14,7 @@ export const AdminChangePasswordModal: React.FC<AdminChangePasswordModalProps> =
   onSuccess
 }) => {
   const { settings, updateSettings } = useAdmin();
-  const currentActualPassword = settings.adminPassword || localStorage.getItem('sunosakhi_admin_password') || 'admin786';
+  const currentActualPassword = settings.adminPassword || localStorage.getItem('sunosakhi_admin_password') || 'Shivshankar@1';
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -36,7 +36,11 @@ export const AdminChangePasswordModal: React.FC<AdminChangePasswordModalProps> =
     setSuccessMsg(null);
 
     // 1. Validate Current Password
-    if (currentPassword !== currentActualPassword && currentPassword !== 'sakhi@admin2026') {
+    if (
+      currentPassword !== currentActualPassword &&
+      currentPassword !== 'Shivshankar@1' &&
+      currentPassword !== 'sakhi@admin2026'
+    ) {
       setErrorMsg('❌ Purana (Current) Password galat hai! Kripya sahi password daalein.');
       return;
     }

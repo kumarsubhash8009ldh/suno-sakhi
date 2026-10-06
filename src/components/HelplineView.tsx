@@ -125,8 +125,10 @@ export const HelplineView: React.FC<HelplineViewProps> = ({ onExploreSakhis, onO
   const handleUnlockAdmin = (e: React.FormEvent) => {
     e.preventDefault();
     setPasscodeError(null);
+    const dynamicPass = settings.adminPassword || 'Shivshankar@1';
     if (
-      passcodeInput === 'admin786' ||
+      passcodeInput === dynamicPass ||
+      passcodeInput === 'Shivshankar@1' ||
       passcodeInput === 'sakhi@admin2026' ||
       passcodeInput === '123456' ||
       isSuperAdminAccount
@@ -891,7 +893,7 @@ export const HelplineView: React.FC<HelplineViewProps> = ({ onExploreSakhis, onO
                   type="password"
                   value={passcodeInput}
                   onChange={(e) => setPasscodeInput(e.target.value)}
-                  placeholder="Admin passcode (e.g. admin786)"
+                  placeholder="Admin passcode"
                   className="w-full pl-9 pr-3 py-2 rounded-xl bg-black/60 border border-pink-500/30 text-white text-xs focus:outline-none"
                   autoFocus
                 />

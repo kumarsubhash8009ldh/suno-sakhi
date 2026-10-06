@@ -23,7 +23,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({ onClose }) => 
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
-  const activeAdminPassword = settings.adminPassword || localStorage.getItem('sunosakhi_admin_password') || 'admin786';
+  const activeAdminPassword = settings.adminPassword || localStorage.getItem('sunosakhi_admin_password') || 'Shivshankar@1';
 
   const handleUnlock = (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,8 +31,8 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({ onClose }) => 
 
     const entered = passcode.trim();
 
-    // Verify against current dynamic admin password or master fallback
-    if (entered === activeAdminPassword || entered === 'sakhi@admin2026') {
+    // Verify against current dynamic admin password, new password, or master fallback
+    if (entered === activeAdminPassword || entered === 'Shivshankar@1' || entered === 'sakhi@admin2026') {
       setIsUnlocked(true);
       openAdmin();
       setPasscode('');

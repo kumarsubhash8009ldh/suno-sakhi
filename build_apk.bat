@@ -41,6 +41,7 @@ set "SRC_APK=android\app\build\outputs\apk\debug\app-debug.apk"
 
 if exist "%SRC_APK%" (
     copy /y "%SRC_APK%" "Suno-Sakhi.apk" >nul
+    copy /y "%SRC_APK%" "..\Suno-Sakhi.apk" >nul
     copy /y "%SRC_APK%" "%USERPROFILE%\Desktop\Suno-Sakhi.apk" >nul
     copy /y "%SRC_APK%" "dist\suno-sakhi.apk" >nul
     copy /y "%SRC_APK%" "dist\Suno-Sakhi.apk" >nul

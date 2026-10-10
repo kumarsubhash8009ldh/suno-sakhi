@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { doc, getDoc, setDoc, collection, onSnapshot } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase';
-import { getApiBaseUrl } from './apiConfig';
+import { getApiBaseUrl, hasExternalApiBackend } from './apiConfig';
 import { isPhoneBanned } from './safetyService';
-import { HostProfile, Sakhi } from '../types';
+import { HostProfile } from '../types';
 
 const USER_ACCOUNTS_COLLECTION = 'user_accounts';
 const HOSTS_COLLECTION = 'hosts';
@@ -137,6 +137,8 @@ export const syncUserToServer = async (user: UserAccount): Promise<boolean> => {
   // Push to Cloud Firestore so hosts can see this caller in real-time
   await saveUserToCloud(user);
 
+  if (!hasExternalApiBackend()) return true;
+
   try {
     const baseUrl = getApiBaseUrl();
     await fetch(`${baseUrl}/api/users/register`, {
@@ -218,23 +220,25 @@ export const checkUserPhoneExists = async (identifier: string): Promise<boolean>
     return true;
   }
 
-  // 2. Check Server Backend
-  try {
-    const baseUrl = getApiBaseUrl();
-    const res = await fetch(`${baseUrl}/api/users`);
-    const data = await res.json();
-    if (data.success && Array.isArray(data.users)) {
-      const found = data.users.find((u: UserAccount) =>
-        parsed.type === 'email'
-          ? Boolean(u.email && u.email.toLowerCase() === parsed.value)
-          : Boolean(u.phone && normalizeUserPhone(u.phone) === parsed.value)
-      );
-      if (found) {
-        saveUserToLocalRegistry(found);
-        return true;
+  // 2. Check Server Backend if configured
+  if (hasExternalApiBackend()) {
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/users`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.users)) {
+        const found = data.users.find((u: UserAccount) =>
+          parsed.type === 'email'
+            ? Boolean(u.email && u.email.toLowerCase() === parsed.value)
+            : Boolean(u.phone && normalizeUserPhone(u.phone) === parsed.value)
+        );
+        if (found) {
+          saveUserToLocalRegistry(found);
+          return true;
+        }
       }
-    }
-  } catch (err) {}
+    } catch (err) {}
+  }
 
   // 3. Check Cloud Firestore if configured
   if (isFirebaseConfigured() && db) {
@@ -301,22 +305,24 @@ export const isProfileNameUnique = async (
     }
   } catch (e) {}
 
-  // 3. Check Backend API (/api/profile/check-name)
-  try {
-    const baseUrl = getApiBaseUrl();
-    const res = await fetch(`${baseUrl}/api/profile/check-name`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: cleanName, excludeId, excludePhone: cleanPhone })
-    });
-    const data = await res.json();
-    if (data && data.isUnique === false) {
-      return {
-        isUnique: false,
-        message: data.message || '⚠️ Yeh Profile Name pehle se kisi aur ka hai! Kripya doosra unique naam chunein.'
-      };
-    }
-  } catch (e) {}
+  // 3. Check Backend API (/api/profile/check-name) if configured
+  if (hasExternalApiBackend()) {
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/profile/check-name`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: cleanName, excludeId, excludePhone: cleanPhone })
+      });
+      const data = await res.json();
+      if (data && data.isUnique === false) {
+        return {
+          isUnique: false,
+          message: data.message || '⚠️ Yeh Profile Name pehle se kisi aur ka hai! Kripya doosra unique naam chunein.'
+        };
+      }
+    } catch (e) {}
+  }
 
   return { isUnique: true };
 };
@@ -334,19 +340,21 @@ export const getUserAccount = async (phone: string): Promise<UserAccount | null>
     return localUsers[normalized];
   }
 
-  // 2. Check Server Backend
-  try {
-    const baseUrl = getApiBaseUrl();
-    const res = await fetch(`${baseUrl}/api/users`);
-    const data = await res.json();
-    if (data.success && Array.isArray(data.users)) {
-      const found = data.users.find((u: UserAccount) => u.phone === normalized);
-      if (found) {
-        saveUserToLocalRegistry(found);
-        return found;
+  // 2. Check Server Backend if configured
+  if (hasExternalApiBackend()) {
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/users`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.users)) {
+        const found = data.users.find((u: UserAccount) => u.phone === normalized);
+        if (found) {
+          saveUserToLocalRegistry(found);
+          return found;
+        }
       }
-    }
-  } catch (err) {}
+    } catch (err) {}
+  }
 
   // 3. Check Firestore
   if (isFirebaseConfigured() && db) {
@@ -458,20 +466,22 @@ export const registerNewUser = async (
     balance: 20.0
   };
 
-  // 1. Sync to server backend (generates sessionToken)
-  try {
-    const baseUrl = getApiBaseUrl();
-    const res = await fetch(`${baseUrl}/api/users/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...newAccount, identifier: phoneOrEmail })
-    });
-    const data = await res.json();
-    if (data.success && data.sessionToken) {
-      newAccount.sessionToken = data.sessionToken;
-      localStorage.setItem('sunosakhi_session_token', data.sessionToken);
-    }
-  } catch (err) {}
+  // 1. Sync to server backend (generates sessionToken) if configured
+  if (hasExternalApiBackend()) {
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/users/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...newAccount, identifier: phoneOrEmail })
+      });
+      const data = await res.json();
+      if (data.success && data.sessionToken) {
+        newAccount.sessionToken = data.sessionToken;
+        localStorage.setItem('sunosakhi_session_token', data.sessionToken);
+      }
+    } catch (err) {}
+  }
 
   // 2. Save to Firestore
   if (isFirebaseConfigured() && db) {
@@ -565,20 +575,22 @@ export const findHostAccount = async (identifier: string): Promise<any | null> =
     }
   }
 
-  // 4. Check backend API
-  try {
-    const baseUrl = getApiBaseUrl();
-    const res = await fetch(`${baseUrl}/api/hosts`, { signal: AbortSignal.timeout(3000) });
-    const data = await res.json();
-    if (data.success && Array.isArray(data.hosts)) {
-      const found = data.hosts.find((h: any) =>
-        cleanPhone
-          ? (h.phone && normalizeUserPhone(h.phone) === cleanPhone)
-          : (h.email && h.email.toLowerCase() === cleanEmail)
-      );
-      if (found) return found;
-    }
-  } catch {}
+  // 4. Check backend API if configured
+  if (hasExternalApiBackend()) {
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/hosts`, { signal: AbortSignal.timeout(3000) });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.hosts)) {
+        const found = data.hosts.find((h: any) =>
+          cleanPhone
+            ? (h.phone && normalizeUserPhone(h.phone) === cleanPhone)
+            : (h.email && h.email.toLowerCase() === cleanEmail)
+        );
+        if (found) return found;
+      }
+    } catch {}
+  }
 
   return null;
 };
@@ -605,46 +617,54 @@ export const loginExistingUser = async (
   const cleanPhone = parsed.type === 'phone' ? parsed.value : '';
   const cleanEmail = parsed.type === 'email' ? parsed.value : '';
 
-  // 1. Try Server Backend first
-  try {
-    const baseUrl = getApiBaseUrl();
-    const res = await fetch(`${baseUrl}/api/users/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone: cleanPhone, email: cleanEmail, identifier: phoneOrEmail, name })
-    });
-    const data = await res.json();
-    if (data.success) {
-      if (data.sessionToken) {
-        localStorage.setItem('sunosakhi_session_token', data.sessionToken);
+  // 1. Try Server Backend first if configured
+  if (hasExternalApiBackend()) {
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/users/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: cleanPhone, email: cleanEmail, identifier: phoneOrEmail, name })
+      });
+      const data = await res.json();
+      if (data.success) {
+        if (data.sessionToken) {
+          localStorage.setItem('sunosakhi_session_token', data.sessionToken);
+        }
+        if (data.isHost && data.host) {
+          localStorage.setItem('sunosakhi_host_profile', JSON.stringify(data.host));
+          localStorage.setItem('sunosakhi_host_logged_in', 'true');
+          localStorage.removeItem(CURRENT_USER_KEY);
+          localStorage.removeItem(STORAGE_KEY_USER_ID);
+          setActiveRole('host');
+          broadcastAuthChange();
+          return { success: true, isHost: true, host: data.host };
+        }
+        if (data.user) {
+          saveUserToLocalRegistry(data.user);
+          localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(data.user));
+          localStorage.setItem(STORAGE_KEY_USER_ID, data.user.id);
+          localStorage.removeItem('sunosakhi_host_logged_in');
+          localStorage.removeItem('sunosakhi_host_profile');
+          setActiveRole('caller');
+          await saveUserToCloud(data.user);
+          broadcastAuthChange();
+          return { success: true, isHost: false, user: data.user };
+        }
       }
-      if (data.isHost && data.host) {
-        localStorage.setItem('sunosakhi_host_profile', JSON.stringify(data.host));
-        localStorage.setItem('sunosakhi_host_logged_in', 'true');
-        localStorage.removeItem(CURRENT_USER_KEY);
-        localStorage.removeItem(STORAGE_KEY_USER_ID);
-        setActiveRole('host');
-        broadcastAuthChange();
-        return { success: true, isHost: true, host: data.host };
-      }
-      if (data.user) {
-        saveUserToLocalRegistry(data.user);
-        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(data.user));
-        localStorage.setItem(STORAGE_KEY_USER_ID, data.user.id);
-        localStorage.removeItem('sunosakhi_host_logged_in');
-        localStorage.removeItem('sunosakhi_host_profile');
-        setActiveRole('caller');
-        await saveUserToCloud(data.user);
-        broadcastAuthChange();
-        return { success: true, isHost: false, user: data.user };
-      }
-    }
-  } catch (err) {}
+    } catch (err) {}
+  }
 
   // 2. Check if this account is registered as a Sakhi HOST in Cloud / Local
   const hostMatch = await findHostAccount(phoneOrEmail);
   if (hostMatch) {
     const pDigits = hostMatch.phone ? String(hostMatch.phone).replace(/\D/g, '').slice(-10) : cleanPhone;
+    const verStatus = hostMatch.verification?.status;
+    const isHostVerified =
+      verStatus === 'pending' || verStatus === 'rejected'
+        ? false
+        : hostMatch.isVerified !== false;
+
     const hostProfile: HostProfile = {
       id: hostMatch.id || (pDigits ? `sakhi-user-${pDigits}` : `sakhi-host-${cleanEmail.replace(/[^a-z0-9]/g, '_')}`),
       name: hostMatch.name && hostMatch.name !== 'Sakhi Host' ? hostMatch.name : 'Sakhi Host',
@@ -659,8 +679,8 @@ export const loginExistingUser = async (
       languages: Array.isArray(hostMatch.languages) && hostMatch.languages.length > 0 ? hostMatch.languages : ['Hindi', 'English'],
       bio: hostMatch.bio || 'Namaste! Main SunoSakhi par aapse baatein karne ke liye available hoon.',
       interests: hostMatch.interests || ['Friendly Chat', 'Life Talk'],
-      voiceRatePerMin: 5,
-      videoRatePerMin: 10,
+      voiceRatePerMin: hostMatch.voiceRatePerMin || 7,
+      videoRatePerMin: hostMatch.videoRatePerMin || 15,
       audioSnippet: hostMatch.audioSnippet || '',
       tagline: hostMatch.tagline || '🌸 Verified Sakhi Host',
       totalVoiceMinutes: hostMatch.totalVoiceMinutes || 0,
@@ -673,7 +693,7 @@ export const loginExistingUser = async (
       upiId: hostMatch.upiId || '',
       phone: pDigits,
       email: hostMatch.email || cleanEmail || undefined,
-      isVerified: true,
+      isVerified: isHostVerified,
       verification: hostMatch.verification || {
         panNumber: 'DIRECT_ACTIVE',
         residentIdType: 'aadhaar',
@@ -979,7 +999,7 @@ export const getActiveSession = (): ActiveSession => {
 if (typeof window !== 'undefined') {
   let isChecking = false;
   setInterval(async () => {
-    if (isChecking) return;
+    if (isChecking || !hasExternalApiBackend()) return;
     const session = getActiveSession();
     if (!session.isLoggedIn || !session.sessionToken) return;
 
@@ -1131,7 +1151,7 @@ export const subscribeToAllRealCallers = (
                   referredBy: data.referredBy || '',
                   status: data.status === 'blocked' ? 'blocked' : (isUserOnline ? 'online' : 'offline'),
                   isOnline: isUserOnline,
-                  balance: typeof data.balance === 'number' ? data.balance : 50.0
+                  balance: typeof data.balance === 'number' ? data.balance : 20.0
                 };
                 const key = cleanPhone || cleanEmail || user.id;
                 currentSnapshotMap.set(key, user);
@@ -1156,7 +1176,7 @@ export const subscribeToAllRealCallers = (
             }
           } catch {}
 
-          // Also merge any real caller from conversations collection (e.g. callers who sent messages)
+          // Also merge any real caller from conversations cache in-memory (without overwriting balances!)
           try {
             const rawConvs = localStorage.getItem('sunosakhi_conversations_cache');
             if (rawConvs) {
@@ -1219,64 +1239,37 @@ export const subscribeToAllRealCallers = (
     }
   }
 
-  // Also listen to conversations collection to discover any callers who sent messages
-  let convUnsub: (() => void) | null = null;
-  if (isFirebaseConfigured() && db) {
-    try {
-      convUnsub = onSnapshot(collection(db, 'conversations'), (snap) => {
-        snap.forEach((docSnap) => {
-          const c = docSnap.data() as any;
-          if (c) {
-            const cp = String(c.callerPhone || c.callerId || '').replace(/\D/g, '').slice(-10);
-            if (cp.length === 10) {
-              const callerName = c.callerName && c.callerName !== 'Caller' ? c.callerName : 'Caller';
-              // Ensure in user_accounts in firestore
-              setDoc(doc(db!, USER_ACCOUNTS_COLLECTION, cp), {
-                id: c.callerId || `caller-${cp}`,
-                phone: cp,
-                name: callerName,
-                avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
-                status: 'online',
-                isOnline: true,
-                lastLoginAt: c.updatedAt || Date.now(),
-                lastActiveAt: c.updatedAt || Date.now(),
-                balance: 20.0
-              }, { merge: true }).catch(() => {});
+  // 3. Fallback Poll Backend Server ONLY if configured
+  let intervalId: number | null = null;
+  if (hasExternalApiBackend()) {
+    const baseUrl = getApiBaseUrl();
+    const fetchBackend = async () => {
+      if (isUnsubscribed) return;
+      try {
+        const res = await fetch(`${baseUrl}/api/users`, { signal: AbortSignal.timeout(3000) });
+        const data = await res.json();
+        if (data.success && Array.isArray(data.users)) {
+          data.users.forEach((u: any) => {
+            const cleanPhone = String(u.phone || '').replace(/\D/g, '');
+            const cleanEmail = String(u.email || '').trim().toLowerCase();
+            if (cleanPhone.length >= 10 || cleanEmail) {
+              const key = cleanPhone || cleanEmail || u.id;
+              callersMap.set(key, { ...u, phone: cleanPhone, email: cleanEmail });
             }
-          }
-        });
-      });
-    } catch {}
+          });
+          publish();
+        }
+      } catch {}
+    };
+
+    fetchBackend();
+    intervalId = window.setInterval(fetchBackend, 3000);
   }
-
-  // 3. Fallback Poll Backend Server
-  const baseUrl = getApiBaseUrl();
-  const fetchBackend = async () => {
-    if (isUnsubscribed) return;
-    try {
-      const res = await fetch(`${baseUrl}/api/users`, { signal: AbortSignal.timeout(3000) });
-      const data = await res.json();
-      if (data.success && Array.isArray(data.users)) {
-        data.users.forEach((u: any) => {
-          const cleanPhone = String(u.phone || '').replace(/\D/g, '');
-          const cleanEmail = String(u.email || '').trim().toLowerCase();
-          if (cleanPhone.length >= 10 || cleanEmail) {
-            const key = cleanPhone || cleanEmail || u.id;
-            callersMap.set(key, { ...u, phone: cleanPhone, email: cleanEmail });
-          }
-        });
-        publish();
-      }
-    } catch {}
-  };
-
-  fetchBackend();
-  const intervalId = window.setInterval(fetchBackend, 3000);
 
   return () => {
     isUnsubscribed = true;
     if (firestoreUnsub) firestoreUnsub();
-    if (convUnsub) convUnsub();
-    clearInterval(intervalId);
+    if (intervalId !== null) clearInterval(intervalId);
   };
 };
+

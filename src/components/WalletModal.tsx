@@ -125,7 +125,7 @@ export const WalletModal: React.FC = () => {
             </div>
             <div>
               <h2 className="text-lg font-bold text-white">SunoSakhi Wallet</h2>
-              <p className="text-xs text-pink-300/80">Voice ₹5/min • Video ₹10/min</p>
+              <p className="text-xs text-pink-300/80">Voice ₹{settings.voiceRatePerMin || 7}/min • Video ₹{settings.videoRatePerMin || 15}/min</p>
             </div>
           </div>
           <button
@@ -149,10 +149,10 @@ export const WalletModal: React.FC = () => {
               <span className="text-[11px] text-gray-400 block">Available Talk Time</span>
               <div className="flex flex-col gap-0.5 mt-1 text-xs">
                 <span className="text-pink-300 font-semibold">
-                  🎙️ ~{Math.floor(balance / 5)} mins Voice
+                  🎙️ ~{Math.floor(balance / (settings.voiceRatePerMin || 7))} mins Voice
                 </span>
                 <span className="text-purple-300 font-semibold">
-                  📹 ~{Math.floor(balance / 8)} mins Video
+                  📹 ~{Math.floor(balance / (settings.videoRatePerMin || 15))} mins Video
                 </span>
               </div>
             </div>
@@ -229,6 +229,8 @@ export const WalletModal: React.FC = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {RECHARGE_PACKS.map((pack) => {
                     const isSelected = selectedPack.id === pack.id;
+                    const voiceMins = Math.floor((pack.amount + pack.bonus) / (settings.voiceRatePerMin || 7));
+                    const videoMins = Math.floor((pack.amount + pack.bonus) / (settings.videoRatePerMin || 15));
                     return (
                       <button
                         key={pack.id}
@@ -266,8 +268,8 @@ export const WalletModal: React.FC = () => {
                         </div>
 
                         <div className="mt-2 pt-2 border-t border-white/5 text-[11px] text-gray-300 space-y-0.5">
-                          <p className="text-pink-300">🎙️ {pack.voiceMinutes} mins Voice Call</p>
-                          <p className="text-purple-300">📹 {pack.videoMinutes} mins Video Call</p>
+                          <p className="text-pink-300">🎙️ ~{voiceMins} mins Voice Call</p>
+                          <p className="text-purple-300">📹 ~{videoMins} mins Video Call</p>
                         </div>
                       </button>
                     );

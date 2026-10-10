@@ -145,3 +145,87 @@ export const submitNudityReport = async (params: {
 
   return { success: true, report };
 };
+
+const BLOCKED_USERS_KEY = 'sunosakhi_blocked_users';
+const SAFETY_REPORTS_COLLECTION = 'safety_reports';
+
+export const getBlockedUsers = (): string[] => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(BLOCKED_USERS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const isUserBlocked = (targetId?: string | null): boolean => {
+  if (!targetId) return false;
+  const cleanId = String(targetId).trim();
+  if (!cleanId) return false;
+  const list = getBlockedUsers();
+  if (list.includes(cleanId)) return true;
+  const digits = cleanId.replace(/\D/g, '').slice(-10);
+  if (digits.length === 10 && list.some((item) => item.replace(/\D/g, '').slice(-10) === digits)) {
+    return true;
+  }
+  return false;
+};
+
+export const blockUser = (targetId: string): void => {
+  if (!targetId || typeof window === 'undefined') return;
+  const cleanId = String(targetId).trim();
+  if (!cleanId) return;
+  try {
+    const list = getBlockedUsers();
+    if (!list.includes(cleanId)) {
+      list.push(cleanId);
+      localStorage.setItem(BLOCKED_USERS_KEY, JSON.stringify(list));
+    }
+  } catch {}
+};
+
+export const unblockUser = (targetId: string): void => {
+  if (!targetId || typeof window === 'undefined') return;
+  const cleanId = String(targetId).trim();
+  const digits = cleanId.replace(/\D/g, '').slice(-10);
+  try {
+    const list = getBlockedUsers();
+    const updated = list.filter((item) => {
+      if (item === cleanId) return false;
+      if (digits.length === 10 && item.replace(/\D/g, '').slice(-10) === digits) return false;
+      return true;
+    });
+    localStorage.setItem(BLOCKED_USERS_KEY, JSON.stringify(updated));
+  } catch {}
+};
+
+export const submitSafetyReport = async (params: {
+  targetId: string;
+  targetName: string;
+  reason: string;
+  reporterId?: string;
+  reporterPhone?: string;
+}): Promise<{ success: boolean }> => {
+  const reportId = 'rep-safety-' + Date.now();
+  const payload = {
+    id: reportId,
+    targetId: params.targetId,
+    targetName: params.targetName,
+    reason: params.reason,
+    reporterPhone: params.reporterPhone || params.reporterId || 'anonymous',
+    timestamp: Date.now(),
+    status: 'under_review'
+  };
+
+  if (isFirebaseConfigured() && db) {
+    try {
+      await setDoc(doc(db, SAFETY_REPORTS_COLLECTION, reportId), payload);
+    } catch (err) {
+      console.warn('Could not save safety report to firestore:', err);
+    }
+  }
+
+  return { success: true };
+};
+

@@ -1,7 +1,7 @@
-import { collection, doc, getDoc, setDoc, onSnapshot, getDocs } from 'firebase/firestore';
+import { collection, doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase';
 import { HostProfile, HostIncomeRecord, Sakhi } from '../types';
-import { getApiBaseUrl } from './apiConfig';
+import { getApiBaseUrl, hasExternalApiBackend } from './apiConfig';
 
 const HOSTS_COLLECTION = 'hosts';
 const LOCAL_HOSTS_KEY = 'sunosakhi_registered_hosts';
@@ -126,7 +126,18 @@ export const subscribeToAllRealHosts = (
 
                 const lastActive = Number(data.lastActiveAt || 0);
                 const isRecentlyActive = lastActive > 0 && (Date.now() - lastActive) < 60 * 1000;
-                const isHostOnline = data.status !== 'offline' && (data.status === 'online' || isRecentlyActive);
+                const effectiveStatus: 'online' | 'busy' | 'offline' =
+                  data.status === 'busy'
+                    ? 'busy'
+                    : data.status !== 'offline' && (data.status === 'online' || isRecentlyActive)
+                    ? 'online'
+                    : 'offline';
+
+                const verStatus = data.verification?.status;
+                const isHostVerified =
+                  verStatus === 'pending' || verStatus === 'rejected'
+                    ? false
+                    : data.isVerified !== false;
 
                 const sakhi: Sakhi = {
                   id: docId,
@@ -135,19 +146,19 @@ export const subscribeToAllRealHosts = (
                   city: data.city || 'India',
                   avatar: data.avatar || data.selfieUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
                   videoPoster: data.videoPoster || data.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
-                  status: isHostOnline ? 'online' : 'offline',
+                  status: effectiveStatus,
                   rating: typeof data.rating === 'number' ? data.rating : 5.0,
                   totalCalls: data.totalCalls || 0,
                   languages: Array.isArray(data.languages) && data.languages.length > 0 ? data.languages : ['Hindi', 'English'],
                   bio: data.bio || 'Namaste! Main SunoSakhi par aapse baatein karne ke liye available hoon.',
                   interests: data.interests || ['Friendly Chat', 'Life Talk'],
-                  voiceRatePerMin: 7, // Caller standard audio rate
-                  videoRatePerMin: 15, // Caller standard video rate
+                  voiceRatePerMin: data.voiceRatePerMin || 7,
+                  videoRatePerMin: data.videoRatePerMin || 15,
                   tagline: data.tagline || '🌸 Verified Sakhi Host',
                   audioSnippet: data.audioSnippet || '',
                   phone: phone,
                   email: email,
-                  isVerified: true
+                  isVerified: isHostVerified
                 };
                 const key = sakhi.phone || sakhi.email || sakhi.id;
                 currentSnapshotMap.set(key, sakhi);
@@ -166,6 +177,11 @@ export const subscribeToAllRealHosts = (
               if (p.length === 10 || em) {
                 const k = p || em || hp.id;
                 if (!currentSnapshotMap.has(k)) {
+                  const verStatus = hp.verification?.status;
+                  const isHostVerified =
+                    verStatus === 'pending' || verStatus === 'rejected'
+                      ? false
+                      : hp.isVerified !== false;
                   currentSnapshotMap.set(k, {
                     id: hp.id || `sakhi-user-${p}`,
                     name: hp.name || 'Sakhi Host',
@@ -179,13 +195,13 @@ export const subscribeToAllRealHosts = (
                     languages: hp.languages || ['Hindi', 'English'],
                     bio: hp.bio || 'Namaste! Main SunoSakhi par aapse baatein karne ke liye available hoon.',
                     interests: hp.interests || ['Friendly Chat', 'Life Talk'],
-                    voiceRatePerMin: 7,
-                    videoRatePerMin: 15,
+                    voiceRatePerMin: hp.voiceRatePerMin || 7,
+                    videoRatePerMin: hp.videoRatePerMin || 15,
                     tagline: hp.tagline || '🌸 Verified Sakhi Host',
                     audioSnippet: hp.audioSnippet || '',
                     phone: p,
                     email: em,
-                    isVerified: true
+                    isVerified: isHostVerified
                   });
                 }
               }
@@ -210,30 +226,33 @@ export const subscribeToAllRealHosts = (
     }
   }
 
-  // 3. Fallback polling from Server Backend if tunnel/server is reachable
-  const baseUrl = getApiBaseUrl();
-  const fetchFromBackend = async () => {
-    if (isUnsubscribed) return;
-    try {
-      const res = await fetch(`${baseUrl}/api/hosts`, { signal: AbortSignal.timeout(3500) });
-      const data = await res.json();
-      if (data.success && Array.isArray(data.hosts)) {
-        data.hosts.filter(isRealHostAccount).forEach((h: Sakhi) => {
-          const key = h.phone || h.email || h.id;
-          mergedHostsMap.set(key, h);
-        });
-        publish();
-      }
-    } catch {}
-  };
+  // 3. Fallback polling from Server Backend ONLY if an external server is configured
+  let intervalId: number | null = null;
+  if (hasExternalApiBackend()) {
+    const baseUrl = getApiBaseUrl();
+    const fetchFromBackend = async () => {
+      if (isUnsubscribed) return;
+      try {
+        const res = await fetch(`${baseUrl}/api/hosts`, { signal: AbortSignal.timeout(3500) });
+        const data = await res.json();
+        if (data.success && Array.isArray(data.hosts)) {
+          data.hosts.filter(isRealHostAccount).forEach((h: Sakhi) => {
+            const key = h.phone || h.email || h.id;
+            mergedHostsMap.set(key, h);
+          });
+          publish();
+        }
+      } catch {}
+    };
 
-  fetchFromBackend();
-  const intervalId = window.setInterval(fetchFromBackend, 3000);
+    fetchFromBackend();
+    intervalId = window.setInterval(fetchFromBackend, 3000);
+  }
 
   return () => {
     isUnsubscribed = true;
     if (firestoreUnsub) firestoreUnsub();
-    clearInterval(intervalId);
+    if (intervalId !== null) clearInterval(intervalId);
   };
 };
 
@@ -268,7 +287,6 @@ export const updateHostOnlineStatus = async (
       if (matched?.city) payload.city = matched.city;
       if (matched?.bio) payload.bio = matched.bio;
       payload.gender = 'female';
-      payload.isVerified = true;
 
       await setDoc(
         doc(db, HOSTS_COLLECTION, hostId),
@@ -287,15 +305,17 @@ export const updateHostOnlineStatus = async (
   } catch {}
 
   // 3. Update in Server Backend if reachable
-  const baseUrl = getApiBaseUrl();
-  try {
-    await fetch(`${baseUrl}/api/hosts/status`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hostId, status }),
-      signal: AbortSignal.timeout(3000)
-    });
-  } catch {}
+  if (hasExternalApiBackend()) {
+    const baseUrl = getApiBaseUrl();
+    try {
+      await fetch(`${baseUrl}/api/hosts/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hostId, status }),
+        signal: AbortSignal.timeout(3000)
+      });
+    } catch {}
+  }
 
   return true;
 };
@@ -319,6 +339,12 @@ export const saveHostProfileToCloud = async (
     ? profile.name.trim()
     : 'Sakhi Host';
 
+  const verStatus = profile.verification?.status;
+  const isHostVerified =
+    verStatus === 'pending' || verStatus === 'rejected'
+      ? false
+      : profile.isVerified !== false;
+
   const sakhiObj: Sakhi = {
     id: profile.id,
     name: displayName,
@@ -332,13 +358,13 @@ export const saveHostProfileToCloud = async (
     languages: profile.languages && profile.languages.length > 0 ? profile.languages : ['Hindi', 'English'],
     bio: profile.bio || 'Namaste! Main SunoSakhi par aapse baatein karne ke liye available hoon.',
     interests: profile.interests || ['Friendly Chat', 'Life Talk'],
-    voiceRatePerMin: 7,
-    videoRatePerMin: 15,
+    voiceRatePerMin: profile.voiceRatePerMin || 7,
+    videoRatePerMin: profile.videoRatePerMin || 15,
     tagline: profile.tagline || '🌸 Verified Sakhi Host',
     audioSnippet: profile.audioSnippet || '',
     phone: phone,
     email: email,
-    isVerified: true
+    isVerified: isHostVerified
   };
 
   // 1. Save directly to Cloud Firestore
@@ -371,16 +397,18 @@ export const saveHostProfileToCloud = async (
     localStorage.setItem(LOCAL_HOSTS_KEY, JSON.stringify(deduplicateHosts(list)));
   } catch {}
 
-  // 3. Post to Server Backend
-  try {
-    const baseUrl = getApiBaseUrl();
-    await fetch(`${baseUrl}/api/hosts/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(sakhiObj),
-      signal: AbortSignal.timeout(3000)
-    });
-  } catch {}
+  // 3. Post to Server Backend if configured
+  if (hasExternalApiBackend()) {
+    try {
+      const baseUrl = getApiBaseUrl();
+      await fetch(`${baseUrl}/api/hosts/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sakhiObj),
+        signal: AbortSignal.timeout(3000)
+      });
+    } catch {}
+  }
 
   return true;
 };
@@ -405,27 +433,30 @@ export const subscribeToHostProfile = (
     } catch {}
   }
 
-  // Also check backend
-  const baseUrl = getApiBaseUrl();
-  const fetchProfile = async () => {
-    try {
-      const cleanPhone = hostPhone ? hostPhone.replace(/\D/g, '') : '';
-      const res = await fetch(`${baseUrl}/api/hosts/profile?hostId=${encodeURIComponent(hostId)}&phone=${encodeURIComponent(cleanPhone)}`, {
-        signal: AbortSignal.timeout(3000)
-      });
-      const data = await res.json();
-      if (data.success && data.host) {
-        onUpdate(data.host);
-      }
-    } catch {}
-  };
+  // Also check backend if external backend is configured
+  let intervalId: number | null = null;
+  if (hasExternalApiBackend()) {
+    const baseUrl = getApiBaseUrl();
+    const fetchProfile = async () => {
+      try {
+        const cleanPhone = hostPhone ? hostPhone.replace(/\D/g, '') : '';
+        const res = await fetch(`${baseUrl}/api/hosts/profile?hostId=${encodeURIComponent(hostId)}&phone=${encodeURIComponent(cleanPhone)}`, {
+          signal: AbortSignal.timeout(3000)
+        });
+        const data = await res.json();
+        if (data.success && data.host) {
+          onUpdate(data.host);
+        }
+      } catch {}
+    };
 
-  fetchProfile();
-  const intervalId = window.setInterval(fetchProfile, 3000);
+    fetchProfile();
+    intervalId = window.setInterval(fetchProfile, 3000);
+  }
 
   return () => {
     if (firestoreUnsub) firestoreUnsub();
-    clearInterval(intervalId);
+    if (intervalId !== null) clearInterval(intervalId);
   };
 };
 
@@ -464,25 +495,29 @@ export const recordHostIncomeToCloud = async (
     }
   }
 
-  // 2. Post to backend
-  const baseUrl = getApiBaseUrl();
-  try {
-    const res = await fetch(`${baseUrl}/api/hosts/income`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        hostId,
-        hostPhone: extra?.hostPhone,
-        incomeRecord,
-        updatedEarnings,
-        durationSec: extra?.durationSec,
-        callType: extra?.callType
-      }),
-      signal: AbortSignal.timeout(3000)
-    });
-    const data = await res.json();
-    return Boolean(data.success);
-  } catch (err) {
-    return false;
+  // 2. Post to backend if configured
+  if (hasExternalApiBackend()) {
+    const baseUrl = getApiBaseUrl();
+    try {
+      const res = await fetch(`${baseUrl}/api/hosts/income`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          hostId,
+          hostPhone: extra?.hostPhone,
+          incomeRecord,
+          updatedEarnings,
+          durationSec: extra?.durationSec,
+          callType: extra?.callType
+        }),
+        signal: AbortSignal.timeout(3000)
+      });
+      const data = await res.json();
+      return Boolean(data.success);
+    } catch (err) {
+      return false;
+    }
   }
+  return true;
 };
+

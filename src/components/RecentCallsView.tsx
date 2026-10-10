@@ -15,6 +15,7 @@ import { RecentCallLog, CallType, Sakhi } from '../types';
 import { getRecentCalls, clearRecentCalls } from '../services/callLogService';
 import { useCall } from '../context/CallContext';
 import { useHost } from '../context/HostContext';
+import { useAdmin } from '../context/AdminContext';
 import { useActiveSession } from '../services/userAuthSync';
 import { formatHostId, formatUserId } from '../utils/idFormatter';
 
@@ -28,8 +29,11 @@ export const RecentCallsView: React.FC<RecentCallsViewProps> = ({ onExploreSakhi
   const [filter, setFilter] = useState<'all' | 'voice' | 'video' | 'missed'>('all');
   const { startCall } = useCall();
   const { userRole, isHostLoggedIn } = useHost();
+  const { settings } = useAdmin();
   const session = useActiveSession();
   const isHostViewer = Boolean(session.role === 'host' || userRole === 'host' || isHostLoggedIn);
+  const voiceRate = settings.voiceRatePerMin || 7;
+  const videoRate = settings.videoRatePerMin || 15;
 
   useEffect(() => {
     setCalls(getRecentCalls());
@@ -89,8 +93,8 @@ export const RecentCallsView: React.FC<RecentCallsViewProps> = ({ onExploreSakhi
         languages: ['Hindi'],
         bio: isHostViewer ? 'Registered Caller' : 'Connecting live...',
         interests: ['Friendly Talk'],
-        voiceRatePerMin: isHostViewer ? 0 : 5,
-        videoRatePerMin: isHostViewer ? 0 : 10,
+        voiceRatePerMin: isHostViewer ? 0 : voiceRate,
+        videoRatePerMin: isHostViewer ? 0 : videoRate,
         audioSnippet: '',
         tagline: isHostViewer ? redialName : 'Voice Connects Hearts ♡'
       };
@@ -127,8 +131,8 @@ export const RecentCallsView: React.FC<RecentCallsViewProps> = ({ onExploreSakhi
       <div className="flex items-center gap-2 overflow-x-auto pb-1">
         {[
           { id: 'all', label: 'All Calls' },
-          { id: 'voice', label: '🎙️ Voice (₹5/m)' },
-          { id: 'video', label: '📹 Video (₹10/m)' },
+          { id: 'voice', label: `🎙️ Voice (₹${voiceRate}/m)` },
+          { id: 'video', label: `📹 Video (₹${videoRate}/m)` },
           { id: 'missed', label: '❌ Missed / Cancelled' }
         ].map((tab) => (
           <button

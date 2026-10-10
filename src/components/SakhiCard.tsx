@@ -1,5 +1,5 @@
 import React from 'react';
-import { Phone, Video, MessageCircle, Coins, ShieldCheck } from 'lucide-react';
+import { Phone, Video, MessageCircle, ShieldCheck, Heart } from 'lucide-react';
 import { Sakhi } from '../types';
 import { useCall } from '../context/CallContext';
 import { useHost } from '../context/HostContext';
@@ -9,9 +9,17 @@ import { formatHostId } from '../utils/idFormatter';
 
 interface SakhiCardProps {
   sakhi: Sakhi;
+  isFavorite?: boolean;
+  onToggleFavorite?: (sakhiId: string) => void;
+  onOpenProfile?: (sakhi: Sakhi) => void;
 }
 
-export const SakhiCard: React.FC<SakhiCardProps> = ({ sakhi }) => {
+export const SakhiCard: React.FC<SakhiCardProps> = ({
+  sakhi,
+  isFavorite = false,
+  onToggleFavorite,
+  onOpenProfile
+}) => {
   const { startCall } = useCall();
   const { openDirectChat, isHostLoggedIn, hostProfile, userRole } = useHost();
   const { settings } = useAdmin();
@@ -30,16 +38,29 @@ export const SakhiCard: React.FC<SakhiCardProps> = ({ sakhi }) => {
   const chatRate = settings?.sakhiChatRate || 3;
 
   const isOnline = sakhi.status === 'online';
+  const isBusy = sakhi.status === 'busy';
   const isTopHost = (sakhi.rating || 5) >= 4.9;
   const hostDisplayId = formatHostId(sakhi.id, sakhi.phone);
 
   return (
     <div className="rounded-3xl p-4 sm:p-5 bg-[#170a2c]/90 hover:bg-[#1d0d36]/90 border border-pink-500/25 hover:border-pink-500/45 shadow-xl transition-all duration-300 flex flex-col justify-between gap-4 group">
-      {/* Top Row: Circular Avatar + Host Info (Matching User Screenshot) */}
+      {/* Top Row: Circular Avatar + Host Info */}
       <div className="flex items-center gap-3.5">
         {/* Circular Avatar with Online Ring */}
-        <div className="relative flex-shrink-0">
-          <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full overflow-hidden border-2 ${isOnline ? 'border-emerald-500/60 shadow-lg shadow-emerald-950/50' : 'border-white/20'} shadow-md`}>
+        <div
+          onClick={() => onOpenProfile && onOpenProfile(sakhi)}
+          className={`relative flex-shrink-0 ${onOpenProfile ? 'cursor-pointer' : ''}`}
+          title="View Full Profile"
+        >
+          <div
+            className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full overflow-hidden border-2 ${
+              isOnline
+                ? 'border-emerald-500/60 shadow-lg shadow-emerald-950/50'
+                : isBusy
+                ? 'border-amber-500/60 shadow-lg shadow-amber-950/50'
+                : 'border-white/20'
+            } shadow-md`}
+          >
             <img
               src={sakhi.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80'}
               alt={sakhi.name}
@@ -47,27 +68,61 @@ export const SakhiCard: React.FC<SakhiCardProps> = ({ sakhi }) => {
               loading="lazy"
             />
           </div>
-          {/* Online status indicator dot */}
+          {/* Online / Busy / Offline status indicator dot */}
           <span
             className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-[#170a2c] ${
-              isOnline ? 'bg-emerald-400 ring-2 ring-emerald-500/50 animate-pulse' : 'bg-gray-400'
+              isOnline
+                ? 'bg-emerald-400 ring-2 ring-emerald-500/50 animate-pulse'
+                : isBusy
+                ? 'bg-amber-400 ring-2 ring-amber-500/50 animate-pulse'
+                : 'bg-gray-400'
             }`}
-            title={isOnline ? '🟢 Host Online' : '⚪ Host Offline'}
+            title={isOnline ? '🟢 Host Online' : isBusy ? '🟡 Busy on Call' : '⚪ Host Offline'}
           />
         </div>
 
         {/* Name, Age, Rating, Host ID Badge */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-1">
-            <h3 className="text-base sm:text-lg font-bold text-white truncate flex items-center gap-1.5">
+            <h3
+              onClick={() => onOpenProfile && onOpenProfile(sakhi)}
+              className={`text-base sm:text-lg font-bold text-white truncate flex items-center gap-1.5 ${
+                onOpenProfile ? 'cursor-pointer hover:text-pink-300 transition-colors' : ''
+              }`}
+            >
               <span>{sakhi.name}</span>
               <span className="text-xs text-pink-300 font-normal">({sakhi.age})</span>
+              {sakhi.isVerified !== false && (
+                <span title="Verified Host" className="inline-flex items-center">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                </span>
+              )}
             </h3>
-            {/* Rating */}
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-black flex-shrink-0">
-              <span>★</span>
-              <span>{(sakhi.rating || 5).toFixed(1)}</span>
-            </span>
+
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {onToggleFavorite && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleFavorite(sakhi.id);
+                  }}
+                  className={`p-1.5 rounded-full border transition-all ${
+                    isFavorite
+                      ? 'bg-pink-600/30 border-pink-500/60 text-pink-400'
+                      : 'bg-white/5 border-white/10 text-gray-400 hover:text-pink-300'
+                  }`}
+                  title={isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}
+                >
+                  <Heart className={`w-3.5 h-3.5 ${isFavorite ? 'fill-pink-500 text-pink-500' : ''}`} />
+                </button>
+              )}
+              {/* Rating */}
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-black">
+                <span>★</span>
+                <span>{(sakhi.rating || 5).toFixed(1)}</span>
+              </span>
+            </div>
           </div>
 
           <div className="flex items-center gap-2 mt-0.5">
@@ -89,7 +144,7 @@ export const SakhiCard: React.FC<SakhiCardProps> = ({ sakhi }) => {
             ) : (
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[11px] font-bold">
                 <span>✨</span>
-                <span>New Host</span>
+                <span>Verified Host</span>
               </span>
             )}
 
@@ -97,6 +152,11 @@ export const SakhiCard: React.FC<SakhiCardProps> = ({ sakhi }) => {
               <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold shadow-sm">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                 <span>🟢 Live Online</span>
+              </span>
+            ) : isBusy ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold shadow-sm">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                <span>🟡 Busy on Call</span>
               </span>
             ) : (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-gray-500/20 text-gray-400 border border-gray-500/30 text-[10px] font-medium">
@@ -107,7 +167,7 @@ export const SakhiCard: React.FC<SakhiCardProps> = ({ sakhi }) => {
 
             {sakhi.languages && sakhi.languages.length > 0 && (
               <span className="text-[10px] text-pink-300/70 font-medium">
-                • {sakhi.languages[0]}
+                • {sakhi.languages.slice(0, 2).join(', ')}
               </span>
             )}
           </div>
@@ -159,23 +219,25 @@ export const SakhiCard: React.FC<SakhiCardProps> = ({ sakhi }) => {
         {/* Center: Voice Call Primary Button with rate */}
         <button
           type="button"
+          disabled={isBusy}
           onClick={() => startCall(sakhi, 'voice')}
-          className="flex-1 py-2.5 px-2 rounded-2xl bg-gradient-to-r from-purple-700 via-indigo-700 to-pink-600 hover:from-purple-600 hover:to-pink-500 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-lg shadow-purple-950/50 transition-all active:scale-95"
-          title={isHostViewer ? 'Free Voice Call (Host Account)' : `Live Voice Call (₹${voiceRate}/min)`}
+          className="flex-1 py-2.5 px-2 rounded-2xl bg-gradient-to-r from-purple-700 via-indigo-700 to-pink-600 hover:from-purple-600 hover:to-pink-500 disabled:opacity-50 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-lg shadow-purple-950/50 transition-all active:scale-95"
+          title={isBusy ? 'Host is currently busy on a call' : isHostViewer ? 'Free Voice Call (Host Account)' : `Live Voice Call (₹${voiceRate}/min)`}
         >
           <Phone className="w-4 h-4 text-white" />
-          <span>{isHostViewer ? 'Free Call' : `Call ₹${voiceRate}/m`}</span>
+          <span>{isBusy ? 'Busy' : isHostViewer ? 'Free Call' : `Call ₹${voiceRate}/m`}</span>
         </button>
 
         {/* Right: Video Call Button with rate */}
         <button
           type="button"
+          disabled={isBusy}
           onClick={() => startCall(sakhi, 'video')}
-          className="py-2.5 px-3 rounded-2xl bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 border border-pink-400/40 text-white font-black text-xs sm:text-sm shadow-md shadow-pink-950/50 flex items-center justify-center gap-1 transition-all active:scale-95"
-          title={isHostViewer ? 'Free Video Call (Host Account)' : `Video Call (₹${videoRate}/min)`}
+          className="py-2.5 px-3 rounded-2xl bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 disabled:opacity-50 border border-pink-400/40 text-white font-black text-xs sm:text-sm shadow-md shadow-pink-950/50 flex items-center justify-center gap-1 transition-all active:scale-95"
+          title={isBusy ? 'Host is currently busy on a call' : isHostViewer ? 'Free Video Call (Host Account)' : `Video Call (₹${videoRate}/min)`}
         >
           <Video className="w-4 h-4 text-white" />
-          <span>{isHostViewer ? 'Free' : `₹${videoRate}/m`}</span>
+          <span>{isBusy ? 'Busy' : isHostViewer ? 'Free' : `₹${videoRate}/m`}</span>
         </button>
       </div>
     </div>

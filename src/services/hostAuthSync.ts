@@ -1,7 +1,7 @@
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase';
 import { HostProfile, HostAccountRecord } from '../types';
-import { getApiBaseUrl } from './apiConfig';
+import { getApiBaseUrl, hasExternalApiBackend } from './apiConfig';
 import { isProfileNameUnique } from './userAuthSync';
 
 const HOST_ACCOUNTS_COLLECTION = 'host_accounts';
@@ -118,20 +118,22 @@ export const checkHostPhoneExists = async (phoneOrEmail: string): Promise<boolea
   }
 
   // 4. Check backend server /api/hosts
-  try {
-    const baseUrl = getApiBaseUrl();
-    const res = await fetch(`${baseUrl}/api/hosts`);
-    const data = await res.json();
-    if (data.success && Array.isArray(data.hosts)) {
-      const found = data.hosts.find((h: any) =>
-        isEmail
-          ? (h.email && h.email.toLowerCase() === normalized)
-          : (h.phone && normalizePhone(h.phone) === normalized)
-      );
-      if (found) return true;
+  if (hasExternalApiBackend()) {
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/hosts`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.hosts)) {
+        const found = data.hosts.find((h: any) =>
+          isEmail
+            ? (h.email && h.email.toLowerCase() === normalized)
+            : (h.phone && normalizePhone(h.phone) === normalized)
+        );
+        if (found) return true;
+      }
+    } catch (err) {
+      // continue
     }
-  } catch (err) {
-    // continue
   }
 
   return false;
@@ -195,7 +197,6 @@ export const registerHostWithPhone = async (params: {
     lastLoginAt: Date.now()
   };
 
-  const isIdSubmitted = Boolean(params.panNumber && params.residentIdNumber);
   const residentType = params.residentIdType || 'aadhaar';
   const residentNum = params.residentIdNumber || '';
   const panNum = (params.panNumber || '').toUpperCase();
@@ -215,8 +216,8 @@ export const registerHostWithPhone = async (params: {
     languages: params.languages.length > 0 ? params.languages : ['Hindi', 'English'],
     bio: params.bio.trim() || 'Namaste! Main SunoSakhi par aapse baatein karne ke liye available hoon.',
     interests: ['Friendly Chat', 'Late Night Talks'],
-    voiceRatePerMin: 5,
-    videoRatePerMin: 10,
+    voiceRatePerMin: 7,
+    videoRatePerMin: 15,
     audioSnippet: 'https://actions.google.com/sounds/v1/human_voices/female_laugh.ogg',
     tagline: '🌸 Female Companion',
     isVerified: true,
@@ -249,13 +250,17 @@ export const registerHostWithPhone = async (params: {
   if (isFirebaseConfigured() && db) {
     try {
       const accountDocId = isEmail ? normalized.replace(/[^a-z0-9]/g, '_') : normalized;
-      await setDoc(doc(db, HOST_ACCOUNTS_COLLECTION, accountDocId), newAccount);
-      await setDoc(doc(db, HOSTS_COLLECTION, hostId), {
-        ...newProfile,
-        status: 'online',
-        isVerified: true,
-        lastActiveAt: Date.now()
-      });
+      await setDoc(doc(db, HOST_ACCOUNTS_COLLECTION, accountDocId), newAccount, { merge: true });
+      await setDoc(
+        doc(db, HOSTS_COLLECTION, hostId),
+        {
+          ...newProfile,
+          status: 'online',
+          isVerified: true,
+          lastActiveAt: Date.now()
+        },
+        { merge: true }
+      );
       console.log('✅ Host account and profile saved to Cloud Firestore:', hostId);
     } catch (err) {
       console.error('Error saving host to Firestore:', err);
@@ -273,24 +278,26 @@ export const registerHostWithPhone = async (params: {
   }
 
   // Save to Server Backend
-  try {
-    const baseUrl = getApiBaseUrl();
-    const res = await fetch(`${baseUrl}/api/hosts/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...newProfile,
-        panNumber: panNum,
-        residentIdType: residentType,
-        residentIdNumber: residentNum
-      })
-    });
-    const data = await res.json();
-    if (data && data.sessionToken) {
-      localStorage.setItem('sunosakhi_session_token', data.sessionToken);
+  if (hasExternalApiBackend()) {
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/hosts/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...newProfile,
+          panNumber: panNum,
+          residentIdType: residentType,
+          residentIdNumber: residentNum
+        })
+      });
+      const data = await res.json();
+      if (data && data.sessionToken) {
+        localStorage.setItem('sunosakhi_session_token', data.sessionToken);
+      }
+    } catch (e) {
+      console.warn('Failed to sync host to backend:', e);
     }
-  } catch (e) {
-    console.warn('Failed to sync host to backend:', e);
   }
 
   // Clear any conflicting caller session
@@ -313,52 +320,54 @@ export const loginHostWithCredentials = async (
     return { success: false, error: 'Kripya 10-digit mobile number ya valid Email ID darj karein.' };
   }
 
-  // 1. Check Server Backend first (Primary Source of Truth)
-  try {
-    const baseUrl = getApiBaseUrl();
-    const res = await fetch(`${baseUrl}/api/hosts/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        phone: isEmail ? '' : normalized,
-        email: isEmail ? normalized : '',
-        identifier: phoneOrEmail,
-        password
-      })
-    });
-    const data = await res.json();
-    if (data.success && data.host) {
-      if (data.sessionToken) {
-        localStorage.setItem('sunosakhi_session_token', data.sessionToken);
-      }
-      // Sync to local storage
-      try {
-        const raw = localStorage.getItem(LOCAL_ACCOUNTS_KEY);
-        const store = raw ? JSON.parse(raw) : {};
-        store[normalized] = {
-          phone: data.host.phone || normalized,
-          email: data.host.email,
-          hostId: data.host.id,
-          name: data.host.name,
-          password: password,
-          createdAt: Date.now(),
-          lastLoginAt: Date.now(),
-          activeSessionToken: data.sessionToken
-        };
-        localStorage.setItem(LOCAL_ACCOUNTS_KEY, JSON.stringify(store));
-        localStorage.setItem('sunosakhi_host_profile', JSON.stringify(data.host));
-        localStorage.setItem('sunosakhi_host_logged_in', 'true');
-        // Clear any conflicting caller session
-        localStorage.removeItem('sunosakhi_current_user');
-        localStorage.removeItem('sunosakhi_user_id');
-      } catch (e) {}
+  // 1. Check Server Backend first (if external backend configured)
+  if (hasExternalApiBackend()) {
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/hosts/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: isEmail ? '' : normalized,
+          email: isEmail ? normalized : '',
+          identifier: phoneOrEmail,
+          password
+        })
+      });
+      const data = await res.json();
+      if (data.success && data.host) {
+        if (data.sessionToken) {
+          localStorage.setItem('sunosakhi_session_token', data.sessionToken);
+        }
+        // Sync to local storage
+        try {
+          const raw = localStorage.getItem(LOCAL_ACCOUNTS_KEY);
+          const store = raw ? JSON.parse(raw) : {};
+          store[normalized] = {
+            phone: data.host.phone || normalized,
+            email: data.host.email,
+            hostId: data.host.id,
+            name: data.host.name,
+            password: password,
+            createdAt: Date.now(),
+            lastLoginAt: Date.now(),
+            activeSessionToken: data.sessionToken
+          };
+          localStorage.setItem(LOCAL_ACCOUNTS_KEY, JSON.stringify(store));
+          localStorage.setItem('sunosakhi_host_profile', JSON.stringify(data.host));
+          localStorage.setItem('sunosakhi_host_logged_in', 'true');
+          // Clear any conflicting caller session
+          localStorage.removeItem('sunosakhi_current_user');
+          localStorage.removeItem('sunosakhi_user_id');
+        } catch (e) {}
 
-      return { success: true, hostProfile: data.host };
-    } else if (res.status === 401 || res.status === 404) {
-      return { success: false, error: data.message || 'Mobile/Email ya password galat hai.' };
+        return { success: true, hostProfile: data.host };
+      } else if (res.status === 401 || res.status === 404) {
+        return { success: false, error: data.message || 'Mobile/Email ya password galat hai.' };
+      }
+    } catch (err) {
+      console.warn('Server host login note, checking local store:', err);
     }
-  } catch (err) {
-    console.warn('Server host login note, checking local store:', err);
   }
 
   let account: HostAccountRecord | null = null;
@@ -424,16 +433,16 @@ export const recoverHostPassword = async (
   }
 
   // 1. Sync to Server Backend
-  try {
-    const baseUrl = getApiBaseUrl();
-    await fetch(`${baseUrl}/api/hosts/recover`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone: normalized, newPassword })
-    });
-  } catch (err) {}
-
-  let exists = false;
+  if (hasExternalApiBackend()) {
+    try {
+      const baseUrl = getApiBaseUrl();
+      await fetch(`${baseUrl}/api/hosts/recover`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: normalized, newPassword })
+      });
+    } catch (err) {}
+  }
 
   // 2. Cloud Firestore update
   if (isFirebaseConfigured() && db) {
@@ -441,7 +450,6 @@ export const recoverHostPassword = async (
       const docRef = doc(db, HOST_ACCOUNTS_COLLECTION, normalized);
       const snap = await getDoc(docRef);
       if (snap.exists()) {
-        exists = true;
         await updateDoc(docRef, { password: newPassword, updatedAt: Date.now() });
       }
     } catch (err) {
@@ -454,7 +462,6 @@ export const recoverHostPassword = async (
     const raw = localStorage.getItem(LOCAL_ACCOUNTS_KEY);
     const store = raw ? JSON.parse(raw) : {};
     if (store[normalized]) {
-      exists = true;
       store[normalized].password = newPassword;
       localStorage.setItem(LOCAL_ACCOUNTS_KEY, JSON.stringify(store));
     }
@@ -475,24 +482,26 @@ export const getHostAccountByPhone = async (
   if (!normalized || normalized.length !== 10) return null;
 
   // 1. Check Server Backend
-  try {
-    const baseUrl = getApiBaseUrl();
-    const res = await fetch(`${baseUrl}/api/hosts`);
-    const data = await res.json();
-    if (data.success && Array.isArray(data.hosts)) {
-      const found = data.hosts.find((h: any) => h && h.phone && normalizePhone(h.phone) === normalized);
-      if (found) {
-        return {
-          phone: normalized,
-          hostId: found.id,
-          name: found.name,
-          password: found.password || 'sakhi123',
-          createdAt: Date.now(),
-          lastLoginAt: Date.now()
-        };
+  if (hasExternalApiBackend()) {
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/hosts`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.hosts)) {
+        const found = data.hosts.find((h: any) => h && h.phone && normalizePhone(h.phone) === normalized);
+        if (found) {
+          return {
+            phone: normalized,
+            hostId: found.id,
+            name: found.name,
+            password: found.password || 'sakhi123',
+            createdAt: Date.now(),
+            lastLoginAt: Date.now()
+          };
+        }
       }
-    }
-  } catch (err) {}
+    } catch (err) {}
+  }
 
   // 2. Check Cloud Firestore
   if (isFirebaseConfigured() && db) {

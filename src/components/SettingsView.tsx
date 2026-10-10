@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   User,
   Phone,
@@ -21,7 +21,12 @@ import {
   Award,
   Radio,
   MessageCircle,
-  Edit3
+  Edit3,
+  Ban,
+  Trash2,
+  FileText,
+  AlertTriangle,
+  Lock
 } from 'lucide-react';
 import { useAdmin } from '../context/AdminContext';
 import {
@@ -33,7 +38,8 @@ import {
   getActiveSession,
   broadcastAuthChange
 } from '../services/userAuthSync';
-import { isAdminUser, SUPER_ADMIN_PHONE } from '../services/adminSync';
+import { isAdminUser, SUPER_ADMIN_PHONE, deleteUserAccountPermanently } from '../services/adminSync';
+import { getBlockedUsers, unblockUser } from '../services/safetyService';
 import { useWallet } from '../context/WalletContext';
 import { useHost } from '../context/HostContext';
 import { compressImageFile } from '../utils/imageCompressor';
@@ -128,8 +134,50 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [serverUrl, setServerUrl] = useState(() => localStorage.getItem('sunosakhi_api_base_url') || '');
   const [serverSavedMsg, setServerSavedMsg] = useState(false);
+  const [blockedList, setBlockedList] = useState<string[]>(() => getBlockedUsers());
+  const [activePolicyTab, setActivePolicyTab] = useState<'privacy' | 'terms' | 'guidelines' | 'refund' | null>(null);
+  const [confirmDeleteAccount, setConfirmDeleteAccount] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+
+  useEffect(() => {
+    setBlockedList(getBlockedUsers());
+  }, []);
 
   const userPhone = activeSession.phone || currentUser?.phone || hostProfile?.phone || '';
+
+  const handleUnblockUser = (id: string) => {
+    unblockUser(id);
+    setBlockedList(getBlockedUsers());
+    setStatusMessage(`✅ User ID (${id}) ko unblock kar diya gaya hai.`);
+    setTimeout(() => setStatusMessage(null), 2500);
+  };
+
+  const handleDeleteMyAccount = async () => {
+    if (!userPhone && !currentUser?.id && !hostProfile?.id) {
+      setStatusMessage('⚠️ Koi active account nahi mila.');
+      return;
+    }
+    setIsDeletingAccount(true);
+    try {
+      if (userPhone || currentUser?.id) {
+        await deleteUserAccountPermanently(userPhone || currentUser?.id || '', 'caller');
+      }
+      if (hostProfile?.id) {
+        await deleteUserAccountPermanently(hostProfile.id, 'host');
+      }
+      logoutHost();
+      logoutCurrentUser();
+      setCurrentUser(null);
+      setConfirmDeleteAccount(false);
+      broadcastAuthChange();
+      setStatusMessage('✅ Aapka account aur data permanently delete kar diya gaya hai.');
+    } catch (err) {
+      console.error('Delete account error:', err);
+      setStatusMessage('⚠️ Account delete karne me samasya aayi. Kripya Help Desk se sampark karein.');
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
 
   const handleCopyId = (id: string) => {
     navigator.clipboard.writeText(id);
@@ -554,13 +602,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
             <div className="flex items-center gap-2">
               <span className="px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">
-                Voice ₹5/min
+                Voice ₹{settings.voiceRatePerMin || 7}/min
               </span>
               <span className="px-2 py-1 rounded-lg bg-purple-500/20 text-purple-300 text-[10px] font-bold">
-                Video ₹10/min
+                Video ₹{settings.videoRatePerMin || 15}/min
               </span>
               <span className="px-2 py-1 rounded-lg bg-pink-500/20 text-pink-300 text-[10px] font-bold">
-                Chat ₹2/msg
+                Chat ₹3/msg
               </span>
             </div>
           </div>
@@ -854,7 +902,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <span>🏷️ Rate Card</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </span>
-            <p className="text-[10px] text-gray-400">Voice ₹5, Video ₹10, Chat ₹2 & Host earning</p>
+            <p className="text-[10px] text-gray-400">
+              Voice ₹{settings.voiceRatePerMin || 7}, Video ₹{settings.videoRatePerMin || 15}, Chat ₹3 & Host earning
+            </p>
           </button>
 
           <button
@@ -889,6 +939,159 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <LogOut className="w-4 h-4 text-red-400" />
           <span>🚪 Logout Current ID / Switch Account</span>
         </button>
+      </div>
+
+      {/* Blocked Users Management Section */}
+      <div className="p-5 rounded-3xl bg-black/50 border border-rose-500/30 space-y-3 shadow-lg">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-rose-500/20 text-rose-400">
+              <Ban className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white">🚫 Blocked Users ({blockedList.length})</h4>
+              <p className="text-[11px] text-gray-400">Jin users ko aapne block kiya hai unhe yahan se unblock kar sakte hain</p>
+            </div>
+          </div>
+        </div>
+        {blockedList.length === 0 ? (
+          <p className="text-xs text-gray-500 bg-white/5 p-3 rounded-xl border border-white/5">
+            Aapne abhi tak kisi user ko block nahi kiya hai.
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {blockedList.map((blockedId) => (
+              <div
+                key={blockedId}
+                className="px-3 py-1.5 rounded-xl bg-rose-950/40 border border-rose-500/30 flex items-center gap-2 text-xs text-rose-200"
+              >
+                <span className="font-mono font-bold">{blockedId}</span>
+                <button
+                  type="button"
+                  onClick={() => handleUnblockUser(blockedId)}
+                  className="px-2 py-0.5 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 text-[10px] font-bold transition-all"
+                >
+                  Unblock
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Privacy, Safety, Legal Policies & Account Control */}
+      <div className="p-5 rounded-3xl bg-[#130824]/90 border border-purple-500/30 space-y-4 shadow-xl">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-purple-500/20 text-purple-300">
+              <Lock className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white">🔒 Privacy, Legal Policies & Account Control</h4>
+              <p className="text-[11px] text-gray-400">18+ Age Policy, Terms of Use, Refund Rules & Account Deletion</p>
+            </div>
+          </div>
+          <span className="px-2.5 py-0.5 rounded-full bg-pink-500/20 border border-pink-500/30 text-pink-300 text-[10px] font-bold">
+            18+ Adults Only
+          </span>
+        </div>
+
+        {/* Policy Selector Tabs */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {[
+            { id: 'privacy' as const, label: '🛡️ Privacy Policy' },
+            { id: 'terms' as const, label: '📜 Terms of Service' },
+            { id: 'guidelines' as const, label: '⚖️ 18+ Guidelines' },
+            { id: 'refund' as const, label: '💳 Refund Policy' }
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActivePolicyTab(activePolicyTab === tab.id ? null : tab.id)}
+              className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 ${
+                activePolicyTab === tab.id
+                  ? 'bg-purple-600 text-white border-purple-400 shadow'
+                  : 'bg-black/40 text-gray-300 border-white/10 hover:text-white'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>{tab.label}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Expanded Policy Content */}
+        {activePolicyTab === 'privacy' && (
+          <div className="p-4 rounded-2xl bg-black/60 border border-purple-500/30 text-xs text-gray-300 space-y-2 leading-relaxed">
+            <h5 className="font-black text-white text-sm">🛡️ SunoSakhi Privacy Policy</h5>
+            <p>• <strong>100% Phone Number Privacy:</strong> Callers aur Hosts ke mobile numbers kisi bhi dusre user ke saath share nahi kiye jaate. Sabhi calls aur chats masked IDs aur encrypted WebRTC channels se hoti hain.</p>
+            <p>• <strong>Data Collection:</strong> Hum keval account authentication (mobile/email), wallet ledger history, aur host KYC verification ke liye aavashyak jankari store karte hain. Hum kabhi bhi aapka UPI PIN ya Card CVV store nahi karte.</p>
+            <p>• <strong>Account Deletion:</strong> Aap kisi bhi samay niche diye gaye &ldquo;Delete My Account&rdquo; button se apna account aur data permanently delete kar sakte hain.</p>
+          </div>
+        )}
+
+        {activePolicyTab === 'terms' && (
+          <div className="p-4 rounded-2xl bg-black/60 border border-purple-500/30 text-xs text-gray-300 space-y-2 leading-relaxed">
+            <h5 className="font-black text-white text-sm">📜 Terms of Service (18+ Platform)</h5>
+            <p>• <strong>Age Requirement:</strong> SunoSakhi keval 18 varsh ya usse adhik umar ke adults ke liye hai. Account banate samay aap confirm karte hain ki aapki umar 18+ hai.</p>
+            <p>• <strong>Transparent Billing:</strong> Callers ke liye Voice Call ₹{settings.voiceRatePerMin || 7}/min, Video Call ₹{settings.videoRatePerMin || 15}/min, aur Direct Chat ₹3/message (max 150 words) hai. Verified Female Hosts ke liye calling aur replies 100% free hain.</p>
+            <p>• <strong>Host Payouts:</strong> Host earnings admin verification ke baad UPI/Bank account me transfer ki jaati hain (Minimum withdrawal ₹500).</p>
+          </div>
+        )}
+
+        {activePolicyTab === 'guidelines' && (
+          <div className="p-4 rounded-2xl bg-black/60 border border-purple-500/30 text-xs text-gray-300 space-y-2 leading-relaxed">
+            <h5 className="font-black text-white text-sm">⚖️ Community Safety & Zero-Tolerance Guidelines</h5>
+            <p>• <strong>Strict Anti-Nudity & Harassment Policy:</strong> Video/Voice calls ya chat par nudity, ashlilta, gali-galauj, dhamki, ya blackmail sakt mana hai. Aisa karne par ₹11,000 tak penalty aur permanent account/device ban lagaya jayega.</p>
+            <p>• <strong>No Personal Contact Sharing:</strong> Suraksha ke liye chat ya call par apna personal phone number, WhatsApp, ya bank password share na karein.</p>
+            <p>• <strong>Instant Report & Block:</strong> Kisi bhi galat vyavhaar par turant Call/Chat window ya Profile se &ldquo;Report / Block&rdquo; button ka upyog karein.</p>
+          </div>
+        )}
+
+        {activePolicyTab === 'refund' && (
+          <div className="p-4 rounded-2xl bg-black/60 border border-purple-500/30 text-xs text-gray-300 space-y-2 leading-relaxed">
+            <h5 className="font-black text-white text-sm">💳 Wallet Recharge & Refund Policy</h5>
+            <p>• <strong>UTR Verification:</strong> UPI QR payment ke baad valid 12-digit UTR submit karne par admin verification ke paschat coins aapke wallet me credit hote hain. Duplicate UTR allowed nahi hai.</p>
+            <p>• <strong>Interrupted / Failed Calls:</strong> Call connect hone ke baad hi per-minute billing shuru hoti hai. Agar payment kat gayi ho aur coins add na hue hon, toh 24x7 WhatsApp Helpline ({settings.supportWhatsApp || '+91 7009600157'}) par UTR screenshot bhejein.</p>
+          </div>
+        )}
+
+        {/* Self-Service Delete Account */}
+        <div className="pt-2 border-t border-white/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div>
+            <span className="text-xs font-bold text-rose-300 block">Delete My Account Permanently</span>
+            <span className="text-[11px] text-gray-400">Aapki profile, wallet aur history cloud se hamesha ke liye hat jayegi.</span>
+          </div>
+          {!confirmDeleteAccount ? (
+            <button
+              type="button"
+              onClick={() => setConfirmDeleteAccount(true)}
+              className="px-3.5 py-2 rounded-xl bg-rose-950/60 hover:bg-rose-900/80 border border-rose-500/40 text-rose-200 text-xs font-bold flex items-center gap-1.5 transition-all"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+              <span>Delete My Account</span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={isDeletingAccount}
+                onClick={handleDeleteMyAccount}
+                className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-black flex items-center gap-1.5 shadow transition-all disabled:opacity-50"
+              >
+                <AlertTriangle className="w-3.5 h-3.5" />
+                <span>{isDeletingAccount ? 'Deleting...' : 'Confirm Permanent Delete'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteAccount(false)}
+                className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-gray-300 text-xs font-bold"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Helpline & WhatsApp Number Direct Access Card */}

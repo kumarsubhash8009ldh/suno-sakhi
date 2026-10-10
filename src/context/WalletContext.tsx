@@ -4,7 +4,8 @@ import { sounds } from '../utils/soundEffects';
 import {
   subscribeToCloudWallet,
   syncTransactionToCloud,
-  syncLiveBalanceToCloud
+  syncLiveBalanceToCloud,
+  getCanonicalWalletId
 } from '../services/walletSync';
 import { isFirebaseConfigured } from '../services/firebase';
 import { captureReferralFromUrl, processReferralRewardOnRecharge } from '../services/referralSync';
@@ -47,7 +48,13 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const getPhoneKey = (phone: string) => `sunosakhi_wallet_bal_${phone.replace(/\D/g, '')}`;
   const getTxsKey = (phone: string) => `sunosakhi_wallet_txs_${phone.replace(/\D/g, '')}`;
 
-  const [userId] = useState<string>(() => {
+  const [userId, setUserId] = useState<string>(() => {
+    const s = getActiveSession();
+    if (s.isLoggedIn && s.phone) {
+      const canonical = getCanonicalWalletId(s.id || `caller_${s.phone}`, s.phone);
+      localStorage.setItem(STORAGE_KEY_USER_ID, canonical);
+      return canonical;
+    }
     let savedId = localStorage.getItem(STORAGE_KEY_USER_ID);
     if (!savedId) {
       savedId = 'user_' + Math.random().toString(36).substring(2, 10);
@@ -55,6 +62,17 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
     return savedId;
   });
+
+  // Keep userId synchronized whenever session changes (login/logout/account switch)
+  useEffect(() => {
+    if (session.isLoggedIn && (session.phone || session.id)) {
+      const canonical = getCanonicalWalletId(session.id || `caller_${session.phone}`, session.phone);
+      if (canonical && canonical !== userId) {
+        setUserId(canonical);
+        localStorage.setItem(STORAGE_KEY_USER_ID, canonical);
+      }
+    }
+  }, [session.isLoggedIn, session.phone, session.id, userId]);
 
   const [isCloudSynced, setIsCloudSynced] = useState<boolean>(isFirebaseConfigured());
 
@@ -181,6 +199,33 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   }, [session.isLoggedIn, session.phone]);
 
+  // Listen to direct wallet updates (e.g. Admin approval / adjustment in same browser)
+  useEffect(() => {
+    const handleWalletUpdated = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!detail || !session.isLoggedIn) return;
+      const cleanSessionPhone = (session.phone || '').replace(/\D/g, '').slice(-10);
+      const eventPhone = (detail.phone || '').replace(/\D/g, '').slice(-10);
+      if (
+        (cleanSessionPhone && eventPhone && cleanSessionPhone === eventPhone) ||
+        detail.userId === userId
+      ) {
+        if (typeof detail.balance === 'number' && !isNaN(detail.balance)) {
+          setBalance(detail.balance);
+        }
+        if (detail.transaction) {
+          setTransactions((prev) => {
+            if (prev.some((t) => t.id === detail.transaction.id)) return prev;
+            return [detail.transaction, ...prev];
+          });
+        }
+      }
+    };
+
+    window.addEventListener('sunosakhi-wallet-updated', handleWalletUpdated);
+    return () => window.removeEventListener('sunosakhi-wallet-updated', handleWalletUpdated);
+  }, [session.isLoggedIn, session.phone, userId]);
+
   // Subscribe to user's recharge requests
   useEffect(() => {
     const unsub = subscribeToUserRechargeRequests(userId, (list) => {
@@ -199,18 +244,22 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
 
-    const unsub = subscribeToCloudWallet(userId, ({ balance: cloudBal, transactions: cloudTxs }) => {
-      if (cloudBal !== undefined) setBalance(cloudBal);
-      if (cloudTxs && cloudTxs.length > 0) {
-        setTransactions(cloudTxs);
-      }
-      setIsCloudSynced(true);
-    });
+    const unsub = subscribeToCloudWallet(
+      userId,
+      ({ balance: cloudBal, transactions: cloudTxs }) => {
+        if (cloudBal !== undefined) setBalance(cloudBal);
+        if (cloudTxs && cloudTxs.length > 0) {
+          setTransactions(cloudTxs);
+        }
+        setIsCloudSynced(true);
+      },
+      session.phone
+    );
 
     return () => {
       if (unsub) unsub();
     };
-  }, [userId, session.isLoggedIn]);
+  }, [userId, session.isLoggedIn, session.phone]);
 
   // LocalStorage backups tied to current user phone
   useEffect(() => {
@@ -226,6 +275,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       localStorage.setItem(getTxsKey(cleanPhone), JSON.stringify(transactions));
     }
   }, [transactions, session.isLoggedIn, session.phone]);
+
 
   const openWalletModal = () => setIsWalletModalOpen(true);
   const closeWalletModal = () => setIsWalletModalOpen(false);

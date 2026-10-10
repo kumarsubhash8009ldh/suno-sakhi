@@ -1,8 +1,108 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
+
+    // Helper: Ensure numeric field is non-negative when present
+    function isNonNegativeNumber(val) {
+      return val is number && val >= 0;
+    }
+
+    // 1. User Accounts (Callers & Hybrid Auth Accounts)
+    match /user_accounts/{accountId} {
+      allow read: if true;
+      allow create, update: if request.resource.data.keys().size() > 0
+        && (!('balance' in request.resource.data) || isNonNegativeNumber(request.resource.data.balance));
+      allow delete: if true;
+    }
+
+    // 2. Host Directory & Host Auth Accounts
+    match /hosts/{hostId} {
+      allow read: if true;
+      allow create, update: if request.resource.data.keys().size() > 0
+        && (!('pendingPayout' in request.resource.data) || isNonNegativeNumber(request.resource.data.pendingPayout))
+        && (!('totalEarnings' in request.resource.data) || isNonNegativeNumber(request.resource.data.totalEarnings));
+      allow delete: if true;
+    }
+
+    match /host_accounts/{hostId} {
+      allow read: if true;
+      allow create, update: if request.resource.data.keys().size() > 0
+        && (!('pendingPayout' in request.resource.data) || isNonNegativeNumber(request.resource.data.pendingPayout));
+      allow delete: if true;
+    }
+
+    // 3. Wallets (Enforce non-negative coin balance)
+    match /wallets/{walletId} {
+      allow read: if true;
+      allow create, update: if ('balance' in request.resource.data)
+        && isNonNegativeNumber(request.resource.data.balance);
+      allow delete: if true;
+    }
+
+    // 4. Recharge Requests (UTR-verified ledger; enforce minimum amount >= 1)
+    match /recharge_requests/{requestId} {
+      allow read: if true;
+      allow create: if ('amount' in request.resource.data)
+        && request.resource.data.amount is number
+        && request.resource.data.amount > 0
+        && ('utr' in request.resource.data)
+        && request.resource.data.utr is string
+        && request.resource.data.utr.size() >= 6;
+      allow update, delete: if true;
+    }
+
+    // 5. Host Payouts (Withdrawal requests & Admin settlement)
+    match /host_payouts/{payoutId} {
+      allow read: if true;
+      allow create: if ('amount' in request.resource.data)
+        && request.resource.data.amount is number
+        && request.resource.data.amount >= 500;
+      allow update, delete: if true;
+    }
+
+    // 6. WebRTC Signaling & Call Sessions
+    match /calls/{callId} {
       allow read, write: if true;
+      match /{subcollection=**} {
+        allow read, write: if true;
+      }
+    }
+
+    // 7. Call History Logs
+    match /call_logs/{logId} {
+      allow read, create, update: if true;
+      allow delete: if true;
+    }
+
+    // 8. Direct Chat Conversations
+    match /conversations/{threadId} {
+      allow read, write: if true;
+      match /{subcollection=**} {
+        allow read, write: if true;
+      }
+    }
+
+    // 9. Safety & Nudity Reports
+    match /nudity_reports/{reportId} {
+      allow read, create, update, delete: if true;
+    }
+
+    match /safety_reports/{reportId} {
+      allow read, create, update, delete: if true;
+    }
+
+    // 10. Referrals & Platform Settings
+    match /referrals/{refId} {
+      allow read, create, update: if true;
+    }
+
+    match /platform_settings/{docId} {
+      allow read, write: if true;
+    }
+
+    // Deny access to any unrecognised collections by default
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

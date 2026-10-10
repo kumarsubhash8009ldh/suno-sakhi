@@ -11,6 +11,9 @@ import {
   ChevronsLeft
 } from 'lucide-react';
 import { useCall } from '../context/CallContext';
+import { useAdmin } from '../context/AdminContext';
+import { useHost } from '../context/HostContext';
+import { getHostRankTier } from '../utils/hostRankTiers';
 import { sounds } from '../utils/soundEffects';
 import { useActiveSession } from '../services/userAuthSync';
 import { formatHostId, formatUserId } from '../utils/idFormatter';
@@ -254,6 +257,8 @@ const CallSwipeSlider: React.FC<CallSwipeSliderProps> = ({ onAccept, onDecline, 
 export const IncomingCallModal: React.FC = () => {
   const session = useActiveSession();
   const { incomingCall, acceptIncomingCall, rejectIncomingCall } = useCall();
+  const { settings } = useAdmin();
+  const { hostProfile } = useHost();
   const [audioUnlocked, setAudioUnlocked] = useState(false);
 
   useEffect(() => {
@@ -308,8 +313,9 @@ export const IncomingCallModal: React.FC = () => {
   if (!incomingCall) return null;
 
   const isVideo = incomingCall.callType === 'video';
-  const earnRate = isVideo ? '6.00' : '3.00';
-  const grossRate = isVideo ? '10' : '5';
+  const tier = getHostRankTier(hostProfile?.rating || 5.0);
+  const earnRate = (isVideo ? tier.videoEarningPerMin : tier.voiceEarningPerMin).toFixed(2);
+  const grossRate = isVideo ? String(settings.videoRatePerMin || 15) : String(settings.voiceRatePerMin || 7);
 
   const handleModalTouch = () => {
     sounds.unlockAudio();

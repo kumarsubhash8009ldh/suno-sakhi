@@ -136,9 +136,9 @@ export const VideoCallModal: React.FC = () => {
       const offenderRole: 'host' | 'caller' = isHostUser ? 'caller' : 'host';
       const reporterPhone = session.phone || (isHostUser ? (hostProfile?.phone || '') : '');
       const reporterName = session.name || (isHostUser ? (hostProfile?.name || 'Host') : 'Caller');
-      const offenderPhone = isHostUser ? (session.phone || '') : (activeSakhi?.phone || '');
-      const offenderName = isHostUser ? (session.name || 'Caller') : (activeSakhi?.name || 'Sakhi');
-      const offenderId = isHostUser ? undefined : activeSakhi?.id;
+      const offenderPhone = activeSakhi?.phone || '';
+      const offenderName = activeSakhi?.name || (isHostUser ? 'Caller' : 'Sakhi');
+      const offenderId = activeSakhi?.id;
 
       await submitNudityReport({
         reportedByRole: reporterRole,

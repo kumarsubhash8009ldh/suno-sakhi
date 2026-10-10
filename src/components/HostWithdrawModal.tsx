@@ -224,16 +224,16 @@ export const HostWithdrawModal: React.FC = () => {
               </div>
 
               <div>
-                <h4 className="text-xl font-black text-white">Withdrawal Successful!</h4>
+                <h4 className="text-xl font-black text-white">Withdrawal Request Submitted!</h4>
                 <p className="text-xs text-emerald-300 mt-1">
-                  ₹{successRecord.amount.toFixed(2)} aapke account me transfer ke liye process ho gaya hai.
+                  ₹{successRecord.amount.toFixed(2)} ki withdrawal request Admin verification ke liye submit ho gayi hai.
                 </p>
               </div>
 
               {/* Receipt Card */}
               <div className="p-4 rounded-2xl bg-black/60 border border-emerald-500/30 text-left text-xs space-y-2 max-w-sm mx-auto">
                 <div className="flex justify-between text-gray-400">
-                  <span>Reference ID:</span>
+                  <span>Request Reference:</span>
                   <span className="font-mono font-bold text-white">{successRecord.referenceId}</span>
                 </div>
                 <div className="flex justify-between text-gray-400">
@@ -254,7 +254,11 @@ export const HostWithdrawModal: React.FC = () => {
                 )}
                 <div className="flex justify-between text-gray-400">
                   <span>Status:</span>
-                  <span className="font-bold text-emerald-400">COMPLETED / PAID ✅</span>
+                  {successRecord.status === 'completed' ? (
+                    <span className="font-bold text-emerald-400">COMPLETED / PAID ✅</span>
+                  ) : (
+                    <span className="font-bold text-amber-300">PENDING ADMIN APPROVAL ⏳</span>
+                  )}
                 </div>
                 <div className="flex justify-between text-gray-400">
                   <span>Date & Time:</span>
@@ -272,7 +276,6 @@ export const HostWithdrawModal: React.FC = () => {
           ) : activeTab === 'withdraw' ? (
             /* Withdrawal Form */
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Amount Selection */}
               {/* Amount Selection */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
@@ -508,11 +511,11 @@ export const HostWithdrawModal: React.FC = () => {
                 className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 text-white font-black text-sm shadow-xl shadow-emerald-900/40 flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-                <span>Confirm & Withdraw ₹{amount} (Min ₹500)</span>
+                <span>Submit Withdrawal Request ₹{amount} (Min ₹500)</span>
               </button>
 
               <p className="text-[10px] text-gray-400 text-center">
-                Transfer via Google Pay, Paytm, PhonePe UPI • PAN Card Verified Settlement • 0% Platform Fee
+                Transfer via Google Pay, Paytm, PhonePe UPI • Admin Verified Settlement • 0% Platform Fee
               </p>
             </form>
           ) : (
@@ -524,35 +527,66 @@ export const HostWithdrawModal: React.FC = () => {
                   <p className="text-xs font-semibold">Abhi tak koi withdrawal history nahi hai.</p>
                 </div>
               ) : (
-                payoutHistory.map((item) => (
-                  <div
-                    key={item.id}
-                    className="p-3.5 rounded-2xl bg-black/40 border border-white/5 flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                        {item.method === 'upi' ? <Smartphone className="w-4 h-4" /> : <Building2 className="w-4 h-4" />}
+                payoutHistory.map((item) => {
+                  const isCompleted = item.status === 'completed';
+                  const isRejected = item.status === 'rejected';
+                  return (
+                    <div
+                      key={item.id}
+                      className="p-3.5 rounded-2xl bg-black/40 border border-white/5 flex items-center justify-between gap-2"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div
+                          className={`p-2 rounded-xl border ${
+                            isCompleted
+                              ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                              : isRejected
+                              ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                              : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                          }`}
+                        >
+                          {item.method === 'upi' ? <Smartphone className="w-4 h-4" /> : <Building2 className="w-4 h-4" />}
+                        </div>
+                        <div className="min-w-0">
+                          <h5 className="text-xs font-bold text-white truncate">
+                            Withdrawal to {item.method.toUpperCase()} {item.upiId ? `(${item.upiId})` : ''}
+                          </h5>
+                          <p className="text-[10px] text-gray-400 truncate">
+                            Ref: {item.referenceId} • {new Date(item.timestamp).toLocaleDateString()}
+                          </p>
+                          {isRejected && item.rejectReason && (
+                            <p className="text-[10px] text-red-300 mt-0.5 truncate">
+                              Reason: {item.rejectReason} (Refunded)
+                            </p>
+                          )}
+                        </div>
                       </div>
-                      <div>
-                        <h5 className="text-xs font-bold text-white">
-                          Withdrawal to {item.method.toUpperCase()}
-                        </h5>
-                        <p className="text-[10px] text-gray-400">
-                          Ref: {item.referenceId} • {new Date(item.timestamp).toLocaleDateString()}
-                        </p>
-                      </div>
-                    </div>
 
-                    <div className="text-right">
-                      <span className="text-sm font-black text-emerald-400 block">
-                        ₹{((item.amount ?? 0) || 0).toFixed(2)}
-                      </span>
-                      <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
-                        PAID ✅
-                      </span>
+                      <div className="text-right flex-shrink-0">
+                        <span
+                          className={`text-sm font-black block ${
+                            isCompleted ? 'text-emerald-400' : isRejected ? 'text-red-400 line-through' : 'text-amber-300'
+                          }`}
+                        >
+                          ₹{((item.amount ?? 0) || 0).toFixed(2)}
+                        </span>
+                        {isCompleted ? (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+                            PAID ✅
+                          </span>
+                        ) : isRejected ? (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-red-500/20 text-red-300 font-bold border border-red-500/30">
+                            REJECTED ❌
+                          </span>
+                        ) : (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
+                            PENDING ⏳
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           )}

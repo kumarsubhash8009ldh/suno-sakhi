@@ -1,6 +1,10 @@
-import { RecentCallLog, CallType } from '../types';
+import { doc, setDoc } from 'firebase/firestore';
+import { db, isFirebaseConfigured } from './firebase';
+import { getActiveSession } from './userAuthSync';
+import { RecentCallLog } from '../types';
 
 const RECENT_CALLS_STORAGE_KEY = 'sunosakhi_recent_calls';
+const CALL_LOGS_COLLECTION = 'call_logs';
 
 export const getRecentCalls = (): RecentCallLog[] => {
   try {
@@ -21,8 +25,10 @@ export const getRecentCalls = (): RecentCallLog[] => {
 };
 
 export const saveCallLog = (log: Omit<RecentCallLog, 'id'>): RecentCallLog => {
+  const session = getActiveSession();
   const newLog: RecentCallLog = {
     ...log,
+    callerId: log.callerId || session.phone || session.id || undefined,
     id: `call_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`
   };
 
@@ -32,6 +38,12 @@ export const saveCallLog = (log: Omit<RecentCallLog, 'id'>): RecentCallLog => {
     localStorage.setItem(RECENT_CALLS_STORAGE_KEY, JSON.stringify(updated));
   } catch (err) {
     console.warn('Error saving recent call log:', err);
+  }
+
+  if (isFirebaseConfigured() && db) {
+    setDoc(doc(db, CALL_LOGS_COLLECTION, newLog.id), newLog, { merge: true }).catch((err) => {
+      console.warn('Could not sync call log to Firestore:', err);
+    });
   }
 
   return newLog;

@@ -2,9 +2,11 @@ import React, { createContext, useContext, useState, useEffect, useRef } from 'r
 import { Sakhi, CallType, CallStatus, CallSession } from '../types';
 import { useWallet } from './WalletContext';
 import { useHost } from './HostContext';
+import { useAdmin } from './AdminContext';
 import { sounds } from '../utils/soundEffects';
 import { getCurrentUser, getActiveSession } from '../services/userAuthSync';
 import { saveCallLog } from '../services/callLogService';
+import { isUserBlocked } from '../services/safetyService';
 import {
   webrtcService,
   CallSessionDoc,
@@ -74,6 +76,7 @@ const CallContext = createContext<CallContextType | undefined>(undefined);
 export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { balance, deductLiveAmount, recordCallExpense, openWalletModal } = useWallet();
   const { isHostLoggedIn, hostProfile, recordCallIncome, userRole } = useHost();
+  const { settings } = useAdmin();
 
   const [activeSakhi, setActiveSakhi] = useState<Sakhi | null>(null);
   const [callType, setCallType] = useState<CallType>('voice');
@@ -126,6 +129,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const activeCallIntervalRef = useRef<number | null>(null);
   const durationRef = useRef<number>(0);
   const costRef = useRef<number>(0);
+  const isStartingCallRef = useRef<boolean>(false);
 
   // Activate Android FLAG_SECURE and web anti-screenshot/recording safeguards ONLY during video calls
   useEffect(() => {
@@ -138,9 +142,12 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [callType, callStatus]);
 
-  // Rate lookup
-  const getRate = (type: CallType): number => {
-    return type === 'voice' ? 7 : 15; // ₹7 for voice, ₹15 for video
+  // Dynamic Rate lookup from Admin Settings (fallback ₹7 for voice, ₹15 for video)
+  const getRate = (type: CallType, sakhiOverride?: Sakhi | null): number => {
+    if (type === 'voice') {
+      return sakhiOverride?.voiceRatePerMin || settings?.voiceRatePerMin || 7;
+    }
+    return sakhiOverride?.videoRatePerMin || settings?.videoRatePerMin || 15;
   };
 
   // Helper to reliably detect if current user is a Host
@@ -188,8 +195,23 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
    * Start Outbound Call as Caller or Host (Host is 100% Free)
    */
   const startCall = async (sakhi: Sakhi, type: CallType) => {
+    // Prevent duplicate simultaneous call requests
+    if (callStatus !== 'idle' || isStartingCallRef.current) {
+      return;
+    }
+
+    if (isUserBlocked(sakhi.id)) {
+      alert('🚫 Aapne is user ko block kiya hua hai. Call karne ke liye pehle Settings se Unblock karein.');
+      return;
+    }
+
+    if (sakhi.status === 'busy') {
+      alert(`📞 ${sakhi.name} abhi dusri call par busy hain. Kripya kuch der baad call karein!`);
+      return;
+    }
+
     const session = getActiveSession();
-    const requiredMin = getRate(type);
+    const requiredMin = getRate(type, sakhi);
     const isHost = checkIsHost(session);
 
     // Caller requires login before initiating a call
@@ -206,6 +228,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
+    isStartingCallRef.current = true;
     setIsCallReceiver(false);
     setActiveSakhi(sakhi);
     setCallType(type);
@@ -282,14 +305,14 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // Timeout after 35s if host does not answer
       callingTimerRef.current = window.setTimeout(() => {
-        if (callStatus === 'calling') {
-          sounds.stopRingtone();
-          alert(`${sakhi.name} abhi utha nahi pa rahi hain. Kripya thodi der baad dobara call karein.`);
-          cancelCalling();
-        }
+        sounds.stopRingtone();
+        alert(`${sakhi.name} abhi utha nahi pa rahi hain. Kripya thodi der baad dobara call karein.`);
+        cancelCalling();
       }, 35000);
     } catch (err) {
       console.warn('WebRTC Call initialization error:', err);
+    } finally {
+      isStartingCallRef.current = false;
     }
   };
 
@@ -297,6 +320,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
    * Cancel Outbound Call while ringing
    */
   const cancelCalling = () => {
+    isStartingCallRef.current = false;
     if (activeSakhi) {
       saveCallLog({
         sakhiId: activeSakhi.id,
@@ -376,10 +400,11 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await webrtcService.answerIncomingCall(incomingCall);
       setLocalStream(webrtcService.getLocalStream());
 
-      // Create caller companion representation for host
+      // Create caller companion representation for host (including callerPhone for safety reporting)
       setActiveSakhi({
         id: incomingCall.callerId,
         name: incomingCall.callerName || 'Caller',
+        phone: incomingCall.callerPhone || '',
         age: 24,
         city: 'India',
         avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=300&auto=format&fit=crop&q=80',
@@ -390,8 +415,8 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
         languages: ['Hindi'],
         bio: 'Dil Se Baat',
         interests: ['Conversation'],
-        voiceRatePerMin: 5,
-        videoRatePerMin: 10,
+        voiceRatePerMin: getRate('voice'),
+        videoRatePerMin: getRate('video'),
         audioSnippet: '',
         tagline: 'SunoSakhi Caller'
       });
@@ -431,8 +456,8 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Timer & real-time deduction effect when connected
   useEffect(() => {
     if (callStatus === 'connected' && activeSakhi) {
-      const rate = getRate(callType);
-      const perSecRate = rate / 60; // ₹0.0833/s for voice, ₹0.1667/s for video
+      const rate = getRate(callType, activeSakhi);
+      const perSecRate = rate / 60;
 
       activeCallIntervalRef.current = window.setInterval(() => {
         durationRef.current += 1;
@@ -497,6 +522,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
    * End Active Call
    */
   const endCall = (reason?: string) => {
+    isStartingCallRef.current = false;
     const session = getActiveSession();
     sounds.stopRingtone();
     if (callStatus === 'connected') {
@@ -569,7 +595,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         );
       } else if (wasReceiver) {
-        // Record host earning (60%) when host answered incoming call
+        // Record host earning when host answered incoming call
         recordCallIncome(callType, finalDuration, finalCost);
       } else {
         // Host made an OUTGOING call: 100% FREE!
@@ -594,7 +620,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
         type: callType,
         startTime: Date.now() - finalDuration * 1000,
         durationSeconds: finalDuration,
-        ratePerMin: isHostSession && !wasReceiver ? 0 : getRate(callType),
+        ratePerMin: isHostSession && !wasReceiver ? 0 : getRate(callType, activeSakhi),
         totalCost: isHostSession && !wasReceiver ? 0 : parseFloat(finalCost.toFixed(2))
       });
       setIsSummaryOpen(true);

@@ -2,8 +2,8 @@ import { collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc } from '
 import { db, isFirebaseConfigured } from './firebase';
 import { HostProfile, HostPayoutRecord } from '../types';
 import { UserAccount, getLocalRegisteredUsers, saveUserToLocalRegistry } from './userAuthSync';
-import { syncLiveBalanceToCloud } from './walletSync';
-import { getApiBaseUrl } from './apiConfig';
+import { syncLiveBalanceToCloud, updateLocalWalletCache } from './walletSync';
+import { getApiBaseUrl, hasExternalApiBackend } from './apiConfig';
 
 const HOSTS_COLLECTION = 'hosts';
 const USER_ACCOUNTS_COLLECTION = 'user_accounts';
@@ -35,27 +35,29 @@ export const fetchAllRegisteredHosts = async (): Promise<HostProfile[]> => {
   const hostsMap: Record<string, HostProfile> = {};
 
   // 1. Fetch from Server Backend (/api/admin/hosts gets all hosts including pending & verified)
-  try {
-    const baseUrl = getApiBaseUrl();
-    let res = await fetch(`${baseUrl}/api/admin/hosts`);
-    if (!res.ok) {
-      res = await fetch(`${baseUrl}/api/admin/all-data`);
+  if (hasExternalApiBackend()) {
+    try {
+      const baseUrl = getApiBaseUrl();
+      let res = await fetch(`${baseUrl}/api/admin/hosts`);
+      if (!res.ok) {
+        res = await fetch(`${baseUrl}/api/admin/all-data`);
+      }
+      const data = await res.json();
+      const list = data.hosts || (data.success && Array.isArray(data.hosts) ? data.hosts : []);
+      if (Array.isArray(list)) {
+        list.forEach((h: any) => {
+          hostsMap[h.id] = {
+            ...h,
+            isVerified: h.isVerified || false,
+            status: h.status || (h.isVerified ? 'online' : 'offline'),
+            verification: h.verification || { idType: 'aadhaar', idNumber: '', selfieUrl: '', status: 'unverified' },
+            incomeHistory: h.incomeHistory || []
+          };
+        });
+      }
+    } catch (err) {
+      console.warn('Error fetching hosts from server:', err);
     }
-    const data = await res.json();
-    const list = data.hosts || (data.success && Array.isArray(data.hosts) ? data.hosts : []);
-    if (Array.isArray(list)) {
-      list.forEach((h: any) => {
-        hostsMap[h.id] = {
-          ...h,
-          isVerified: h.isVerified || false,
-          status: h.status || (h.isVerified ? 'online' : 'offline'),
-          verification: h.verification || { idType: 'aadhaar', idNumber: '', selfieUrl: '', status: 'unverified' },
-          incomeHistory: h.incomeHistory || []
-        };
-      });
-    }
-  } catch (err) {
-    console.warn('Error fetching hosts from server:', err);
   }
 
   // 2. Fetch from Local Storage
@@ -80,8 +82,8 @@ export const fetchAllRegisteredHosts = async (): Promise<HostProfile[]> => {
             languages: ['Hindi', 'English'],
             bio: 'Namaste! SunoSakhi par aapse baat karne ke liye available hoon.',
             interests: ['Friendly Chat', 'Late Night Talks'],
-            voiceRatePerMin: 5,
-            videoRatePerMin: 10,
+            voiceRatePerMin: 7,
+            videoRatePerMin: 15,
             audioSnippet: 'https://actions.google.com/sounds/v1/human_voices/female_laugh.ogg',
             tagline: 'Verified Companion',
             isVerified: false,
@@ -132,20 +134,22 @@ export const fetchAllRegisteredUsers = async (): Promise<AdminUserDetails[]> => 
   const usersMap: Record<string, AdminUserDetails> = {};
 
   // 1. Fetch from Server Backend first
-  try {
-    const baseUrl = getApiBaseUrl();
-    const res = await fetch(`${baseUrl}/api/users`);
-    const data = await res.json();
-    if (data.success && Array.isArray(data.users)) {
-      data.users.forEach((u: any) => {
-        usersMap[u.phone] = {
-          ...u,
-          balance: typeof u.balance === 'number' ? u.balance : 50.0
-        };
-      });
+  if (hasExternalApiBackend()) {
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/users`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.users)) {
+        data.users.forEach((u: any) => {
+          usersMap[u.phone] = {
+            ...u,
+            balance: typeof u.balance === 'number' ? u.balance : 50.0
+          };
+        });
+      }
+    } catch (err) {
+      console.warn('Error fetching users from server:', err);
     }
-  } catch (err) {
-    console.warn('Error fetching users from server:', err);
   }
 
   // 2. Get all from local storage registry
@@ -165,12 +169,12 @@ export const fetchAllRegisteredUsers = async (): Promise<AdminUserDetails[]> => 
     try {
       const snap = await getDocs(collection(db, USER_ACCOUNTS_COLLECTION));
       snap.forEach((docSnap) => {
-        const u = docSnap.data() as UserAccount;
+        const u = docSnap.data() as any;
         const phone = u.phone || docSnap.id;
         usersMap[phone] = {
           ...(usersMap[phone] || {}),
           ...u,
-          balance: usersMap[phone]?.balance || 20.0
+          balance: typeof u.balance === 'number' ? u.balance : (usersMap[phone]?.balance ?? 20.0)
         };
       });
     } catch (err) {
@@ -178,7 +182,7 @@ export const fetchAllRegisteredUsers = async (): Promise<AdminUserDetails[]> => 
     }
   }
 
-  // 3. Fetch live balances
+  // 4. Fetch live balances from wallets collection
   const userList = Object.values(usersMap);
   for (const user of userList) {
     const callerKey = 'caller_' + user.phone;
@@ -288,9 +292,14 @@ export const rejectHostPayout = async (
     return { success: false, message: 'Payout record nahi mila.' };
   }
 
-  payout.status = 'pending'; // or mark rejected
+  if (payout.status === 'rejected') {
+    return { success: false, message: 'Ye payout pehle hi reject ho chuka hai.' };
+  }
 
-  // Save status
+  payout.status = 'rejected';
+  payout.rejectReason = reason;
+
+  // Save status and refund host's pendingPayout in Firestore
   if (isFirebaseConfigured() && db) {
     try {
       await setDoc(
@@ -298,6 +307,18 @@ export const rejectHostPayout = async (
         { status: 'rejected', rejectReason: reason },
         { merge: true }
       );
+      if (payout.hostId) {
+        const hostRef = doc(db, HOSTS_COLLECTION, payout.hostId);
+        const hostSnap = await getDoc(hostRef);
+        if (hostSnap.exists()) {
+          const currentPending = Number(hostSnap.data()?.pendingPayout || 0);
+          await setDoc(
+            hostRef,
+            { pendingPayout: parseFloat((currentPending + payout.amount).toFixed(2)), updatedAt: Date.now() },
+            { merge: true }
+          );
+        }
+      }
     } catch (err) {
       console.warn('Error updating rejected payout:', err);
     }
@@ -305,7 +326,7 @@ export const rejectHostPayout = async (
 
   try {
     const updated = payouts.map((p) =>
-      p.id === payout.id ? { ...p, status: 'rejected' as any, rejectReason: reason } : p
+      p.id === payout.id ? { ...p, status: 'rejected' as const, rejectReason: reason } : p
     );
     localStorage.setItem(LOCAL_PAYOUTS_KEY, JSON.stringify(updated));
   } catch (err) {
@@ -314,7 +335,7 @@ export const rejectHostPayout = async (
 
   return {
     success: true,
-    message: `❌ Payout reject kar diya gaya. Amount Host ke balance me refund ho gayi.`
+    message: `❌ Payout reject kar diya gaya. ₹${payout.amount.toFixed(2)} Host ke pending balance me refund ho gaye.`
   };
 };
 
@@ -379,8 +400,9 @@ export const adjustUserCoins = async (
   amount: number,
   note = 'Admin Adjustment'
 ): Promise<{ success: boolean; newBalance: number }> => {
-  const callerKey = 'caller_' + userPhone;
-  let currentBalance = 50.0;
+  const cleanPhone = userPhone.replace(/\D/g, '').slice(-10);
+  const callerKey = 'caller_' + cleanPhone;
+  let currentBalance = 20.0;
 
   if (isFirebaseConfigured() && db) {
     try {
@@ -393,6 +415,7 @@ export const adjustUserCoins = async (
 
   const nextBalance = parseFloat(Math.max(0, currentBalance + amount).toFixed(2));
   await syncLiveBalanceToCloud(callerKey, nextBalance);
+  updateLocalWalletCache(cleanPhone, nextBalance);
 
   return { success: true, newBalance: nextBalance };
 };
@@ -447,17 +470,19 @@ export const setHostVerificationStatus = async (
   const status = isVerified ? 'verified' : 'rejected';
 
   // 1. Sync with Server Backend
-  try {
-    const baseUrl = getApiBaseUrl();
-    const res = await fetch(`${baseUrl}/api/admin/hosts/verify`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hostId, action, adminNote })
-    });
-    const data = await res.json();
-    console.log(`[ADMIN-HOST-VERIFY-RESULT]`, data);
-  } catch (err) {
-    console.warn('Backend host verification call failed:', err);
+  if (hasExternalApiBackend()) {
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/admin/hosts/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hostId, action, adminNote })
+      });
+      const data = await res.json();
+      console.log(`[ADMIN-HOST-VERIFY-RESULT]`, data);
+    } catch (err) {
+      console.warn('Backend host verification call failed:', err);
+    }
   }
 
   // 2. Sync with Cloud Firestore if available
@@ -533,24 +558,30 @@ export const setUserBalanceDirect = async (
     await syncLiveBalanceToCloud(callerKey, safeBalance);
     if (isFirebaseConfigured() && db) {
       try {
-        await updateDoc(doc(db, USER_ACCOUNTS_COLLECTION, cleanPhone), {
-          balance: safeBalance,
-          updatedAt: Date.now()
-        });
+        await setDoc(
+          doc(db, USER_ACCOUNTS_COLLECTION, cleanPhone),
+          {
+            balance: safeBalance,
+            updatedAt: Date.now()
+          },
+          { merge: true }
+        );
       } catch (e) {
         console.warn('Error updating user doc in firestore:', e);
       }
     }
 
     // 2. Server Backend (if available)
-    try {
-      const baseUrl = getApiBaseUrl();
-      await fetch(`${baseUrl}/api/admin/users/balance`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: cleanPhone, balance: safeBalance, note })
-      });
-    } catch (e) {}
+    if (hasExternalApiBackend()) {
+      try {
+        const baseUrl = getApiBaseUrl();
+        await fetch(`${baseUrl}/api/admin/users/balance`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: cleanPhone, balance: safeBalance, note })
+        });
+      } catch (e) {}
+    }
 
     // 3. Local Storage Registries & Active State
     try {
@@ -570,7 +601,7 @@ export const setUserBalanceDirect = async (
           localStorage.setItem('sunosakhi_auth_user', JSON.stringify(user));
         }
       }
-      localStorage.setItem(`sunosakhi_wallet_${callerKey}`, safeBalance.toString());
+      updateLocalWalletCache(cleanPhone, safeBalance);
       window.dispatchEvent(new CustomEvent('wallet-updated', { detail: { balance: safeBalance, phone: cleanPhone } }));
     } catch (e) {}
 
@@ -653,10 +684,12 @@ export const deleteUserAccountPermanently = async (
     }
 
     // 2. Delete from Server Backend
-    try {
-      const baseUrl = getApiBaseUrl();
-      await fetch(`${baseUrl}/api/admin/users/${cleanPhone}`, { method: 'DELETE' });
-    } catch (e) {}
+    if (hasExternalApiBackend()) {
+      try {
+        const baseUrl = getApiBaseUrl();
+        await fetch(`${baseUrl}/api/admin/users/${cleanPhone}`, { method: 'DELETE' });
+      } catch (e) {}
+    }
 
     // 3. Delete from Local Storage Registry
     try {
@@ -667,6 +700,7 @@ export const deleteUserAccountPermanently = async (
         localStorage.setItem('sunosakhi_registered_users', JSON.stringify(reg));
       }
       localStorage.removeItem(`sunosakhi_wallet_${callerKey}`);
+      localStorage.removeItem(`sunosakhi_wallet_bal_${cleanPhone}`);
 
       // If deleted account is currently logged in, log out
       const current = localStorage.getItem('sunosakhi_auth_user');
@@ -709,10 +743,12 @@ export const deleteUserAccountPermanently = async (
     }
 
     // 2. Delete from Server Backend
-    try {
-      const baseUrl = getApiBaseUrl();
-      await fetch(`${baseUrl}/api/admin/hosts/${hostId}`, { method: 'DELETE' });
-    } catch (e) {}
+    if (hasExternalApiBackend()) {
+      try {
+        const baseUrl = getApiBaseUrl();
+        await fetch(`${baseUrl}/api/admin/hosts/${hostId}`, { method: 'DELETE' });
+      } catch (e) {}
+    }
 
     // 3. Delete from Local Storage Store
     try {

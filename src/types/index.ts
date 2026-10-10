@@ -225,6 +225,7 @@ export interface HostPayoutRecord {
   status: 'completed' | 'processing' | 'pending' | 'rejected';
   timestamp: number;
   referenceId: string;
+  rejectReason?: string;
 }
 
 export interface RechargeRequest {

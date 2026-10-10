@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   setDoc,
   query,
@@ -10,7 +11,7 @@ import {
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase';
 import { RechargeRequest, WalletTransaction } from '../types';
-import { creditUserCloudWallet } from './walletSync';
+import { creditUserCloudWallet, extractPhoneFromId } from './walletSync';
 import { processReferralRewardOnRecharge } from './referralSync';
 
 const RECHARGE_REQUESTS_COLLECTION = 'recharge_requests';
@@ -69,10 +70,10 @@ export const submitRechargeRequest = async (params: {
     };
   }
 
-  // Check duplicate UTR in existing requests
-  const localList = getLocalRechargeRequests();
-  const duplicate = localList.find(
-    (r) => r.utr.toUpperCase() === cleanUtr && r.status !== 'rejected'
+  // Check duplicate UTR in existing requests (LocalStorage + Cloud Firestore)
+  const allExisting = await fetchAllRechargeRequests();
+  const duplicate = allExisting.find(
+    (r) => (r.utr || '').toUpperCase() === cleanUtr && r.status !== 'rejected'
   );
   if (duplicate) {
     return {
@@ -80,6 +81,8 @@ export const submitRechargeRequest = async (params: {
       message: `Ye UTR (${cleanUtr}) pehle hi submit ho chuka hai (Status: ${duplicate.status.toUpperCase()}). Ek UTR ko dobara submit nahi kiya ja sakta.`
     };
   }
+
+  const localList = getLocalRechargeRequests();
 
   const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const calculatedBonus = typeof params.bonus === 'number' && params.bonus >= 0
@@ -201,9 +204,18 @@ export const subscribeToUserRechargeRequests = (
   userId: string,
   onUpdate: (requests: RechargeRequest[]) => void
 ): Unsubscribe | null => {
+  const targetPhone = extractPhoneFromId(userId);
+  const matchesUser = (r: RechargeRequest) => {
+    if (r.userId === userId || r.userId === 'caller_' + userId || userId === 'caller_' + r.userId) {
+      return true;
+    }
+    const reqPhone = extractPhoneFromId(r.userId, r.userPhone);
+    return Boolean(targetPhone && reqPhone && targetPhone === reqPhone);
+  };
+
   const getFilteredLocal = () => {
     return getLocalRechargeRequests()
-      .filter((r) => r.userId === userId || r.userId === 'caller_' + userId || userId === 'caller_' + r.userId)
+      .filter(matchesUser)
       .sort((a, b) => b.createdAt - a.createdAt);
   };
 
@@ -220,7 +232,7 @@ export const subscribeToUserRechargeRequests = (
         const list: RechargeRequest[] = [];
         snap.forEach((docSnap) => {
           const data = docSnap.data() as RechargeRequest;
-          if (data.userId === userId || data.userId === 'caller_' + userId || userId === 'caller_' + data.userId) {
+          if (matchesUser(data)) {
             list.push({ ...data, id: docSnap.id });
           }
         });
@@ -269,7 +281,7 @@ export const approveRechargeRequest = async (
     adminNote
   };
 
-  // 1. Credit the User's Wallet
+  // 1. Credit the User's Wallet (including canonical caller_${userPhone} document)
   const tx: WalletTransaction = {
     id: `tx-recharge-${Date.now()}`,
     type: 'credit',
@@ -278,7 +290,7 @@ export const approveRechargeRequest = async (
     timestamp: Date.now()
   };
 
-  await creditUserCloudWallet(updatedReq.userId, updatedReq.totalBalance, tx);
+  await creditUserCloudWallet(updatedReq.userId, updatedReq.totalBalance, tx, updatedReq.userPhone);
 
   // 2. Process referral bonus reward for referrer if applicable
   processReferralRewardOnRecharge(updatedReq.userId, updatedReq.amount, (rewardCoins, refCode) => {
@@ -393,14 +405,42 @@ export const adminDirectDeposit = async (params: {
   let newBalance = 0;
   if (role === 'caller') {
     const callerId = params.userId.startsWith('caller_') ? params.userId : (params.userPhone ? 'caller_' + params.userPhone.replace(/\D/g, '').slice(-10) : params.userId);
-    const creditRes = await creditUserCloudWallet(callerId, totalCredit, {
-      id: 'tx_dep_' + now,
-      type: 'credit',
-      amount: totalCredit,
-      description: `Admin Deposit via ${method} (Ref: ${utr})`,
-      timestamp: now
-    });
+    const creditRes = await creditUserCloudWallet(
+      callerId,
+      totalCredit,
+      {
+        id: 'tx_dep_' + now,
+        type: 'credit',
+        amount: totalCredit,
+        description: `Admin Deposit via ${method} (Ref: ${utr})`,
+        timestamp: now
+      },
+      params.userPhone
+    );
     newBalance = creditRes.newBalance;
+  } else {
+    // Credit Host earnings / pendingPayout in Firestore
+    const hostId = params.userId;
+    if (isFirebaseConfigured() && db) {
+      try {
+        const hostRef = doc(db, 'hosts', hostId);
+        const snap = await getDoc(hostRef);
+        const existingNet = snap.exists() ? Number(snap.data()?.netIncome || 0) : 0;
+        const existingPending = snap.exists() ? Number(snap.data()?.pendingPayout || 0) : 0;
+        newBalance = parseFloat((existingPending + totalCredit).toFixed(2));
+        await setDoc(
+          hostRef,
+          {
+            netIncome: parseFloat((existingNet + totalCredit).toFixed(2)),
+            pendingPayout: newBalance,
+            updatedAt: now
+          },
+          { merge: true }
+        );
+      } catch (e) {
+        console.warn('Could not credit host earnings in Firestore:', e);
+      }
+    }
   }
 
   // 1. Save to Firestore

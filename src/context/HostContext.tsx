@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { collection, doc, setDoc, onSnapshot } from 'firebase/firestore';
+import { db, isFirebaseConfigured } from '../services/firebase';
 import {
   HostProfile,
   HostIncomeRecord,
@@ -51,6 +53,7 @@ import {
 const HOST_STORAGE_KEY = 'sunosakhi_host_profile';
 const CHAT_STORAGE_KEY = 'sunosakhi_chat_messages';
 const PAYOUT_STORAGE_KEY = 'sunosakhi_host_payouts';
+const HOST_PAYOUTS_COLLECTION = 'host_payouts';
 const HOST_INCOME_PERCENT = 60; // 60% Host Share!
 export const MESSAGE_RATE = 3.0; // ₹3 per message
 export const MAX_MESSAGE_WORDS = 150; // 150 words limit
@@ -435,6 +438,52 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       if (unsub) unsub();
     };
+  }, [hostProfile.id, hostProfile.phone, isHostLoggedIn]);
+
+  // Real-time Host Payouts / Withdrawal status sync from Cloud Firestore
+  useEffect(() => {
+    const targetHostId = hostProfile.id || (hostProfile.phone ? `sakhi-user-${hostProfile.phone.replace(/\D/g, '').slice(-10)}` : '');
+    const cleanPhone = (hostProfile.phone || '').replace(/\D/g, '').slice(-10);
+    if (!targetHostId && cleanPhone.length < 10) return;
+    if (!isFirebaseConfigured() || !db) return;
+
+    try {
+      const colRef = collection(db, HOST_PAYOUTS_COLLECTION);
+      const unsub = onSnapshot(
+        colRef,
+        (snap) => {
+          const cloudPayouts: HostPayoutRecord[] = [];
+          snap.forEach((docSnap) => {
+            const data = docSnap.data() as HostPayoutRecord;
+            const recHostId = String(data.hostId || '');
+            if (
+              recHostId === targetHostId ||
+              (cleanPhone.length === 10 && recHostId.includes(cleanPhone))
+            ) {
+              cloudPayouts.push({ ...data, id: data.id || docSnap.id });
+            }
+          });
+          setPayoutHistory((prev) => {
+            const map: Record<string, HostPayoutRecord> = {};
+            prev.forEach((p) => {
+              if (p && p.id) map[p.id] = p;
+            });
+            cloudPayouts.forEach((p) => {
+              if (p && p.id) map[p.id] = p;
+            });
+            const merged = Object.values(map).sort((a, b) => b.timestamp - a.timestamp);
+            localStorage.setItem(PAYOUT_STORAGE_KEY, JSON.stringify(merged));
+            return merged;
+          });
+        },
+        (err) => {
+          console.warn('Error listening to host_payouts:', err);
+        }
+      );
+      return () => unsub();
+    } catch (err) {
+      console.warn('Could not subscribe to host_payouts:', err);
+    }
   }, [hostProfile.id, hostProfile.phone, isHostLoggedIn]);
 
   // 1. Request notification permission upon first interaction
@@ -1069,19 +1118,14 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const requestPayout = (): { success: boolean; message: string } => {
-    if (hostProfile.pendingPayout <= 0) {
-      return { success: false, message: 'Withdraw karne ke liye balance nahi hai.' };
+    if (hostProfile.pendingPayout < 500) {
+      return { success: false, message: 'Minimum withdrawal amount ₹500 hona anivarya hai.' };
     }
 
-    const amount = hostProfile.pendingPayout;
-    setHostProfile((prev) => ({
-      ...prev,
-      pendingPayout: 0
-    }));
-
+    openWithdrawModal();
     return {
       success: true,
-      message: `₹${amount.toFixed(2)} ka payout aapke UPI ID (${hostProfile.upiId || 'aarohi@okhdfcbank'}) par transfer kar diya gaya hai!`
+      message: 'Kripya apna PAN aur UPI/Bank details confirm karke withdrawal request submit karein.'
     };
   };
 
@@ -1116,26 +1160,36 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, message: `Aapka pending balance sirf ₹${hostProfile.pendingPayout.toFixed(2)} hai.` };
     }
 
-    const refId = 'PAY' + Math.floor(10000000 + Math.random() * 90000000);
+    const refId = 'REQ' + Math.floor(10000000 + Math.random() * 90000000);
+    const payoutId = 'payout_' + Date.now();
     const newRecord: HostPayoutRecord = {
-      id: 'payout_' + Date.now(),
-      hostId: hostProfile.id || 'host',
+      id: payoutId,
+      hostId: hostProfile.id || (hostProfile.phone ? `sakhi-user-${hostProfile.phone}` : 'host'),
       amount: params.amount,
       method: params.method,
       upiId: params.upiId,
       panNumber: effectivePan,
       bankDetails: params.bankDetails,
-      status: 'completed',
+      status: 'pending',
       timestamp: Date.now(),
       referenceId: refId
     };
+
+    // Save to Firestore host_payouts collection so Admin can verify and release UTR
+    if (isFirebaseConfigured() && db) {
+      try {
+        await setDoc(doc(db, HOST_PAYOUTS_COLLECTION, payoutId), newRecord);
+      } catch (err) {
+        console.warn('Could not sync host withdrawal request to Firestore:', err);
+      }
+    }
 
     const updatedHistory = [newRecord, ...payoutHistory];
     setPayoutHistory(updatedHistory);
     localStorage.setItem(PAYOUT_STORAGE_KEY, JSON.stringify(updatedHistory));
 
     // Deduct from pending payout & save verified PAN to host profile
-    const updatedPending = parseFloat((hostProfile.pendingPayout - params.amount).toFixed(2));
+    const updatedPending = parseFloat(Math.max(0, hostProfile.pendingPayout - params.amount).toFixed(2));
     setHostProfile((prev) => {
       const u = {
         ...prev,
@@ -1152,7 +1206,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return {
       success: true,
-      message: `₹${params.amount.toFixed(2)} ka payout Google Pay/Paytm/PhonePe par successfully process ho gaya! Reference: ${refId}`,
+      message: `⏳ ₹${params.amount.toFixed(2)} ki withdrawal request submit ho gayi hai (Ref: ${refId})! Admin verification ke baad aapke ${params.method.toUpperCase()} account me transfer ho jayega.`,
       record: newRecord
     };
   };

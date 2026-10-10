@@ -26,6 +26,7 @@ import { HostMessageToast } from './components/HostMessageToast';
 import { CallerCard } from './components/CallerCard';
 import { HostCommissionSlideModal, HostRecruitmentPill } from './components/HostCommissionSlideModal';
 import { ApkInstallGuideModal } from './components/ApkInstallGuideModal';
+import { SakhiProfileModal } from './components/SakhiProfileModal';
 import { formatUserId } from './utils/idFormatter';
 import { WalletProvider, useWallet } from './context/WalletContext';
 import { CallProvider, useCall } from './context/CallContext';
@@ -37,6 +38,8 @@ import { getCurrentUser, syncUserToServer, saveUserToCloud, getActiveSession, us
 import { getApiBaseUrl } from './services/apiConfig';
 import { Sparkles, Phone, Video, Search, ShieldCheck, Heart, Users, MessageCircleHeart, Award, UserCheck, MessageCircle, Headphones, Shield, Shuffle, LogIn, ArrowRight, X, ShieldAlert } from 'lucide-react';
 
+const FAVORITES_STORAGE_KEY = 'sunosakhi_favorites';
+
 const MainContent: React.FC = () => {
   const session = useActiveSession();
   const [realSakhis, setRealSakhis] = useState<Sakhi[]>([]);
@@ -46,6 +49,26 @@ const MainContent: React.FC = () => {
   const [currentTab, setCurrentTab] = useState<string>('sakhis');
   const [isHelpDeskOpen, setIsHelpDeskOpen] = useState<boolean>(false);
   const [multiLoginAlert, setMultiLoginAlert] = useState<string | null>(null);
+  const [selectedSakhiProfile, setSelectedSakhiProfile] = useState<Sakhi | null>(null);
+  const [favoriteIds, setFavoriteIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(FAVORITES_STORAGE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const handleToggleFavorite = (sakhiId: string) => {
+    setFavoriteIds((prev) => {
+      const next = prev.includes(sakhiId) ? prev.filter((id) => id !== sakhiId) : [...prev, sakhiId];
+      try {
+        localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     const currentSession = getActiveSession();
@@ -255,9 +278,11 @@ const MainContent: React.FC = () => {
       if (!matchesSearch) return false;
 
       if (activeFilter === 'online') return sakhi.status === 'online';
+      if (activeFilter === 'favorites') return favoriteIds.includes(sakhi.id);
       if (activeFilter === 'top') return sakhi.rating >= 4.9;
       if (activeFilter === 'hindi') return sakhi.languages.includes('Hindi');
       if (activeFilter === 'punjabi') return sakhi.languages.includes('Punjabi');
+      if (activeFilter === 'night') return sakhi.interests.some((i) => i.toLowerCase().includes('night'));
 
       return true;
     });
@@ -268,7 +293,7 @@ const MainContent: React.FC = () => {
       if (a.status !== 'online' && b.status === 'online') return 1;
       return 0;
     });
-  }, [realSakhis, session.phone, session.email, activeFilter, searchQuery]);
+  }, [realSakhis, session.phone, session.email, activeFilter, searchQuery, favoriteIds]);
 
   // Filtered Callers for Host View (Strictly real online & active callers, excluding current host)
   const filteredCallers = useMemo(() => {
@@ -544,7 +569,13 @@ const MainContent: React.FC = () => {
               ) : (
                 <div className="max-w-2xl mx-auto flex flex-col gap-3.5">
                   {filteredSakhis.map((sakhi) => (
-                    <SakhiCard key={sakhi.id} sakhi={sakhi} />
+                    <SakhiCard
+                      key={sakhi.id}
+                      sakhi={sakhi}
+                      isFavorite={favoriteIds.includes(sakhi.id)}
+                      onToggleFavorite={handleToggleFavorite}
+                      onOpenProfile={(s) => setSelectedSakhiProfile(s)}
+                    />
                   ))}
                 </div>
               )
@@ -744,6 +775,7 @@ const MainContent: React.FC = () => {
                   {[
                     { id: 'all', label: '✨ All Sakhis' },
                     { id: 'online', label: '🟢 Online Now' },
+                    { id: 'favorites', label: `❤️ Favorites (${favoriteIds.length})` },
                     { id: 'top', label: '⭐ Top Rated' },
                     { id: 'hindi', label: '🗣️ Hindi' },
                     { id: 'punjabi', label: '🌾 Punjabi' },
@@ -811,7 +843,7 @@ const MainContent: React.FC = () => {
                       : 'Koi dummy profile nahi dikhai ja rahi hai. Jaise hi koi verified host apne mobile number se register ya online aayegi, wo yahan live show hogi.'}
                   </p>
                   <div className="flex flex-wrap items-center justify-center gap-3">
-                    {searchQuery ? (
+                    {searchQuery || activeFilter !== 'all' ? (
                       <button
                         onClick={() => {
                           setActiveFilter('all');
@@ -838,7 +870,13 @@ const MainContent: React.FC = () => {
               ) : (
                 <div className="max-w-2xl mx-auto flex flex-col gap-3.5">
                   {filteredSakhis.map((sakhi) => (
-                    <SakhiCard key={sakhi.id} sakhi={sakhi} />
+                    <SakhiCard
+                      key={sakhi.id}
+                      sakhi={sakhi}
+                      isFavorite={favoriteIds.includes(sakhi.id)}
+                      onToggleFavorite={handleToggleFavorite}
+                      onOpenProfile={(s) => setSelectedSakhiProfile(s)}
+                    />
                   ))}
                 </div>
               )}
@@ -884,6 +922,12 @@ const MainContent: React.FC = () => {
       <GiftTrayModal />
       <HostVerificationModal />
       <DirectChatModal />
+      <SakhiProfileModal
+        sakhi={selectedSakhiProfile}
+        onClose={() => setSelectedSakhiProfile(null)}
+        isFavorite={selectedSakhiProfile ? favoriteIds.includes(selectedSakhiProfile.id) : false}
+        onToggleFavorite={handleToggleFavorite}
+      />
       {/* Global Incoming Message Toast Banner */}
       <HostMessageToast
         notification={incomingMessageNotification}

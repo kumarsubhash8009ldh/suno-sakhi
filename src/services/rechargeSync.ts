@@ -12,7 +12,7 @@ import {
 import { db, isFirebaseConfigured } from './firebase';
 import { RechargeRequest, WalletTransaction } from '../types';
 import { creditUserCloudWallet, extractPhoneFromId } from './walletSync';
-import { processReferralRewardOnRecharge } from './referralSync';
+import { processReferralRewardOnRecharge, registerReferralJoin } from './referralSync';
 
 const RECHARGE_REQUESTS_COLLECTION = 'recharge_requests';
 const LOCAL_REQUESTS_KEY = 'sunosakhi_recharge_requests';
@@ -49,6 +49,8 @@ export const submitRechargeRequest = async (params: {
   userId: string;
   userName?: string;
   userPhone?: string;
+  userAvatar?: string;
+  referredBy?: string;
   amount: number;
   bonus: number;
   utr: string;
@@ -90,11 +92,40 @@ export const submitRechargeRequest = async (params: {
     : parseFloat((params.amount * 0.05).toFixed(2));
   const totalBalance = parseFloat((params.amount + calculatedBonus).toFixed(2));
 
+  // If user entered or has a Host Reference ID, link their profile to the Host and credit 1% Host Commission
+  const cleanRef = params.referredBy ? params.referredBy.trim().toUpperCase() : undefined;
+  if (cleanRef) {
+    await registerReferralJoin(
+      params.userPhone || params.userId,
+      cleanRef,
+      params.userName,
+      params.userAvatar
+    );
+  }
+
+  const refRewardRes = await processReferralRewardOnRecharge(
+    params.userId,
+    params.amount,
+    (rewardCoins, refCode) => {
+      console.log(`🎉 ₹${rewardCoins} (1% Host Referral Commission) credited to ${refCode}!`);
+    },
+    params.userPhone,
+    {
+      callerName: params.userName,
+      callerAvatar: params.userAvatar,
+      explicitReferrer: cleanRef,
+      utrOrTxId: cleanUtr
+    }
+  );
+
   const newRequest: RechargeRequest = {
     id: requestId,
     userId: params.userId,
     userName: params.userName || 'Caller User',
     userPhone: params.userPhone || '',
+    userAvatar: params.userAvatar,
+    referredBy: cleanRef || refRewardRes.referrer,
+    referralCredited: refRewardRes.success,
     amount: params.amount,
     bonus: calculatedBonus,
     totalBalance,
@@ -292,15 +323,26 @@ export const approveRechargeRequest = async (
 
   await creditUserCloudWallet(updatedReq.userId, updatedReq.totalBalance, tx, updatedReq.userPhone);
 
-  // 2. Process 1% Host Referral Commission for referrer if applicable
-  await processReferralRewardOnRecharge(
-    updatedReq.userId,
-    updatedReq.amount,
-    (rewardCoins, refCode) => {
-      console.log(`🎉 ₹${rewardCoins} (1% Host Referral Commission) processed for ${refCode}!`);
-    },
-    updatedReq.userPhone
-  );
+  // 2. Process 1% Host Referral Commission for referrer if not already credited on submission
+  if (!req.referralCredited) {
+    const refRes = await processReferralRewardOnRecharge(
+      updatedReq.userId,
+      updatedReq.amount,
+      (rewardCoins, refCode) => {
+        console.log(`🎉 ₹${rewardCoins} (1% Host Referral Commission) processed for ${refCode}!`);
+      },
+      updatedReq.userPhone,
+      {
+        callerName: updatedReq.userName,
+        callerAvatar: updatedReq.userAvatar,
+        explicitReferrer: updatedReq.referredBy,
+        utrOrTxId: updatedReq.utr
+      }
+    );
+    if (refRes.success) {
+      updatedReq.referralCredited = true;
+    }
+  }
 
   // 3. Save updated request to Firestore
   if (isFirebaseConfigured() && db) {
@@ -429,7 +471,11 @@ export const adminDirectDeposit = async (params: {
       (rewardCoins, refCode) => {
         console.log(`🎉 ₹${rewardCoins} (1% Host Referral Commission) processed for ${refCode}!`);
       },
-      params.userPhone
+      params.userPhone,
+      {
+        callerName: params.userName,
+        utrOrTxId: utr
+      }
     );
   } else {
     // Credit Host earnings / pendingPayout in Firestore

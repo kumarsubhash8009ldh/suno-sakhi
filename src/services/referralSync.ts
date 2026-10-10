@@ -88,11 +88,94 @@ export const getSavedReferredBy = (): string | null => {
 };
 
 /**
- * Record when a new user joins using a Host's Reference ID (increments Host's referralCount)
+ * Resolve Caller's Name & Profile Photo (Avatar) from local storage or Cloud Firestore
+ */
+export const resolveCallerProfileInfo = async (
+  userIdOrPhone: string,
+  explicitPhone?: string,
+  fallbackName?: string,
+  fallbackAvatar?: string
+): Promise<{ callerId: string; callerName: string; callerAvatar: string; callerPhone: string }> => {
+  const cleanPhone = String(explicitPhone || userIdOrPhone || '').replace(/\D/g, '').slice(-10);
+  let callerName = fallbackName && fallbackName !== 'Caller User' ? fallbackName : '';
+  let callerAvatar = fallbackAvatar || '';
+
+  // 1. Check current logged-in user and local user registry
+  if (typeof window !== 'undefined') {
+    try {
+      const rawCurrent = localStorage.getItem('sunosakhi_current_user');
+      if (rawCurrent) {
+        const cur = JSON.parse(rawCurrent);
+        const curPhone = String(cur.phone || cur.id || '').replace(/\D/g, '').slice(-10);
+        if (
+          cur.id === userIdOrPhone ||
+          (cleanPhone && curPhone === cleanPhone)
+        ) {
+          if (!callerName && cur.name) callerName = cur.name;
+          if (!callerAvatar && cur.avatar) callerAvatar = cur.avatar;
+        }
+      }
+
+      const rawUsers = localStorage.getItem('sunosakhi_registered_users');
+      if (rawUsers) {
+        const usersMap = JSON.parse(rawUsers);
+        if (cleanPhone && usersMap[cleanPhone]) {
+          if (!callerName && usersMap[cleanPhone].name) callerName = usersMap[cleanPhone].name;
+          if (!callerAvatar && usersMap[cleanPhone].avatar) callerAvatar = usersMap[cleanPhone].avatar;
+        }
+        for (const u of Object.values(usersMap) as any[]) {
+          if (
+            u &&
+            (u.id === userIdOrPhone || (cleanPhone && String(u.phone || '').slice(-10) === cleanPhone))
+          ) {
+            if (!callerName && u.name) callerName = u.name;
+            if (!callerAvatar && u.avatar) callerAvatar = u.avatar;
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // 2. Check Cloud Firestore user_accounts collection
+  if ((!callerName || !callerAvatar) && isFirebaseConfigured() && db) {
+    try {
+      const docCandidates = Array.from(
+        new Set([cleanPhone, userIdOrPhone, cleanPhone ? `caller-${cleanPhone}` : ''].filter(Boolean))
+      );
+      for (const key of docCandidates) {
+        const uSnap = await getDoc(doc(db, USER_ACCOUNTS_COLLECTION, key));
+        if (uSnap.exists()) {
+          const d = uSnap.data() as any;
+          if (!callerName && d?.name) callerName = d.name;
+          if (!callerAvatar && d?.avatar) callerAvatar = d.avatar;
+          break;
+        }
+      }
+    } catch {}
+  }
+
+  const finalId = cleanPhone ? `caller-${cleanPhone}` : userIdOrPhone || `caller_${Date.now()}`;
+  const finalName = callerName || (cleanPhone ? `Caller (${cleanPhone.slice(0, 2)}****${cleanPhone.slice(-2)})` : 'Caller');
+  const finalAvatar =
+    callerAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&auto=format&fit=crop&q=80';
+
+  return {
+    callerId: finalId,
+    callerName: finalName,
+    callerAvatar: finalAvatar,
+    callerPhone: cleanPhone
+  };
+};
+
+/**
+ * Record when a user joins or links using a Host's Reference ID
+ * Saves caller's Name & Profile Photo on the Host's `referredCallers` list and user's `referredBy`
  */
 export const registerReferralJoin = async (
   newUserPhoneOrId: string,
-  referrerCode: string
+  referrerCode: string,
+  callerName?: string,
+  callerAvatar?: string
 ): Promise<void> => {
   const cleanedRef = saveReferredBy(referrerCode);
   if (!cleanedRef) return;
@@ -101,8 +184,39 @@ export const registerReferralJoin = async (
   const newUserPhone = String(newUserPhoneOrId || '').replace(/\D/g, '').slice(-10);
   if (refPhone && newUserPhone && refPhone === newUserPhone) return; // Prevent self-referral
 
+  const callerInfo = await resolveCallerProfileInfo(newUserPhoneOrId, newUserPhone, callerName, callerAvatar);
+
+  // Also update local user registry with referredBy
+  if (typeof window !== 'undefined' && newUserPhone) {
+    try {
+      const rawUsers = localStorage.getItem('sunosakhi_registered_users');
+      const usersMap = rawUsers ? JSON.parse(rawUsers) : {};
+      if (usersMap[newUserPhone]) {
+        usersMap[newUserPhone].referredBy = cleanedRef;
+        localStorage.setItem('sunosakhi_registered_users', JSON.stringify(usersMap));
+      }
+      const rawCur = localStorage.getItem('sunosakhi_current_user');
+      if (rawCur) {
+        const cur = JSON.parse(rawCur);
+        if (String(cur.phone || '').slice(-10) === newUserPhone) {
+          cur.referredBy = cleanedRef;
+          localStorage.setItem('sunosakhi_current_user', JSON.stringify(cur));
+        }
+      }
+    } catch {}
+  }
+
   if (isFirebaseConfigured() && db) {
     try {
+      // Save referredBy on user_accounts document so future recharges know the referrer
+      if (newUserPhone) {
+        await setDoc(
+          doc(db, USER_ACCOUNTS_COLLECTION, newUserPhone),
+          { referredBy: cleanedRef },
+          { merge: true }
+        );
+      }
+
       const candidates = [
         refPhone.length === 10 ? `sakhi-user-${refPhone}` : '',
         refPhone.length === 10 ? `host_${refPhone}` : '',
@@ -111,24 +225,72 @@ export const registerReferralJoin = async (
         cleanedRef
       ].filter(Boolean);
 
+      let matchedHostId: string | null = null;
+      let hostData: any = null;
+
       for (const candidateId of candidates) {
         const hostRef = doc(db, HOSTS_COLLECTION, candidateId);
         const snap = await getDoc(hostRef);
         if (snap.exists()) {
-          const data = snap.data() as any;
-          await setDoc(
-            hostRef,
-            {
-              referralCount: (Number(data.referralCount) || 0) + 1,
-              lastActiveAt: Date.now()
-            },
-            { merge: true }
-          );
+          matchedHostId = candidateId;
+          hostData = snap.data();
           break;
         }
       }
+
+      if (!matchedHostId && refPhone.length === 10) {
+        const allHostsSnap = await getDocs(collection(db, HOSTS_COLLECTION));
+        allHostsSnap.forEach((docSnap) => {
+          if (matchedHostId) return;
+          const d = docSnap.data() as any;
+          const dPhone = String(d.phone || d.id || docSnap.id || '').replace(/\D/g, '').slice(-10);
+          if (dPhone === refPhone) {
+            matchedHostId = docSnap.id;
+            hostData = d;
+          }
+        });
+      }
+
+      if (matchedHostId && hostData) {
+        const hostRef = doc(db, HOSTS_COLLECTION, matchedHostId);
+        const existingList = Array.isArray(hostData.referredCallers) ? [...hostData.referredCallers] : [];
+        const existingIdx = existingList.findIndex(
+          (rc: any) =>
+            rc.callerId === callerInfo.callerId ||
+            (callerInfo.callerPhone &&
+              String(rc.callerPhone || rc.callerId || '').replace(/\D/g, '').slice(-10) === callerInfo.callerPhone)
+        );
+        if (existingIdx >= 0) {
+          existingList[existingIdx] = {
+            ...existingList[existingIdx],
+            callerName: callerInfo.callerName || existingList[existingIdx].callerName,
+            callerAvatar: callerInfo.callerAvatar || existingList[existingIdx].callerAvatar
+          };
+        } else {
+          existingList.unshift({
+            callerId: callerInfo.callerId,
+            callerName: callerInfo.callerName,
+            callerPhone: callerInfo.callerPhone,
+            callerAvatar: callerInfo.callerAvatar,
+            joinedAt: Date.now(),
+            totalRechargeAmount: 0,
+            totalCommissionEarned: 0,
+            rechargeCount: 0
+          });
+        }
+
+        await setDoc(
+          hostRef,
+          {
+            referralCount: existingList.length,
+            referredCallers: existingList,
+            lastActiveAt: Date.now()
+          },
+          { merge: true }
+        );
+      }
     } catch (err) {
-      console.warn('Could not increment host referralCount:', err);
+      console.warn('Could not register referral join in Firestore:', err);
     }
   }
 };
@@ -197,21 +359,37 @@ export const resolveUserReferrer = async (
 };
 
 /**
- * Process 1% Host Referral / Invite Commission whenever a referred user recharges their wallet!
+ * Process 1% Host Referral / Invite Commission whenever a referred caller adds payment (recharges)!
  * Credits 1% of `rechargeAmount` directly to the referring Host's `referralIncome`, `netIncome`,
- * `pendingPayout`, and `incomeHistory` passbook in Cloud Firestore & LocalStorage.
+ * `pendingPayout`, `referredCallers`, and `incomeHistory` passbook (with Caller's Name & Profile Photo).
  */
 export const processReferralRewardOnRecharge = async (
   newUserPhoneOrId: string,
   rechargeAmount: number,
   onBonusCredited?: (bonusAmount: number, referrer: string) => void,
-  explicitUserPhone?: string
+  explicitUserPhone?: string,
+  callerMeta?: {
+    callerName?: string;
+    callerAvatar?: string;
+    explicitReferrer?: string;
+    utrOrTxId?: string;
+  }
 ): Promise<{ success: boolean; bonusAmount: number; referrer?: string }> => {
   if (!rechargeAmount || rechargeAmount <= 0) {
     return { success: false, bonusAmount: 0 };
   }
 
-  const referrer = await resolveUserReferrer(newUserPhoneOrId, explicitUserPhone);
+  // Deduplicate by UTR / Transaction ID if provided so the same payment is never credited twice
+  if (callerMeta?.utrOrTxId && typeof window !== 'undefined') {
+    const dedupKey = `sunosakhi_ref_comm_paid_${callerMeta.utrOrTxId}`;
+    if (localStorage.getItem(dedupKey) === 'true') {
+      return { success: false, bonusAmount: 0 };
+    }
+  }
+
+  const referrer =
+    (callerMeta?.explicitReferrer && callerMeta.explicitReferrer.trim().toUpperCase()) ||
+    (await resolveUserReferrer(newUserPhoneOrId, explicitUserPhone));
   if (!referrer) {
     return { success: false, bonusAmount: 0 };
   }
@@ -230,31 +408,44 @@ export const processReferralRewardOnRecharge = async (
     return { success: false, bonusAmount: 0 };
   }
 
+  // Resolve Caller's Name & Profile Photo (Avatar)
+  const callerInfo = await resolveCallerProfileInfo(
+    newUserPhoneOrId,
+    cleanUserPhone,
+    callerMeta?.callerName,
+    callerMeta?.callerAvatar
+  );
+
   const targetHostId =
     refPhone.length === 10
       ? `sakhi-user-${refPhone}`
       : referrer.replace(/^SAKHI[-_]?/i, '') || referrer;
 
-  const maskedUser = cleanUserPhone
-    ? `+91 ${cleanUserPhone.slice(0, 2)}******${cleanUserPhone.slice(-2)}`
-    : newUserPhoneOrId;
-
   const incomeRecord: HostIncomeRecord = {
     id: `inc_ref_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
     type: 'referral',
-    description: `🤝 1% Refer Recharge Bonus (${maskedUser} Recharged ₹${rechargeAmount})`,
+    description: `🤝 1% Refer Bonus: ${callerInfo.callerName} added ₹${rechargeAmount}`,
     grossAmount: rechargeAmount,
     hostSharePercent: HOST_REFERRAL_COMMISSION_PERCENT,
     hostEarned: hostCommission,
     timestamp: Date.now(),
-    details: `Ref ID: ${referrer} • 1% Invite Bonus on ₹${rechargeAmount}`
+    details: `Caller: ${callerInfo.callerName} • Ref ID: ${referrer} • 1% Commission on ₹${rechargeAmount}`,
+    callerId: callerInfo.callerId,
+    callerName: callerInfo.callerName,
+    callerAvatar: callerInfo.callerAvatar,
+    callerPhone: callerInfo.callerPhone
   };
 
   console.log(
-    `🎁 Crediting 1% Host Referral Commission (₹${hostCommission}) to Host ${targetHostId} (Ref: ${referrer}) for User ${newUserPhoneOrId} recharge of ₹${rechargeAmount}`
+    `🎁 Crediting 1% Host Referral Commission (₹${hostCommission}) to Host ${targetHostId} (Ref: ${referrer}) from Caller ${callerInfo.callerName} recharge of ₹${rechargeAmount}`
   );
 
-  // 1. Credit Host Income & Passbook in Cloud Firestore + LocalStorage
+  // Mark UTR / Transaction ID as credited locally
+  if (callerMeta?.utrOrTxId && typeof window !== 'undefined') {
+    localStorage.setItem(`sunosakhi_ref_comm_paid_${callerMeta.utrOrTxId}`, 'true');
+  }
+
+  // 1. Credit Host Income, Referred Callers Profile & Passbook in Cloud Firestore + LocalStorage
   await recordHostIncomeToCloud(targetHostId, incomeRecord, undefined, {
     hostPhone: refPhone,
     callType: 'referral'
@@ -269,8 +460,10 @@ export const processReferralRewardOnRecharge = async (
         referrer,
         targetHostId,
         hostPhone: refPhone,
-        referredUser: newUserPhoneOrId,
-        referredUserPhone: cleanUserPhone,
+        referredUser: callerInfo.callerId,
+        referredUserName: callerInfo.callerName,
+        referredUserAvatar: callerInfo.callerAvatar,
+        referredUserPhone: callerInfo.callerPhone,
         rechargeAmount,
         commissionPercent: HOST_REFERRAL_COMMISSION_PERCENT,
         rewardAmount: hostCommission,

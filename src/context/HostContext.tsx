@@ -192,6 +192,7 @@ const sanitizeHostProfile = (data: any): HostProfile => {
     pendingPayout: typeof data.pendingPayout === 'number' && !isNaN(data.pendingPayout) ? data.pendingPayout : 0,
     referralIncome: typeof data.referralIncome === 'number' && !isNaN(data.referralIncome) ? data.referralIncome : 0,
     referralCount: typeof data.referralCount === 'number' && !isNaN(data.referralCount) ? data.referralCount : 0,
+    referredCallers: Array.isArray(data.referredCallers) ? data.referredCallers : [],
     totalVoiceMinutes: typeof data.totalVoiceMinutes === 'number' && !isNaN(data.totalVoiceMinutes) ? data.totalVoiceMinutes : 0,
     totalVideoMinutes: typeof data.totalVideoMinutes === 'number' && !isNaN(data.totalVideoMinutes) ? data.totalVideoMinutes : 0,
     totalGiftsReceived: typeof data.totalGiftsReceived === 'number' && !isNaN(data.totalGiftsReceived) ? data.totalGiftsReceived : 0,
@@ -458,6 +459,9 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (cloudData.totalGiftsReceived !== undefined) merged.totalGiftsReceived = cloudData.totalGiftsReceived;
         if (cloudData.incomeHistory && Array.isArray(cloudData.incomeHistory)) {
           merged.incomeHistory = cloudData.incomeHistory;
+        }
+        if (cloudData.referredCallers && Array.isArray(cloudData.referredCallers)) {
+          merged.referredCallers = cloudData.referredCallers;
         }
         localStorage.setItem(HOST_STORAGE_KEY, JSON.stringify(merged));
         return merged;

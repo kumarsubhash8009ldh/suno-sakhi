@@ -29,7 +29,8 @@ interface WalletContextType {
     amount: number,
     bonus: number,
     utr: string,
-    method?: string
+    method?: string,
+    referredBy?: string
   ) => Promise<{ success: boolean; message: string; request?: RechargeRequest }>;
   deductLiveAmount: (amount: number) => boolean;
   deductChatExpense: (sakhiName: string, amount: number, wordCount: number) => boolean;
@@ -307,7 +308,12 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       (rewardCoins, refCode) => {
         console.log(`🎉 ₹${rewardCoins} (1% Host Referral Commission) processed for ${refCode}!`);
       },
-      session.phone
+      session.phone,
+      {
+        callerName: session.name,
+        callerAvatar: session.avatar,
+        utrOrTxId: newTx.id
+      }
     );
   };
 
@@ -315,14 +321,17 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     amount: number,
     bonus: number | undefined,
     utr: string,
-    method = 'UPI'
+    method = 'UPI',
+    referredBy?: string
   ) => {
     const caller = getCurrentUser();
     const calculatedBonus = typeof bonus === 'number' && bonus >= 0 ? bonus : parseFloat((amount * 0.05).toFixed(2));
     return await submitRechargeRequest({
       userId,
-      userName: caller?.name || 'Caller User',
-      userPhone: caller?.phone || '',
+      userName: caller?.name || session.name || 'Caller User',
+      userPhone: caller?.phone || session.phone || '',
+      userAvatar: caller?.avatar || session.avatar,
+      referredBy: referredBy || caller?.referredBy,
       amount,
       bonus: calculatedBonus,
       utr,

@@ -229,6 +229,173 @@ export const HostDashboard: React.FC = () => {
     return true;
   });
 
+  // Merge all Callers who joined or recharged with this Host's Refer ID (Caller Name & Profile Photo)
+  const myReferredCallersList = React.useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        callerId: string;
+        callerName: string;
+        callerPhone: string;
+        callerAvatar: string;
+        joinedAt: number;
+        totalRechargeAmount: number;
+        totalCommissionEarned: number;
+        rechargeCount: number;
+        lastRechargeAt?: number;
+        isOnline?: boolean;
+      }
+    >();
+
+    const defaultAvatar =
+      'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80';
+
+    // 1. Seed from hostProfile.referredCallers
+    if (Array.isArray(hostProfile?.referredCallers)) {
+      hostProfile.referredCallers.forEach((rc) => {
+        const cleanP = String(rc.callerPhone || rc.callerId || '').replace(/\D/g, '').slice(-10);
+        const key = cleanP || rc.callerId;
+        if (!key) return;
+        map.set(key, {
+          callerId: rc.callerId || `caller-${cleanP}`,
+          callerName: rc.callerName || (cleanP ? `Caller (${cleanP.slice(0, 2)}****${cleanP.slice(-2)})` : 'Caller'),
+          callerPhone: cleanP,
+          callerAvatar: rc.callerAvatar || defaultAvatar,
+          joinedAt: rc.joinedAt || Date.now(),
+          totalRechargeAmount: Number(rc.totalRechargeAmount || 0),
+          totalCommissionEarned: Number(rc.totalCommissionEarned || 0),
+          rechargeCount: Number(rc.rechargeCount || 0),
+          lastRechargeAt: rc.lastRechargeAt
+        });
+      });
+    }
+
+    // 2. Merge from registeredCallers whose referredBy matches this Host's Reference ID or Phone
+    const cleanHostRefUpper = String(hostRefId || '').trim().toUpperCase();
+    const cleanHostIdUpper = String(myHostId || '').trim().toUpperCase();
+
+    filteredCallersList.forEach((caller) => {
+      const refCode = String(caller.referredBy || '').trim().toUpperCase();
+      if (!refCode) return;
+      const refDigits = refCode.replace(/\D/g, '').slice(-10);
+      const isMyRef =
+        (cleanHostRefUpper && refCode === cleanHostRefUpper) ||
+        (cleanHostIdUpper && refCode === cleanHostIdUpper) ||
+        (myHostPhone && refDigits === myHostPhone) ||
+        (myHostPhone && refCode === `SAKHI-${myHostPhone}`) ||
+        (myHostPhone && refCode === `HOST-${myHostPhone}`);
+
+      if (isMyRef) {
+        const cleanP = String(caller.phone || caller.id || '').replace(/\D/g, '').slice(-10);
+        const key = cleanP || caller.id;
+        if (!key) return;
+        const existing = map.get(key);
+        map.set(key, {
+          callerId: caller.id || existing?.callerId || `caller-${cleanP}`,
+          callerName: caller.name && caller.name !== 'Caller' ? caller.name : existing?.callerName || 'Caller',
+          callerPhone: cleanP || existing?.callerPhone || '',
+          callerAvatar: caller.avatar || existing?.callerAvatar || defaultAvatar,
+          joinedAt: existing?.joinedAt || caller.createdAt || Date.now(),
+          totalRechargeAmount: existing?.totalRechargeAmount || 0,
+          totalCommissionEarned: existing?.totalCommissionEarned || 0,
+          rechargeCount: existing?.rechargeCount || 0,
+          lastRechargeAt: existing?.lastRechargeAt,
+          isOnline: caller.status === 'online' || Boolean(caller.isOnline)
+        });
+      }
+    });
+
+    // 3. Merge from hostProfile.incomeHistory ('referral' records) so no recharge commission is ever missed
+    const historyReferrals = (hostProfile?.incomeHistory || []).filter((item) => item.type === 'referral');
+    // Aggregate by caller key from incomeHistory if not already counted in referredCallers
+    const historyAgg = new Map<
+      string,
+      {
+        callerId: string;
+        callerName: string;
+        callerPhone: string;
+        callerAvatar: string;
+        grossSum: number;
+        earnedSum: number;
+        count: number;
+        lastTs: number;
+      }
+    >();
+
+    historyReferrals.forEach((item) => {
+      const cleanP = String(item.callerPhone || item.callerId || '').replace(/\D/g, '').slice(-10);
+      const key = cleanP || item.callerId || item.id;
+      const prev = historyAgg.get(key);
+      // Extract name from description if callerName isn't set
+      let extractedName = item.callerName || '';
+      if (!extractedName && item.description) {
+        const match = item.description.match(/by\s+([^()]+?)(?:\s*\(|\s*—|$)/i);
+        if (match && match[1]) extractedName = match[1].trim();
+      }
+      historyAgg.set(key, {
+        callerId: item.callerId || prev?.callerId || (cleanP ? `caller-${cleanP}` : item.id),
+        callerName: extractedName || prev?.callerName || (cleanP ? `Caller (${cleanP.slice(0, 2)}****${cleanP.slice(-2)})` : 'Referred Caller'),
+        callerPhone: cleanP || prev?.callerPhone || '',
+        callerAvatar: item.callerAvatar || prev?.callerAvatar || defaultAvatar,
+        grossSum: Number(((prev?.grossSum || 0) + Number(item.grossAmount || 0)).toFixed(2)),
+        earnedSum: Number(((prev?.earnedSum || 0) + Number(item.hostEarned || 0)).toFixed(2)),
+        count: (prev?.count || 0) + 1,
+        lastTs: Math.max(prev?.lastTs || 0, item.timestamp || Date.now())
+      });
+    });
+
+    historyAgg.forEach((agg, key) => {
+      const existing = map.get(key);
+      if (existing) {
+        map.set(key, {
+          ...existing,
+          callerName:
+            existing.callerName && !existing.callerName.startsWith('Caller (')
+              ? existing.callerName
+              : agg.callerName || existing.callerName,
+          callerAvatar: existing.callerAvatar || agg.callerAvatar,
+          totalRechargeAmount: Math.max(existing.totalRechargeAmount, agg.grossSum),
+          totalCommissionEarned: Math.max(existing.totalCommissionEarned, agg.earnedSum),
+          rechargeCount: Math.max(existing.rechargeCount, agg.count),
+          lastRechargeAt: Math.max(existing.lastRechargeAt || 0, agg.lastTs)
+        });
+      } else {
+        map.set(key, {
+          callerId: agg.callerId,
+          callerName: agg.callerName,
+          callerPhone: agg.callerPhone,
+          callerAvatar: agg.callerAvatar,
+          joinedAt: agg.lastTs,
+          totalRechargeAmount: agg.grossSum,
+          totalCommissionEarned: agg.earnedSum,
+          rechargeCount: agg.count,
+          lastRechargeAt: agg.lastTs
+        });
+      }
+    });
+
+    // 4. Enrich every entry with live Caller Name, Profile Photo & Online status from filteredCallersList
+    map.forEach((val, key) => {
+      const liveCaller = filteredCallersList.find((c) => {
+        const cp = String(c.phone || c.id || '').replace(/\D/g, '').slice(-10);
+        return (cp && cp === key) || c.id === val.callerId || c.id === key;
+      });
+      if (liveCaller) {
+        map.set(key, {
+          ...val,
+          callerName:
+            liveCaller.name && liveCaller.name !== 'Caller' ? liveCaller.name : val.callerName,
+          callerAvatar: liveCaller.avatar || val.callerAvatar,
+          isOnline: liveCaller.status === 'online' || Boolean(liveCaller.isOnline)
+        });
+      }
+    });
+
+    return Array.from(map.values()).sort(
+      (a, b) => (b.lastRechargeAt || b.joinedAt || 0) - (a.lastRechargeAt || a.joinedAt || 0)
+    );
+  }, [hostProfile?.referredCallers, hostProfile?.incomeHistory, filteredCallersList, hostRefId, myHostId, myHostPhone]);
+
   // Subscribe to messages of the currently selected conversation
   useEffect(() => {
     if (!selectedConv?.threadId) return;
@@ -836,7 +1003,7 @@ export const HostDashboard: React.FC = () => {
                   <span className="text-xs text-pink-200">mins</span>
                 </div>
                 <div className="flex items-center gap-2 text-[9px] text-gray-400 mt-1">
-                  <span>🎙️ {hostProfile?.totalVoiceMinutes || 0}m (₹2/m)</span>
+                  <span>🎙️ {hostProfile?.totalVoiceMinutes || 0}m (₹3/m)</span>
                   <span>📹 {hostProfile?.totalVideoMinutes || 0}m</span>
                 </div>
               </div>
@@ -887,7 +1054,7 @@ export const HostDashboard: React.FC = () => {
                   </span>
                 </div>
                 <p className="text-[10px] text-amber-300/80 mt-1">
-                  1% Invite Bonus ({referralTransactionsCount} recharges)
+                  {myReferredCallersList.length} Callers • {referralTransactionsCount} Recharges
                 </p>
               </div>
 
@@ -922,63 +1089,190 @@ export const HostDashboard: React.FC = () => {
               </div>
             )}
 
-            {/* HOST REFERENCE ID & 1% RECHARGE COMMISSION BANNER */}
-            <div className="mt-4 p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-[#281907]/90 via-[#1f0e33]/90 to-[#11241a]/90 border border-amber-500/40 shadow-xl flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-              <div className="space-y-1.5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="px-2.5 py-0.5 rounded-full bg-amber-500 text-black text-[10px] font-black uppercase tracking-wider shadow">
-                    🤝 1% Invite & Recharge Bonus
-                  </span>
-                  <h3 className="text-sm sm:text-base font-black text-white">
-                    Host Reference ID: <span className="text-amber-300 font-mono">{hostRefId}</span>
-                  </h3>
-                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold">
-                    Earned: ₹{totalReferralIncome.toFixed(2)}
-                  </span>
+            {/* HOST REFERENCE ID & 1% RECHARGE COMMISSION BANNER + REFERRED CALLERS PROFILE LIST */}
+            <div className="mt-4 p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-[#281907]/90 via-[#1f0e33]/90 to-[#11241a]/90 border border-amber-500/40 shadow-xl space-y-4">
+              <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+                <div className="space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="px-2.5 py-0.5 rounded-full bg-amber-500 text-black text-[10px] font-black uppercase tracking-wider shadow">
+                      🤝 1% Invite & Payment Bonus
+                    </span>
+                    <h3 className="text-sm sm:text-base font-black text-white">
+                      Host Reference ID: <span className="text-amber-300 font-mono">{hostRefId}</span>
+                    </h3>
+                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold">
+                      1% Commission Earned: ₹{totalReferralIncome.toFixed(2)}
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-full bg-pink-500/20 border border-pink-500/40 text-pink-200 text-[10px] font-bold">
+                      👥 {myReferredCallersList.length} Referred Callers
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-300 max-w-2xl leading-relaxed">
+                    Jab bhi koi Caller aapke <strong>Reference ID ({hostRefId})</strong> se join karega ya Wallet me Payment add karega, toh har payment ka <strong>1% Commission</strong> turant aapke account me add ho jayega aur neeche Caller ka <strong>Name & Profile Photo</strong> dikhega!
+                  </p>
                 </div>
-                <p className="text-xs text-gray-300 max-w-2xl leading-relaxed">
-                  Jab bhi koi Caller ya User aapke <strong>Reference ID ({hostRefId})</strong> ya Invite Link se join karega, toh uske har <strong>Wallet Recharge par flat 1% Commission</strong> seedhe aapki Host ID aur Refer Income column me add hoga!
-                </p>
+
+                <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-start lg:justify-end flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(hostRefId);
+                      setRefCopied('id');
+                      setTimeout(() => setRefCopied(null), 2500);
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-200 text-xs font-extrabold flex items-center gap-1.5 transition-all active:scale-95"
+                  >
+                    <Copy className="w-3.5 h-3.5 text-amber-300" />
+                    <span>{refCopied === 'id' ? 'Copied Reference ID! ✅' : `Copy ID (${hostRefId})`}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(hostShareUrl);
+                      setRefCopied('link');
+                      setTimeout(() => setRefCopied(null), 2500);
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/20 text-white text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95"
+                  >
+                    <Copy className="w-3.5 h-3.5 text-pink-300" />
+                    <span>{refCopied === 'link' ? 'Invite Link Copied! ✅' : 'Copy Invite Link'}</span>
+                  </button>
+
+                  <a
+                    href={`https://wa.me/?text=${encodeURIComponent(
+                      `🌸 Join SunoSakhi using my Host Reference ID: *${hostRefId}* and get ₹20 Free Bonus Coins! Call & Chat live with me:\n${hostShareUrl}`
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white text-xs font-black flex items-center gap-1.5 shadow-lg shadow-emerald-900/40 transition-all active:scale-95"
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                    <span>📲 Share on WhatsApp</span>
+                  </a>
+                </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-start lg:justify-end flex-shrink-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(hostRefId);
-                    setRefCopied('id');
-                    setTimeout(() => setRefCopied(null), 2500);
-                  }}
-                  className="px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-200 text-xs font-extrabold flex items-center gap-1.5 transition-all active:scale-95"
-                >
-                  <Copy className="w-3.5 h-3.5 text-amber-300" />
-                  <span>{refCopied === 'id' ? 'Copied Reference ID! ✅' : `Copy ID (${hostRefId})`}</span>
-                </button>
+              {/* REFERRED CALLERS LIST: CALLER NAME, PROFILE PHOTO & 1% COMMISSION */}
+              <div className="pt-3 border-t border-amber-500/20">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                  <h4 className="text-xs sm:text-sm font-black text-amber-200 flex items-center gap-1.5">
+                    <Users className="w-4 h-4 text-amber-400" />
+                    <span>Aapke Refer ID ({hostRefId}) Se Jude Callers — Name & Profile ({myReferredCallersList.length})</span>
+                  </h4>
+                  <span className="text-[10px] text-emerald-300 font-bold">
+                    Caller Payment Add = +1% Direct Host Commission
+                  </span>
+                </div>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(hostShareUrl);
-                    setRefCopied('link');
-                    setTimeout(() => setRefCopied(null), 2500);
-                  }}
-                  className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/20 text-white text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95"
-                >
-                  <Copy className="w-3.5 h-3.5 text-pink-300" />
-                  <span>{refCopied === 'link' ? 'Invite Link Copied! ✅' : 'Copy Invite Link'}</span>
-                </button>
+                {myReferredCallersList.length === 0 ? (
+                  <div className="p-4 rounded-2xl bg-black/40 border border-white/10 text-center">
+                    <p className="text-xs text-gray-300 font-semibold">
+                      Abhi tak kisi Caller ne aapka Reference ID (<span className="text-amber-300 font-mono">{hostRefId}</span>) use nahi kiya hai.
+                    </p>
+                    <p className="text-[11px] text-gray-400 mt-1">
+                      Apna Reference ID ya WhatsApp Invite Link share karein — jaise hi koi Caller join karega ya payment add karega, uska <strong>Name, Profile Photo aur 1% Commission</strong> yahan live show hoga!
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-80 overflow-y-auto pr-1">
+                    {myReferredCallersList.map((rc) => {
+                      const maskedPhone =
+                        rc.callerPhone && rc.callerPhone.length >= 4
+                          ? `${rc.callerPhone.slice(0, 2)}****${rc.callerPhone.slice(-2)}`
+                          : '';
+                      return (
+                        <div
+                          key={rc.callerId || rc.callerPhone}
+                          className="p-3 rounded-2xl bg-black/50 border border-amber-500/30 hover:border-amber-400/60 transition-all flex items-center justify-between gap-3 shadow-md"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="relative flex-shrink-0">
+                              <img
+                                src={rc.callerAvatar}
+                                alt={rc.callerName}
+                                className="w-12 h-12 rounded-2xl object-cover border-2 border-amber-400/60 bg-black"
+                              />
+                              <span
+                                className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-[#120520] ${
+                                  rc.isOnline ? 'bg-emerald-500' : 'bg-rose-500'
+                                }`}
+                                title={rc.isOnline ? 'Online' : 'Offline'}
+                              />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <h5 className="text-xs sm:text-sm font-black text-white truncate">
+                                  {rc.callerName}
+                                </h5>
+                                <span className="px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[9px] font-bold">
+                                  Refer ID Linked
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-gray-400 mt-0.5">
+                                {maskedPhone ? `📱 ${maskedPhone} • ` : ''}
+                                Payment Added: <strong className="text-white">₹{rc.totalRechargeAmount.toFixed(0)}</strong>
+                                {rc.rechargeCount > 0 ? ` (${rc.rechargeCount}x)` : ''}
+                              </p>
+                              <p className="text-[11px] font-extrabold text-emerald-400 mt-0.5">
+                                1% Host Commission: +₹{rc.totalCommissionEarned.toFixed(2)}
+                              </p>
+                            </div>
+                          </div>
 
-                <a
-                  href={`https://wa.me/?text=${encodeURIComponent(
-                    `🌸 Join SunoSakhi using my Host Reference ID: *${hostRefId}* and get ₹20 Free Bonus Coins! Call & Chat live with me:\n${hostShareUrl}`
-                  )}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white text-xs font-black flex items-center gap-1.5 shadow-lg shadow-emerald-900/40 transition-all active:scale-95"
-                >
-                  <Share2 className="w-3.5 h-3.5" />
-                  <span>📲 Share on WhatsApp</span>
-                </a>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openDirectChat({
+                                  id: rc.callerId || `caller-${rc.callerPhone}`,
+                                  name: rc.callerName || 'Caller',
+                                  age: 24,
+                                  city: 'India',
+                                  avatar: rc.callerAvatar,
+                                  videoPoster: rc.callerAvatar,
+                                  status: rc.isOnline ? 'online' : 'offline',
+                                  rating: 5,
+                                  totalCalls: 1,
+                                  languages: ['Hindi'],
+                                  bio: 'Referred Caller',
+                                  interests: ['Friendly Chat'],
+                                  voiceRatePerMin: 5,
+                                  videoRatePerMin: 10,
+                                  audioSnippet: '',
+                                  tagline: 'Referred Caller',
+                                  phone: rc.callerPhone
+                                })
+                              }
+                              className="p-2 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold shadow transition-all active:scale-95"
+                              title={`Chat with ${rc.callerName} (Free for Host)`}
+                            >
+                              <MessageCircle className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleCallCaller(
+                                  {
+                                    id: rc.callerId || `caller-${rc.callerPhone}`,
+                                    name: rc.callerName || 'Caller',
+                                    phone: rc.callerPhone,
+                                    avatar: rc.callerAvatar
+                                  },
+                                  'voice'
+                                )
+                              }
+                              className="p-2 rounded-xl bg-pink-600/90 hover:bg-pink-500 text-white text-xs font-bold shadow transition-all active:scale-95"
+                              title={`Voice Call ${rc.callerName} (Free for Host)`}
+                            >
+                              <Phone className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1021,7 +1315,7 @@ export const HostDashboard: React.FC = () => {
             <div className="flex items-center justify-between pb-3 border-b border-white/10">
               <div>
                 <h3 className="text-base font-bold text-white">Host Income Passbook</h3>
-                <p className="text-xs text-gray-400">Live record of calls, gifts, chat messages & 1% referral recharge bonuses</p>
+                <p className="text-xs text-gray-400">Live record of calls (Audio ₹3/min), gifts, chat messages & 1% referral recharge bonuses</p>
               </div>
               <span className="text-xs text-emerald-400 font-bold">
                 Total Records: {hostProfile.incomeHistory.length}
@@ -1029,56 +1323,80 @@ export const HostDashboard: React.FC = () => {
             </div>
 
             <div className="mt-4 space-y-2.5 max-h-96 overflow-y-auto pr-1">
-              {hostProfile.incomeHistory.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-center justify-between p-3.5 rounded-2xl bg-black/30 border border-white/5 hover:border-pink-500/30 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`p-2.5 rounded-xl border ${
-                        item.type === 'referral'
-                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                          : 'bg-pink-500/20 text-pink-400 border-pink-500/30'
-                      }`}
-                    >
-                      {item.type === 'call' ? (
-                        <Phone className="w-4 h-4" />
-                      ) : item.type === 'gift' ? (
-                        <Gift className="w-4 h-4" />
-                      ) : item.type === 'incentive' ? (
-                        <Flame className="w-4 h-4 text-amber-400" />
-                      ) : item.type === 'referral' ? (
-                        <Users className="w-4 h-4 text-amber-300" />
-                      ) : (
-                        <MessageCircle className="w-4 h-4" />
-                      )}
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-white flex items-center gap-1.5">
-                        <span>{item.description}</span>
-                        {item.type === 'referral' && (
-                          <span className="px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[9px] font-black">
-                            1% Refer Bonus
-                          </span>
-                        )}
-                      </p>
-                      <p className="text-[10px] text-gray-400">
-                        Gross: ₹{(item.grossAmount || 0).toFixed(2)} •{' '}
-                        {item.type === 'referral' ? '1% Invite Commission' : 'Host Earning'} •{' '}
-                        {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </p>
-                    </div>
-                  </div>
+              {hostProfile.incomeHistory.map((item) => {
+                const matchedRefCaller =
+                  item.type === 'referral'
+                    ? myReferredCallersList.find(
+                        (rc) =>
+                          (item.callerPhone && rc.callerPhone === item.callerPhone) ||
+                          (item.callerId && rc.callerId === item.callerId)
+                      )
+                    : undefined;
+                const displayCallerAvatar = item.callerAvatar || matchedRefCaller?.callerAvatar;
+                const displayCallerName = item.callerName || matchedRefCaller?.callerName;
 
-                  <div className="text-right">
-                    <span className="text-sm font-black text-emerald-400 block">
-                      +₹{(item.hostEarned || 0).toFixed(2)}
-                    </span>
-                    <span className="text-[10px] text-gray-400">Credited</span>
+                return (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between p-3.5 rounded-2xl bg-black/30 border border-white/5 hover:border-pink-500/30 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      {item.type === 'referral' && displayCallerAvatar ? (
+                        <img
+                          src={displayCallerAvatar}
+                          alt={displayCallerName || 'Referred Caller'}
+                          className="w-10 h-10 rounded-xl object-cover border border-amber-400/60 flex-shrink-0"
+                        />
+                      ) : (
+                        <div
+                          className={`p-2.5 rounded-xl border ${
+                            item.type === 'referral'
+                              ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                              : 'bg-pink-500/20 text-pink-400 border-pink-500/30'
+                          }`}
+                        >
+                          {item.type === 'call' ? (
+                            <Phone className="w-4 h-4" />
+                          ) : item.type === 'gift' ? (
+                            <Gift className="w-4 h-4" />
+                          ) : item.type === 'incentive' ? (
+                            <Flame className="w-4 h-4 text-amber-400" />
+                          ) : item.type === 'referral' ? (
+                            <Users className="w-4 h-4 text-amber-300" />
+                          ) : (
+                            <MessageCircle className="w-4 h-4" />
+                          )}
+                        </div>
+                      )}
+                      <div>
+                        <p className="text-xs font-bold text-white flex flex-wrap items-center gap-1.5">
+                          {item.type === 'referral' && displayCallerName && (
+                            <span className="text-amber-300 font-black">👤 {displayCallerName}:</span>
+                          )}
+                          <span>{item.description}</span>
+                          {item.type === 'referral' && (
+                            <span className="px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[9px] font-black">
+                              1% Refer Bonus
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-[10px] text-gray-400">
+                          Gross: ₹{(item.grossAmount || 0).toFixed(2)} •{' '}
+                          {item.type === 'referral' ? '1% Invite Commission' : 'Host Earning'} •{' '}
+                          {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="text-right">
+                      <span className="text-sm font-black text-emerald-400 block">
+                        +₹{(item.hostEarned || 0).toFixed(2)}
+                      </span>
+                      <span className="text-[10px] text-gray-400">Credited</span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>

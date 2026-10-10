@@ -527,6 +527,50 @@ export const recordHostIncomeToCloud = async (
             ? parseFloat(Number((hData.referralIncome || 0) + (incomeRecord.hostEarned || 0)).toFixed(2))
             : (hData.referralIncome || 0);
 
+        const nextReferredCallers = Array.isArray(hData.referredCallers) ? [...hData.referredCallers] : [];
+        if (
+          (extra?.callType === 'referral' || incomeRecord.type === 'referral') &&
+          (incomeRecord.callerId || incomeRecord.callerPhone || incomeRecord.callerName)
+        ) {
+          const cPhone = String(incomeRecord.callerPhone || incomeRecord.callerId || '').replace(/\D/g, '').slice(-10);
+          const cId = incomeRecord.callerId || (cPhone ? `caller-${cPhone}` : `caller_${Date.now()}`);
+          const idx = nextReferredCallers.findIndex(
+            (rc: any) =>
+              rc.callerId === cId ||
+              (cPhone && String(rc.callerPhone || rc.callerId || '').replace(/\D/g, '').slice(-10) === cPhone)
+          );
+          if (idx >= 0) {
+            nextReferredCallers[idx] = {
+              ...nextReferredCallers[idx],
+              callerName: incomeRecord.callerName || nextReferredCallers[idx].callerName || 'Caller',
+              callerAvatar: incomeRecord.callerAvatar || nextReferredCallers[idx].callerAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&auto=format&fit=crop&q=80',
+              callerPhone: cPhone || nextReferredCallers[idx].callerPhone,
+              totalRechargeAmount: parseFloat(
+                Number((nextReferredCallers[idx].totalRechargeAmount || 0) + (incomeRecord.grossAmount || 0)).toFixed(2)
+              ),
+              totalCommissionEarned: parseFloat(
+                Number((nextReferredCallers[idx].totalCommissionEarned || 0) + (incomeRecord.hostEarned || 0)).toFixed(2)
+              ),
+              rechargeCount: (Number(nextReferredCallers[idx].rechargeCount) || 0) + 1,
+              lastRechargeAt: Date.now()
+            };
+          } else {
+            nextReferredCallers.unshift({
+              callerId: cId,
+              callerName: incomeRecord.callerName || 'Caller',
+              callerPhone: cPhone || undefined,
+              callerAvatar:
+                incomeRecord.callerAvatar ||
+                'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&auto=format&fit=crop&q=80',
+              joinedAt: Date.now(),
+              totalRechargeAmount: parseFloat(Number(incomeRecord.grossAmount || 0).toFixed(2)),
+              totalCommissionEarned: parseFloat(Number(incomeRecord.hostEarned || 0).toFixed(2)),
+              rechargeCount: 1,
+              lastRechargeAt: Date.now()
+            });
+          }
+        }
+
         await setDoc(hostDocRef, {
           incomeHistory: nextHistory,
           netIncome: parseFloat(Number(nextNet).toFixed(2)),
@@ -534,6 +578,7 @@ export const recordHostIncomeToCloud = async (
           grossRevenue: parseFloat(Number(nextGross).toFixed(2)),
           totalMessagesReceived: nextMessages,
           referralIncome: nextReferralIncome,
+          referredCallers: nextReferredCallers,
           lastActiveAt: Date.now()
         }, { merge: true });
       }
@@ -569,6 +614,44 @@ export const recordHostIncomeToCloud = async (
               parsedHost.referralIncome = parseFloat(
                 Number((parsedHost.referralIncome || 0) + (incomeRecord.hostEarned || 0)).toFixed(2)
               );
+              const localReferred = Array.isArray(parsedHost.referredCallers) ? [...parsedHost.referredCallers] : [];
+              const cPhone = String(incomeRecord.callerPhone || incomeRecord.callerId || '').replace(/\D/g, '').slice(-10);
+              const cId = incomeRecord.callerId || (cPhone ? `caller-${cPhone}` : `caller_${Date.now()}`);
+              const rIdx = localReferred.findIndex(
+                (rc: any) =>
+                  rc.callerId === cId ||
+                  (cPhone && String(rc.callerPhone || rc.callerId || '').replace(/\D/g, '').slice(-10) === cPhone)
+              );
+              if (rIdx >= 0) {
+                localReferred[rIdx] = {
+                  ...localReferred[rIdx],
+                  callerName: incomeRecord.callerName || localReferred[rIdx].callerName || 'Caller',
+                  callerAvatar: incomeRecord.callerAvatar || localReferred[rIdx].callerAvatar,
+                  totalRechargeAmount: parseFloat(
+                    Number((localReferred[rIdx].totalRechargeAmount || 0) + (incomeRecord.grossAmount || 0)).toFixed(2)
+                  ),
+                  totalCommissionEarned: parseFloat(
+                    Number((localReferred[rIdx].totalCommissionEarned || 0) + (incomeRecord.hostEarned || 0)).toFixed(2)
+                  ),
+                  rechargeCount: (Number(localReferred[rIdx].rechargeCount) || 0) + 1,
+                  lastRechargeAt: Date.now()
+                };
+              } else {
+                localReferred.unshift({
+                  callerId: cId,
+                  callerName: incomeRecord.callerName || 'Caller',
+                  callerPhone: cPhone || undefined,
+                  callerAvatar:
+                    incomeRecord.callerAvatar ||
+                    'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&auto=format&fit=crop&q=80',
+                  joinedAt: Date.now(),
+                  totalRechargeAmount: parseFloat(Number(incomeRecord.grossAmount || 0).toFixed(2)),
+                  totalCommissionEarned: parseFloat(Number(incomeRecord.hostEarned || 0).toFixed(2)),
+                  rechargeCount: 1,
+                  lastRechargeAt: Date.now()
+                });
+              }
+              parsedHost.referredCallers = localReferred;
             }
             localStorage.setItem('sunosakhi_host_profile', JSON.stringify(parsedHost));
             window.dispatchEvent(new CustomEvent('sunosakhi-host-income-updated', { detail: parsedHost }));

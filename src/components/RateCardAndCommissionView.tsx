@@ -231,7 +231,7 @@ export const RateCardAndCommissionView: React.FC<RateCardAndCommissionViewProps>
                   </div>
                 </div>
                 <span className="px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 text-black font-black text-[10px] uppercase shadow">
-                  VOICE: ₹2/MIN FLAT
+                  VOICE: ₹3/MIN FLAT
                 </span>
               </div>
 
@@ -244,10 +244,10 @@ export const RateCardAndCommissionView: React.FC<RateCardAndCommissionViewProps>
                       <Phone className="w-4 h-4 text-emerald-400" />
                       <span>Audio Call Income (Flat Rate)</span>
                     </h4>
-                    <p className="text-[11px] text-gray-400">Flat ₹2.00/min direct earning for all Hosts</p>
+                    <p className="text-[11px] text-gray-400">Flat ₹3.00/min direct earning for all Hosts</p>
                   </div>
                   <div className="text-right">
-                    <span className="text-base font-black text-emerald-300">₹2.00</span>
+                    <span className="text-base font-black text-emerald-300">₹3.00</span>
                     <span className="text-[10px] text-gray-400 block">/ min flat</span>
                   </div>
                 </div>

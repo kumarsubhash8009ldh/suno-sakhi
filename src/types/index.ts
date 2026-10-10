@@ -82,6 +82,22 @@ export interface HostIncomeRecord {
   timestamp: number;
   durationMinutes?: number;
   details?: string;
+  callerId?: string;
+  callerName?: string;
+  callerAvatar?: string;
+  callerPhone?: string;
+}
+
+export interface ReferredCallerInfo {
+  callerId: string;
+  callerName: string;
+  callerPhone?: string;
+  callerAvatar: string;
+  joinedAt: number;
+  totalRechargeAmount: number;
+  totalCommissionEarned: number;
+  rechargeCount: number;
+  lastRechargeAt?: number;
 }
 
 export interface HostVerificationData {
@@ -151,6 +167,7 @@ export interface HostProfile extends Sakhi {
   referralIncome?: number;
   referralCount?: number;
   referredBy?: string;
+  referredCallers?: ReferredCallerInfo[];
   verification: HostVerificationData;
   incomeHistory: HostIncomeRecord[];
 }
@@ -236,6 +253,9 @@ export interface RechargeRequest {
   userId: string;
   userName?: string;
   userPhone?: string;
+  userAvatar?: string;
+  referredBy?: string;
+  referralCredited?: boolean;
   amount: number;
   bonus: number;
   totalBalance: number;

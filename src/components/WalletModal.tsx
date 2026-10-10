@@ -25,6 +25,7 @@ import { useAdmin } from '../context/AdminContext';
 import { RECHARGE_PACKS } from '../data/sakhis';
 import { RechargePack, RechargeRequest } from '../types';
 import { UpiQrScanner } from './UpiQrScanner';
+import { getSavedReferredBy } from '../services/referralSync';
 
 export const WalletModal: React.FC = () => {
   const {
@@ -40,6 +41,7 @@ export const WalletModal: React.FC = () => {
   const [selectedPack, setSelectedPack] = useState<RechargePack>(RECHARGE_PACKS[0]); // Default ₹50 (Minimum recharge pack)
   const [step, setStep] = useState<'pack' | 'utr' | 'success'>('pack');
   const [utrInput, setUtrInput] = useState('');
+  const [hostRefInput, setHostRefInput] = useState<string>(() => getSavedReferredBy() || '');
   const [copied, setCopied] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -71,6 +73,10 @@ export const WalletModal: React.FC = () => {
       setSubmitError('Minimum recharge amount ₹50 hai.');
       return;
     }
+    const savedRef = getSavedReferredBy();
+    if (savedRef && !hostRefInput) {
+      setHostRefInput(savedRef);
+    }
     setStep('utr');
     setSubmitError(null);
     setUtrInput('');
@@ -93,7 +99,8 @@ export const WalletModal: React.FC = () => {
 
     setIsSubmitting(true);
     try {
-      const res = await submitRecharge(selectedPack.amount, selectedPack.bonus, clean, 'UPI');
+      const cleanRef = hostRefInput.trim().toUpperCase() || undefined;
+      const res = await submitRecharge(selectedPack.amount, selectedPack.bonus, clean, 'UPI', cleanRef);
       if (res.success && res.request) {
         setSubmittedReq(res.request);
         setStep('success');
@@ -447,6 +454,28 @@ export const WalletModal: React.FC = () => {
                     />
                     <p className="text-[10px] text-gray-400 mt-1">
                       ⚠️ Bina sahi UTR number ke payment verify nahi ho payega.
+                    </p>
+                  </div>
+
+                  {/* Host Reference ID (Optional - 1% Commission to Host) */}
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30">
+                    <label className="text-[11px] font-bold text-amber-300 block mb-1 flex items-center justify-between">
+                      <span>🤝 Host Reference ID (Optional — 1% Host Bonus)</span>
+                      {hostRefInput.trim() && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          Linked ✅
+                        </span>
+                      )}
+                    </label>
+                    <input
+                      type="text"
+                      value={hostRefInput}
+                      onChange={(e) => setHostRefInput(e.target.value.toUpperCase())}
+                      placeholder="e.g. SAKHI-9876543210 (Optional)"
+                      className="w-full px-3 py-2 rounded-lg bg-black/60 border border-amber-500/40 text-amber-200 text-xs font-mono tracking-wider focus:outline-none focus:border-amber-400"
+                    />
+                    <p className="text-[10px] text-amber-200/70 mt-1">
+                      Payment add karne par Host ko 1% Refer Commission (+₹{Math.max(0.01, Number((selectedPack.amount * 0.01).toFixed(2))).toFixed(2)}) milega aur Host ke Refer ID me aapka Name & Profile show hoga.
                     </p>
                   </div>
 

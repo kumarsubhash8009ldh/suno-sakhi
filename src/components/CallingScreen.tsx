@@ -39,12 +39,12 @@ export const CallingScreen: React.FC = () => {
     if (callStatus === 'calling') {
       sounds.unlockAudio();
       sounds.setRingtoneVolume(isSpeakerOn ? callVolume : callVolume * 0.25);
-      sounds.startRingtone();
+      sounds.startCallerTune(activeSakhi?.name);
     }
     return () => {
       sounds.stopRingtone();
     };
-  }, [callStatus]);
+  }, [callStatus, activeSakhi?.id]);
 
   useEffect(() => {
     sounds.setRingtoneVolume(isSpeakerOn ? callVolume : callVolume * 0.25);
@@ -60,7 +60,7 @@ export const CallingScreen: React.FC = () => {
     <div
       onClick={() => {
         sounds.unlockAudio();
-        sounds.startRingtone();
+        sounds.startCallerTune(activeSakhi?.name);
       }}
       className="fixed inset-0 z-50 flex flex-col items-center justify-between p-6 bg-gradient-to-b from-[#180928] via-[#0e0517] to-black text-white select-none"
     >
@@ -99,7 +99,11 @@ export const CallingScreen: React.FC = () => {
         </div>
         <p className="text-sm font-medium text-pink-400 animate-pulse mt-3 flex items-center gap-1.5">
           <Sparkles className="w-4 h-4" />
-          <span>{isHost ? `Connecting to User...` : '🎵 Melodic Caller Tune Ringing... (Auto-Bypass Active)'}</span>
+          <span>
+            {isHost
+              ? '🎵 Suno Sakhi Caller Tune Playing... (Connecting to User)'
+              : '🎵 Suno Sakhi Caller Tune Playing... (Auto-Bypass Active)'}
+          </span>
         </p>
 
         {forwardingNotice && (

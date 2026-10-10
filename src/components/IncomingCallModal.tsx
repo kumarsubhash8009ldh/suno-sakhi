@@ -263,9 +263,9 @@ export const IncomingCallModal: React.FC = () => {
 
   useEffect(() => {
     if (incomingCall) {
-      // Force audio unlock and start ringtone
+      // Force audio unlock and start Suno Sakhi Incoming Ringtone
       sounds.unlockAudio();
-      sounds.startRingtone({ vibrate: true });
+      sounds.startIncomingRingtone(incomingCall.callerName);
 
       // Mobile vibration alert
       if (typeof navigator !== 'undefined' && navigator.vibrate) {
@@ -283,7 +283,7 @@ export const IncomingCallModal: React.FC = () => {
       // Touch / click unlock listener in case browser blocked autoplay
       const handleUserTouch = () => {
         sounds.unlockAudio();
-        sounds.startRingtone({ vibrate: true });
+        sounds.startIncomingRingtone(incomingCall.callerName);
         setAudioUnlocked(true);
       };
 
@@ -319,7 +319,7 @@ export const IncomingCallModal: React.FC = () => {
 
   const handleModalTouch = () => {
     sounds.unlockAudio();
-    sounds.startRingtone({ vibrate: true });
+    sounds.startIncomingRingtone(incomingCall.callerName);
     setAudioUnlocked(true);
   };
 
@@ -384,7 +384,7 @@ export const IncomingCallModal: React.FC = () => {
           className="relative z-10 flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-pink-600/40 to-purple-600/40 border-2 border-pink-400 text-white text-xs font-black mb-4 animate-pulse shadow-lg shadow-pink-900/50 hover:scale-105 active:scale-95 transition-transform"
         >
           <BellRing className="w-4 h-4 text-pink-300 animate-bounce" />
-          <span>🔊 Phone Ringing • Tap to Unmute / Ring Loud!</span>
+          <span>🔔 Suno Sakhi Ringtone Ringing • Tap for Loud Ring!</span>
           <Volume2 className="w-4 h-4 text-emerald-300 animate-pulse" />
         </button>
 

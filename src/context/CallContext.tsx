@@ -250,8 +250,8 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCallType(type);
     setCallStatus('calling');
 
-    // Ensure melodic caller tune is playing
-    sounds.startRingtone();
+    // Ensure Suno Sakhi Caller Tune is playing
+    sounds.startCallerTune(targetSakhi.name);
 
     const session = getActiveSession();
     const isHost = checkIsHost(session);

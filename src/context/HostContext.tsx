@@ -212,7 +212,13 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const isLogged = localStorage.getItem('sunosakhi_host_logged_in') === 'true';
       if (!isLogged) return defaultHost;
       const saved = localStorage.getItem(HOST_STORAGE_KEY);
-      return saved ? sanitizeHostProfile(JSON.parse(saved)) : defaultHost;
+      if (!saved) return defaultHost;
+      const parsed = sanitizeHostProfile(JSON.parse(saved));
+      const manualOffline = sessionStorage.getItem('sunosakhi_host_manual_offline') === 'true';
+      if (!manualOffline && parsed.status === 'offline') {
+        parsed.status = 'online';
+      }
+      return parsed;
     } catch {
       return defaultHost;
     }
@@ -274,7 +280,14 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (isLogged) {
         try {
           const saved = localStorage.getItem(HOST_STORAGE_KEY);
-          if (saved) setHostProfile(sanitizeHostProfile(JSON.parse(saved)));
+          if (saved) {
+            const parsed = sanitizeHostProfile(JSON.parse(saved));
+            const manualOffline = sessionStorage.getItem('sunosakhi_host_manual_offline') === 'true';
+            if (!manualOffline && parsed.status === 'offline') {
+              parsed.status = 'online';
+            }
+            setHostProfile(parsed);
+          }
         } catch {
           // ignore
         }
@@ -303,21 +316,42 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loginWithOtp = async (identifier: string, otp: string) => {
     const ok = verifyMobileOtp(identifier, otp);
     if (ok || otp === '123456' || otp === '999999' || otp === '000000') {
-      const normalized = identifier.replace(/\D/g, '');
-      const account = await getHostAccountByPhone(normalized);
+      const isEmail = identifier.includes('@');
+      const normalized = isEmail ? identifier.toLowerCase().trim() : identifier.replace(/\D/g, '').slice(-10);
+      const account = await getHostAccountByPhone(identifier);
+      const cleanPhone = isEmail
+        ? (account?.phone ? account.phone.replace(/\D/g, '').slice(-10) : '')
+        : normalized;
+      const fallbackId = isEmail
+        ? 'sakhi-email-' + normalized.replace(/[^a-z0-9]/g, '_')
+        : 'sakhi-user-' + cleanPhone;
       const updatedProfile: HostProfile = sanitizeHostProfile({
         ...hostProfile,
         ...(account || {}),
-        id: account?.hostId || 'sakhi-user-' + normalized,
+        id: account?.hostId || fallbackId,
         name: account?.name || hostProfile.name || 'Sakhi Host',
-        phone: normalized,
+        phone: cleanPhone,
+        email: isEmail ? normalized : (account?.email || hostProfile.email || ''),
         status: 'online',
-        isVerified: true
+        isVerified: true,
+        verification: {
+          ...(hostProfile.verification || defaultHost.verification),
+          status: 'verified'
+        }
       });
+      sessionStorage.removeItem('sunosakhi_host_manual_offline');
       setHostProfile(updatedProfile);
       localStorage.setItem(HOST_STORAGE_KEY, JSON.stringify(updatedProfile));
       localStorage.setItem('sunosakhi_host_logged_in', 'true');
       saveHostProfileToCloud(updatedProfile);
+      updateHostOnlineStatus(updatedProfile.id, 'online', {
+        name: updatedProfile.name,
+        phone: updatedProfile.phone,
+        avatar: updatedProfile.avatar,
+        languages: updatedProfile.languages,
+        city: updatedProfile.city,
+        bio: updatedProfile.bio
+      });
       setIsHostLoggedIn(true);
       setUserRole('host');
       broadcastAuthChange();
@@ -334,20 +368,41 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loginWithPassword = async (identifier: string, password: string) => {
     const res = await loginHostWithCredentials(identifier, password);
     if (res.success) {
-      const normalized = identifier.replace(/\D/g, '');
+      const isEmail = identifier.includes('@');
+      const normalized = isEmail ? identifier.toLowerCase().trim() : identifier.replace(/\D/g, '').slice(-10);
+      const cleanPhone = isEmail
+        ? (res.hostProfile?.phone ? res.hostProfile.phone.replace(/\D/g, '').slice(-10) : '')
+        : normalized;
+      const fallbackId = isEmail
+        ? 'sakhi-email-' + normalized.replace(/[^a-z0-9]/g, '_')
+        : 'sakhi-user-' + cleanPhone;
       const updatedProfile: HostProfile = sanitizeHostProfile({
         ...hostProfile,
         ...(res.hostProfile || {}),
-        id: res.hostProfile?.id || 'sakhi-user-' + normalized,
+        id: res.hostProfile?.id || fallbackId,
         name: res.hostProfile?.name || hostProfile.name || 'Sakhi Host',
-        phone: normalized,
+        phone: cleanPhone,
+        email: isEmail ? normalized : (res.hostProfile?.email || hostProfile.email || ''),
         status: 'online',
-        isVerified: true
+        isVerified: true,
+        verification: {
+          ...(res.hostProfile?.verification || hostProfile.verification || defaultHost.verification),
+          status: 'verified'
+        }
       });
+      sessionStorage.removeItem('sunosakhi_host_manual_offline');
       setHostProfile(updatedProfile);
       localStorage.setItem(HOST_STORAGE_KEY, JSON.stringify(updatedProfile));
       localStorage.setItem('sunosakhi_host_logged_in', 'true');
       saveHostProfileToCloud(updatedProfile);
+      updateHostOnlineStatus(updatedProfile.id, 'online', {
+        name: updatedProfile.name,
+        phone: updatedProfile.phone,
+        avatar: updatedProfile.avatar,
+        languages: updatedProfile.languages,
+        city: updatedProfile.city,
+        bio: updatedProfile.bio
+      });
       setIsHostLoggedIn(true);
       setUserRole('host');
       broadcastAuthChange();
@@ -381,13 +436,25 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const activeHost: HostProfile = {
         ...res.hostProfile,
         status: 'online',
-        isVerified: true
+        isVerified: true,
+        verification: {
+          ...(res.hostProfile.verification || defaultHost.verification),
+          status: 'verified'
+        }
       };
+      sessionStorage.removeItem('sunosakhi_host_manual_offline');
       setHostProfile(activeHost);
       localStorage.setItem(HOST_STORAGE_KEY, JSON.stringify(activeHost));
       localStorage.setItem('sunosakhi_host_logged_in', 'true');
       await saveHostProfileToCloud(activeHost);
-      await updateHostOnlineStatus(activeHost.id, 'online');
+      await updateHostOnlineStatus(activeHost.id, 'online', {
+        name: activeHost.name,
+        phone: activeHost.phone,
+        avatar: activeHost.avatar,
+        languages: activeHost.languages,
+        city: activeHost.city,
+        bio: activeHost.bio
+      });
       setIsHostLoggedIn(true);
       setUserRole('host');
       broadcastAuthChange();
@@ -402,6 +469,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logoutHost = () => {
+    sessionStorage.removeItem('sunosakhi_host_manual_offline');
     if (hostProfile.id) {
       updateHostOnlineStatus(hostProfile.id, 'offline');
     }
@@ -417,16 +485,15 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (isHostLoggedIn && (hostProfile.phone || (hostProfile as any).email || hostProfile.id)) {
       localStorage.setItem(HOST_STORAGE_KEY, JSON.stringify(hostProfile));
     }
+    const cleanPhone = (hostProfile?.phone || '').replace(/\D/g, '');
+    const hasValidPhone = cleanPhone.length === 10;
+    const hasValidEmail = Boolean(hostProfile?.email && hostProfile.email.includes('@'));
     if (
       isHostLoggedIn &&
-      userRole === 'host' &&
       hostProfile &&
-      hostProfile.phone &&
-      hostProfile.phone.replace(/\D/g, '').length >= 10 &&
+      (hasValidPhone || hasValidEmail) &&
       hostProfile.name &&
-      hostProfile.name.trim() !== '' &&
-      hostProfile.name !== 'Sakhi Host' &&
-      !hostProfile.name.toLowerCase().startsWith('caller')
+      hostProfile.name.trim() !== ''
     ) {
       saveHostProfileToCloud(hostProfile);
     }
@@ -439,14 +506,19 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Real-time live host profile & earnings sync (sath k sath update)
   useEffect(() => {
     if (!isHostLoggedIn) return;
-    const targetHostId = hostProfile.id || (hostProfile.phone ? `host_${hostProfile.phone.replace(/\D/g, '')}` : '');
     const cleanPhone = (hostProfile.phone || '').replace(/\D/g, '');
-    if (!targetHostId && cleanPhone.length < 10) return;
+    const validPhone = cleanPhone.length === 10 ? cleanPhone : '';
+    const targetHostId = hostProfile.id || (validPhone ? `sakhi-user-${validPhone}` : '');
+    if (!targetHostId && !validPhone) return;
 
     const unsub = subscribeToHostProfile(targetHostId, (cloudData: any) => {
       if (!cloudData) return;
       setHostProfile((prev) => {
         const merged = { ...prev, ...cloudData };
+        const manualOffline = sessionStorage.getItem('sunosakhi_host_manual_offline') === 'true';
+        if (!manualOffline && merged.status === 'offline') {
+          merged.status = 'online';
+        }
         if (cloudData.pendingPayout !== undefined) merged.pendingPayout = cloudData.pendingPayout;
         if (cloudData.netIncome !== undefined) merged.netIncome = cloudData.netIncome;
         if (cloudData.grossRevenue !== undefined) merged.grossRevenue = cloudData.grossRevenue;
@@ -466,7 +538,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem(HOST_STORAGE_KEY, JSON.stringify(merged));
         return merged;
       });
-    }, cleanPhone);
+    }, validPhone);
 
     return () => {
       if (unsub) unsub();
@@ -667,7 +739,8 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     if (!isHostLoggedIn || !hostProfile.id) return;
     const sendHostHeartbeat = () => {
-      const currentStatus = hostProfile.status === 'offline' ? 'offline' : hostProfile.status === 'busy' ? 'busy' : 'online';
+      const manualOffline = sessionStorage.getItem('sunosakhi_host_manual_offline') === 'true';
+      const currentStatus = manualOffline ? 'offline' : hostProfile.status === 'busy' ? 'busy' : 'online';
       updateHostOnlineStatus(hostProfile.id, currentStatus, {
         name: hostProfile.name,
         phone: hostProfile.phone,

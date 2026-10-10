@@ -1,5 +1,5 @@
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
-import { getFirestore, Firestore } from 'firebase/firestore';
+import { getFirestore, initializeFirestore, Firestore } from 'firebase/firestore';
 import { getAuth, Auth } from 'firebase/auth';
 
 const firebaseConfig = {
@@ -28,7 +28,11 @@ let auth: Auth | null = null;
 if (isFirebaseConfigured()) {
   try {
     app = getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig);
-    db = getFirestore(app);
+    try {
+      db = initializeFirestore(app, { ignoreUndefinedProperties: true });
+    } catch {
+      db = getFirestore(app);
+    }
     auth = getAuth(app);
     console.log('✅ Firebase initialized successfully in Suno Sakhi cloud sync mode.');
   } catch (err) {

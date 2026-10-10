@@ -75,7 +75,8 @@ export const saveUserToCloud = async (user: UserAccount): Promise<boolean> => {
     ...user,
     id: user.id || `caller-${docKey}`,
     phone: cleanPhone,
-    email: em || undefined,
+    email: em || '',
+    referredBy: user.referredBy || '',
     name: user.name && user.name.trim() && user.name !== 'Sakhi Host'
       ? user.name.trim()
       : 'Caller',
@@ -105,7 +106,24 @@ export const saveUserToCloud = async (user: UserAccount): Promise<boolean> => {
 };
 
 export const updateUserOnlinePresence = async (isOnline: boolean): Promise<boolean> => {
-  const current = getCurrentUser();
+  let current = getCurrentUser();
+  if (!current && isOnline) {
+    const sess = getActiveSession();
+    if (sess.isLoggedIn && sess.role === 'caller' && (sess.phone || sess.email)) {
+      current = {
+        id: sess.id || `caller-${sess.phone || sess.email}`,
+        phone: sess.phone || '',
+        email: sess.email || '',
+        name: sess.name || 'Caller',
+        avatar: sess.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
+        createdAt: Date.now(),
+        lastLoginAt: Date.now(),
+        status: 'online',
+        isOnline: true,
+        balance: 20.0
+      };
+    }
+  }
   if (!current) return false;
   const p = current.phone ? String(current.phone).replace(/\D/g, '') : '';
   const em = current.email ? String(current.email).trim().toLowerCase() : '';
@@ -113,11 +131,35 @@ export const updateUserOnlinePresence = async (isOnline: boolean): Promise<boole
   if (!cleanPhone && !em) return false;
 
   const docKey = cleanPhone || em.replace(/[^a-z0-9]/g, '_');
+  try {
+    const updatedUser: UserAccount = {
+      ...current,
+      id: current.id || `caller-${docKey}`,
+      phone: cleanPhone,
+      email: em || '',
+      isOnline,
+      status: isOnline ? 'online' : 'offline',
+      lastLoginAt: Date.now()
+    };
+    saveUserToLocalRegistry(updatedUser);
+    if (isOnline) {
+      localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('sunosakhi-callers-updated'));
+    }
+  } catch {}
+
   if (isFirebaseConfigured() && db) {
     try {
       await setDoc(
         doc(db, USER_ACCOUNTS_COLLECTION, docKey),
         {
+          id: current.id || `caller-${docKey}`,
+          phone: cleanPhone,
+          email: em || '',
+          name: current.name || 'Caller',
+          avatar: current.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
           isOnline,
           status: isOnline ? 'online' : 'offline',
           lastActiveAt: Date.now()
@@ -460,7 +502,7 @@ export const registerNewUser = async (
     avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
     createdAt: Date.now(),
     lastLoginAt: Date.now(),
-    referredBy: referredBy || undefined,
+    referredBy: referredBy || '',
     status: 'online',
     isOnline: true,
     balance: 20.0
@@ -692,7 +734,7 @@ export const loginExistingUser = async (
       pendingPayout: hostMatch.pendingPayout || 0,
       upiId: hostMatch.upiId || '',
       phone: pDigits,
-      email: hostMatch.email || cleanEmail || undefined,
+      email: hostMatch.email || cleanEmail || '',
       isVerified: isHostVerified,
       verification: hostMatch.verification || {
         panNumber: 'DIRECT_ACTIVE',
@@ -713,6 +755,23 @@ export const loginExistingUser = async (
     localStorage.removeItem(STORAGE_KEY_USER_ID);
     setActiveRole('host');
 
+    // Update local registered hosts cache immediately to online
+    try {
+      const rawHosts = localStorage.getItem('sunosakhi_registered_hosts');
+      const hList = rawHosts ? JSON.parse(rawHosts) : [];
+      if (Array.isArray(hList)) {
+        const idx = hList.findIndex(
+          (h: any) => h.id === hostProfile.id || (pDigits && h.phone === pDigits)
+        );
+        if (idx >= 0) {
+          hList[idx] = { ...hList[idx], ...hostProfile, status: 'online' };
+        } else {
+          hList.unshift({ ...hostProfile, status: 'online' });
+        }
+        localStorage.setItem('sunosakhi_registered_hosts', JSON.stringify(hList));
+      }
+    } catch {}
+
     // Update Firestore status to online
     if (isFirebaseConfigured() && db && hostProfile.id) {
       try {
@@ -721,7 +780,9 @@ export const loginExistingUser = async (
           status: 'online',
           lastActiveAt: Date.now()
         }, { merge: true });
-      } catch {}
+      } catch (err) {
+        console.warn('Could not update host online status on login:', err);
+      }
     }
 
     broadcastAuthChange();
@@ -855,7 +916,11 @@ export const updateUserProfileName = async (newName: string): Promise<boolean> =
 };
 
 export const logoutCurrentUser = (): void => {
+  try {
+    updateUserOnlinePresence(false);
+  } catch {}
   localStorage.removeItem(CURRENT_USER_KEY);
+  localStorage.removeItem(STORAGE_KEY_USER_ID);
   broadcastAuthChange();
 };
 
@@ -1086,29 +1151,63 @@ export const subscribeToAllRealCallers = (
   let isUnsubscribed = false;
   const callersMap = new Map<string, UserAccount>();
 
+  const injectLoggedInCaller = (targetMap: Map<string, UserAccount>) => {
+    try {
+      const current = getCurrentUser();
+      if (current && (current.phone || current.email)) {
+        const rawP = String(current.phone || '').replace(/\D/g, '');
+        const p = rawP.length >= 10 ? rawP.slice(-10) : '';
+        const em = (current.email || '').trim().toLowerCase();
+        if (p.length === 10 || em) {
+          const k = p || em || current.id;
+          const existing = targetMap.get(k);
+          targetMap.set(k, {
+            ...(existing || {}),
+            ...current,
+            id: current.id || existing?.id || `caller-${p || em.replace(/[^a-z0-9]/g, '_')}`,
+            phone: p,
+            email: em,
+            name: current.name && current.name !== 'Caller' ? current.name : existing?.name || 'Caller',
+            status: 'online',
+            isOnline: true
+          });
+        }
+      }
+    } catch {}
+  };
+
   // 1. Initial Local Registry Cache
   const localMap = getLocalRegisteredUsers();
   Object.values(localMap).forEach((u) => {
-    const cleanPhone = (u.phone || '').replace(/\D/g, '');
+    const rawP = (u.phone || '').replace(/\D/g, '');
+    const cleanPhone = rawP.length >= 10 ? rawP.slice(-10) : '';
     const cleanEmail = (u.email || '').trim().toLowerCase();
-    if (cleanPhone.length >= 10 || (cleanEmail && cleanEmail.includes('@'))) {
+    if (cleanPhone.length === 10 || (cleanEmail && cleanEmail.includes('@'))) {
       const key = cleanPhone || cleanEmail || u.id;
-      callersMap.set(key, { ...u, phone: cleanPhone, email: cleanEmail });
+      const isUserOnline = u.status !== 'blocked' && u.status !== 'offline' && u.isOnline !== false;
+      callersMap.set(key, {
+        ...u,
+        phone: cleanPhone,
+        email: cleanEmail,
+        status: u.status === 'blocked' ? 'blocked' : (isUserOnline ? 'online' : 'offline'),
+        isOnline: isUserOnline
+      });
     }
   });
+  injectLoggedInCaller(callersMap);
   if (callersMap.size > 0) {
     onUpdate(Array.from(callersMap.values()));
   }
 
   const publish = () => {
     if (isUnsubscribed) return;
+    injectLoggedInCaller(callersMap);
     const cleanList = Array.from(callersMap.values()).filter((u) => {
       const p = (u.phone || '').replace(/\D/g, '');
       const em = (u.email || '').trim().toLowerCase();
       const hasPhone = p.length >= 10;
       const hasEmail = Boolean(em && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em));
       if (!hasPhone && !hasEmail) return false;
-      // Exclude hosts
       if (
         u.id?.startsWith('sakhi-user-') ||
         u.id?.startsWith('sakhi-host-') ||
@@ -1122,6 +1221,34 @@ export const subscribeToAllRealCallers = (
     onUpdate(cleanList);
   };
 
+  const handleLocalCallerSync = () => {
+    const latestLocal = getLocalRegisteredUsers();
+    Object.values(latestLocal).forEach((u) => {
+      const rawP = (u.phone || '').replace(/\D/g, '');
+      const cleanPhone = rawP.length >= 10 ? rawP.slice(-10) : '';
+      const cleanEmail = (u.email || '').trim().toLowerCase();
+      if (cleanPhone.length === 10 || (cleanEmail && cleanEmail.includes('@'))) {
+        const key = cleanPhone || cleanEmail || u.id;
+        const isUserOnline = u.status !== 'blocked' && u.status !== 'offline' && u.isOnline !== false;
+        callersMap.set(key, {
+          ...u,
+          phone: cleanPhone,
+          email: cleanEmail,
+          status: u.status === 'blocked' ? 'blocked' : (isUserOnline ? 'online' : 'offline'),
+          isOnline: isUserOnline
+        });
+      }
+    });
+    publish();
+  };
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('sunosakhi-auth-changed', handleLocalCallerSync);
+    window.addEventListener('user-auth-changed', handleLocalCallerSync);
+    window.addEventListener('sunosakhi-callers-updated', handleLocalCallerSync);
+    window.addEventListener('storage', handleLocalCallerSync);
+  }
+
   // 2. Real-Time Cloud Firestore Listener on user_accounts
   let firestoreUnsub: (() => void) | null = null;
   if (isFirebaseConfigured() && db) {
@@ -1130,14 +1257,15 @@ export const subscribeToAllRealCallers = (
       firestoreUnsub = onSnapshot(
         colRef,
         (snapshot) => {
-          // Fresh map for each snapshot so deleted/purged callers vanish immediately
           const currentSnapshotMap = new Map<string, UserAccount>();
           snapshot.forEach((docSnap) => {
             const data = docSnap.data() as any;
             if (data) {
               const docId = docSnap.id;
-              const phoneDigits = docId.replace(/\D/g, '').slice(-10);
-              const phone = data.phone ? String(data.phone).replace(/\D/g, '').slice(-10) : (phoneDigits.length === 10 ? phoneDigits : '');
+              const rawDocDigits = docId.replace(/\D/g, '');
+              const phoneDigits = rawDocDigits.length === 10 ? rawDocDigits : '';
+              const rawDataPhone = data.phone ? String(data.phone).replace(/\D/g, '') : '';
+              const phone = rawDataPhone.length >= 10 ? rawDataPhone.slice(-10) : phoneDigits;
               const email = data.email || (docId.includes('@') ? docId : '');
               const cleanPhone = phone;
               const cleanEmail = String(email || '').trim().toLowerCase();
@@ -1165,24 +1293,9 @@ export const subscribeToAllRealCallers = (
             }
           });
 
-          // Also ensure local active caller appears in list
-          try {
-            const current = getCurrentUser();
-            if (current && (current.phone || current.email)) {
-              const p = String(current.phone || '').replace(/\D/g, '').slice(-10);
-              const em = (current.email || '').trim().toLowerCase();
-              const k = p || em || current.id;
-              if (!currentSnapshotMap.has(k)) {
-                currentSnapshotMap.set(k, {
-                  ...current,
-                  status: 'online',
-                  isOnline: true
-                });
-              }
-            }
-          } catch {}
+          injectLoggedInCaller(currentSnapshotMap);
 
-          // Also merge any real caller from conversations cache in-memory (without overwriting balances!)
+          // Also merge any real caller from conversations cache in-memory
           try {
             const rawConvs = localStorage.getItem('sunosakhi_conversations_cache');
             if (rawConvs) {
@@ -1208,13 +1321,15 @@ export const subscribeToAllRealCallers = (
             }
           } catch {}
 
+          callersMap.clear();
+          currentSnapshotMap.forEach((v, k) => callersMap.set(k, v));
+
           const cleanList = Array.from(currentSnapshotMap.values()).filter((u) => {
             const p = (u.phone || '').replace(/\D/g, '');
             const em = (u.email || '').trim().toLowerCase();
             const hasPhone = p.length >= 10;
             const hasEmail = Boolean(em && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em));
             if (!hasPhone && !hasEmail) return false;
-            // Exclude explicit host IDs
             if (
               u.id?.startsWith('sakhi-user-') ||
               u.id?.startsWith('sakhi-host-') ||
@@ -1276,6 +1391,12 @@ export const subscribeToAllRealCallers = (
     isUnsubscribed = true;
     if (firestoreUnsub) firestoreUnsub();
     if (intervalId !== null) clearInterval(intervalId);
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('sunosakhi-auth-changed', handleLocalCallerSync);
+      window.removeEventListener('user-auth-changed', handleLocalCallerSync);
+      window.removeEventListener('sunosakhi-callers-updated', handleLocalCallerSync);
+      window.removeEventListener('storage', handleLocalCallerSync);
+    }
   };
 };
 

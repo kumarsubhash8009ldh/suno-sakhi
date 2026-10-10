@@ -146,17 +146,25 @@ export const HostDashboard: React.FC = () => {
     await startCall(callerCompanion, type);
   };
 
-  // Toggle Online/Offline status (Requires Admin KYC Approval)
+  // Toggle Online/Offline status
   const handleToggleOnline = async () => {
-    if (!hostProfile.isVerified || hostProfile.verification?.status !== 'verified') {
-      openVerificationModal();
-      return;
-    }
     const nextStatus = hostProfile.status === 'online' ? 'offline' : 'online';
+    if (nextStatus === 'offline') {
+      sessionStorage.setItem('sunosakhi_host_manual_offline', 'true');
+    } else {
+      sessionStorage.removeItem('sunosakhi_host_manual_offline');
+    }
     setTogglingOnline(true);
     try {
-      await updateHostOnlineStatus(hostProfile.id, nextStatus);
-      updateHostProfile({ status: nextStatus });
+      updateHostProfile({ status: nextStatus, isVerified: true });
+      await updateHostOnlineStatus(hostProfile.id, nextStatus, {
+        name: hostProfile.name,
+        phone: hostProfile.phone,
+        avatar: hostProfile.avatar,
+        languages: hostProfile.languages,
+        city: hostProfile.city,
+        bio: hostProfile.bio
+      });
     } finally {
       setTogglingOnline(false);
     }
@@ -200,7 +208,7 @@ export const HostDashboard: React.FC = () => {
     }
   }, [activeMessageThreadId, hostConversations]);
 
-  // Filter out host account from registered callers list
+  // Host phone & reference ID details
   const myHostPhone = String(hostProfile?.phone || '').replace(/\D/g, '').slice(-10);
   const myHostId = hostProfile?.id || '';
   const myHostEmail = (hostProfile?.email || '').toLowerCase().trim();
@@ -220,14 +228,19 @@ export const HostDashboard: React.FC = () => {
     (item) => item.type === 'referral'
   ).length;
 
-  const filteredCallersList = registeredCallers.filter((c) => {
-    const cp = String(c.phone || c.id || '').replace(/\D/g, '').slice(-10);
-    const ce = (c.email || '').toLowerCase().trim();
-    if (myHostPhone && cp === myHostPhone) return false;
-    if (myHostId && (c.id === myHostId || c.id === `caller-${myHostPhone}`)) return false;
-    if (myHostEmail && ce === myHostEmail) return false;
-    return true;
-  });
+  const filteredCallersList = [...registeredCallers]
+    .filter((c) => {
+      const cp = String(c.phone || c.id || '').replace(/\D/g, '').slice(-10);
+      const ce = (c.email || '').toLowerCase().trim();
+      return cp.length === 10 || Boolean(ce && ce.includes('@'));
+    })
+    .sort((a, b) => {
+      const aOnline = a.status !== 'offline' && a.isOnline !== false;
+      const bOnline = b.status !== 'offline' && b.isOnline !== false;
+      if (aOnline && !bOnline) return -1;
+      if (!aOnline && bOnline) return 1;
+      return (b.lastLoginAt || 0) - (a.lastLoginAt || 0);
+    });
 
   // Merge all Callers who joined or recharged with this Host's Refer ID (Caller Name & Profile Photo)
   const myReferredCallersList = React.useMemo(() => {

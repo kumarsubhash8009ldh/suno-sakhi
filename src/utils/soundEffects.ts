@@ -1,10 +1,12 @@
-// Comprehensive sound effects utility with loud dual-engine ringtone,
-// Web Audio API synthesis, HTML5 audio fallback, and aggressive mobile autoplay unlocker.
+// Comprehensive sound effects utility for Suno Sakhi:
+// 1. Branded Suno Sakhi Caller Tune (for outgoing calls: Santoor/Flute melody + Tring-Tring ringback + Hindi welcome voice)
+// 2. Loud Suno Sakhi Incoming Ringtone (for incoming calls: energetic bell melody + classic double-ring + vibration + voice alert)
+// 3. Dual-engine HTML5 WAV Audio + Web Audio API synthesis + aggressive mobile autoplay unlocker.
 
-function createRingtoneWavBlob(): Blob | null {
+function createCallerTuneWavBlob(): Blob | null {
   try {
     const sampleRate = 22050;
-    const duration = 2.8; // 2.8s sweet melodic Caller Tune cycle
+    const duration = 5.4; // 5.4s Suno Sakhi Caller Tune + Telecom Ringback cycle
     const numSamples = Math.floor(sampleRate * duration);
     const dataSize = numSamples * 2;
     const buffer = new ArrayBuffer(44 + dataSize);
@@ -21,25 +23,27 @@ function createRingtoneWavBlob(): Blob | null {
     writeString(8, 'WAVE');
     writeString(12, 'fmt ');
     view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true); // PCM format
-    view.setUint16(22, 1, true); // Mono channel
+    view.setUint16(20, 1, true); // PCM
+    view.setUint16(22, 1, true); // Mono
     view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * 2, true); // Byte rate
-    view.setUint16(32, 2, true); // Block align
-    view.setUint16(34, 16, true); // Bits per sample
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
     writeString(36, 'data');
     view.setUint32(40, dataSize, true);
 
-    // Melodic Indian Pentatonic / Romantic Caller Tune notes (C5, D5, E5, G5, A5, C6, A5, G5)
+    // Part 1 (0.0s - 3.1s): Suno Sakhi Romantic Santoor & Flute Signature Melody (Raag Pahadi / Yaman)
     const melody = [
-      { start: 0.0, dur: 0.26, freq: 523.25 },  // Sa (C5)
-      { start: 0.26, dur: 0.26, freq: 659.25 }, // Ga (E5)
-      { start: 0.52, dur: 0.26, freq: 783.99 }, // Pa (G5)
-      { start: 0.78, dur: 0.34, freq: 880.00 }, // Dha (A5)
-      { start: 1.15, dur: 0.26, freq: 1046.50 },// High Sa (C6)
-      { start: 1.41, dur: 0.26, freq: 880.00 }, // Dha (A5)
-      { start: 1.67, dur: 0.30, freq: 783.99 }, // Pa (G5)
-      { start: 1.98, dur: 0.55, freq: 659.25 }  // Warm Ga (E5) sustain
+      { start: 0.00, dur: 0.26, freq: 523.25 }, // Sa (C5)
+      { start: 0.26, dur: 0.26, freq: 587.33 }, // Re (D5)
+      { start: 0.52, dur: 0.30, freq: 659.25 }, // Ga (E5)
+      { start: 0.82, dur: 0.28, freq: 783.99 }, // Pa (G5)
+      { start: 1.10, dur: 0.32, freq: 880.00 }, // Dha (A5)
+      { start: 1.42, dur: 0.40, freq: 1046.50 },// High Sa (C6)
+      { start: 1.84, dur: 0.26, freq: 880.00 }, // Dha (A5)
+      { start: 2.10, dur: 0.28, freq: 783.99 }, // Pa (G5)
+      { start: 2.38, dur: 0.30, freq: 659.25 }, // Ga (E5)
+      { start: 2.68, dur: 0.45, freq: 523.25 }, // Warm Sa (C5) sustain
     ];
 
     let offset = 44;
@@ -47,25 +51,40 @@ function createRingtoneWavBlob(): Blob | null {
       const t = i / sampleRate;
       let val = 0;
 
+      // Melodic notes
       for (const note of melody) {
         if (t >= note.start && t < note.start + note.dur) {
           const localT = t - note.start;
-          const attack = Math.min(1, localT / 0.025);
-          const decay = Math.exp(-localT * 3.8);
-          const vibrato = 1 + 0.004 * Math.sin(2 * Math.PI * 5.5 * localT);
+          const attack = Math.min(1, localT / 0.022);
+          const decay = Math.exp(-localT * 3.4);
+          const vibrato = 1 + 0.0045 * Math.sin(2 * Math.PI * 5.8 * localT);
           const f = note.freq * vibrato;
-          // Warm flute + santoor bell harmonics
           const fundamental = Math.sin(2 * Math.PI * f * t);
-          const secondHarmonic = 0.35 * Math.sin(2 * Math.PI * (f * 2) * t);
-          const thirdHarmonic = 0.15 * Math.sin(2 * Math.PI * (f * 3) * t);
-          val += (fundamental + secondHarmonic + thirdHarmonic) * attack * decay * 0.62;
+          const secondHarmonic = 0.36 * Math.sin(2 * Math.PI * (f * 2) * t);
+          const thirdHarmonic = 0.16 * Math.sin(2 * Math.PI * (f * 3) * t);
+          val += (fundamental + secondHarmonic + thirdHarmonic) * attack * decay * 0.58;
         }
       }
 
-      // Soft warm pad chord underneath (C4 + G4)
-      if (t < 2.45) {
-        const padEnv = Math.sin((Math.PI * t) / 2.45) * 0.15;
-        val += (Math.sin(2 * Math.PI * 261.63 * t) + Math.sin(2 * Math.PI * 392.0 * t)) * padEnv;
+      // Warm ambient chord pad underneath (C4 + E4 + G4)
+      if (t < 3.15) {
+        const padEnv = Math.sin((Math.PI * t) / 3.15) * 0.12;
+        val +=
+          (Math.sin(2 * Math.PI * 261.63 * t) +
+            Math.sin(2 * Math.PI * 329.63 * t) +
+            Math.sin(2 * Math.PI * 392.00 * t)) *
+          padEnv;
+      }
+
+      // Part 2 (3.35s - 4.55s): Classic Indian Telecom "Tring-Tring" Double Ringback (400Hz + 450Hz modulated)
+      const isRing1 = t >= 3.35 && t < 3.75;
+      const isRing2 = t >= 3.95 && t < 4.35;
+      if (isRing1 || isRing2) {
+        const mod = 0.75 + 0.25 * Math.sin(2 * Math.PI * 25 * t);
+        const ringTone =
+          0.5 * Math.sin(2 * Math.PI * 425 * t) +
+          0.5 * Math.sin(2 * Math.PI * 450 * t);
+        val += ringTone * mod * 0.42;
       }
 
       const sample = Math.max(-32767, Math.min(32767, Math.floor(val * 32767)));
@@ -75,17 +94,102 @@ function createRingtoneWavBlob(): Blob | null {
 
     return new Blob([buffer], { type: 'audio/wav' });
   } catch (e) {
-    console.warn('WAV generation error:', e);
+    console.warn('CallerTune WAV generation error:', e);
+    return null;
+  }
+}
+
+function createIncomingRingtoneWavBlob(): Blob | null {
+  try {
+    const sampleRate = 22050;
+    const duration = 3.2; // 3.2s Loud Suno Sakhi Incoming Call Ringtone cycle
+    const numSamples = Math.floor(sampleRate * duration);
+    const dataSize = numSamples * 2;
+    const buffer = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(buffer);
+
+    const writeString = (offset: number, str: string) => {
+      for (let i = 0; i < str.length; i++) {
+        view.setUint8(offset + i, str.charCodeAt(i));
+      }
+    };
+
+    writeString(0, 'RIFF');
+    view.setUint32(4, 36 + dataSize, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeString(36, 'data');
+    view.setUint32(40, dataSize, true);
+
+    // Bright, energetic Suno Sakhi Incoming Bell & Marimba Ringtone
+    const ringtoneNotes = [
+      { start: 0.00, dur: 0.18, freq: 659.25 },  // E5
+      { start: 0.18, dur: 0.18, freq: 783.99 },  // G5
+      { start: 0.36, dur: 0.18, freq: 987.77 },  // B5
+      { start: 0.54, dur: 0.26, freq: 1318.51 }, // E6
+      { start: 0.82, dur: 0.18, freq: 1174.66 }, // D6
+      { start: 1.00, dur: 0.18, freq: 987.77 },  // B5
+      { start: 1.18, dur: 0.22, freq: 783.99 },  // G5
+      { start: 1.42, dur: 0.36, freq: 1318.51 }, // E6 bright chime
+    ];
+
+    let offset = 44;
+    for (let i = 0; i < numSamples; i++) {
+      const t = i / sampleRate;
+      let val = 0;
+
+      for (const note of ringtoneNotes) {
+        if (t >= note.start && t < note.start + note.dur) {
+          const localT = t - note.start;
+          const attack = Math.min(1, localT / 0.012);
+          const decay = Math.exp(-localT * 4.2);
+          const f = note.freq;
+          const f1 = Math.sin(2 * Math.PI * f * t);
+          const f2 = 0.45 * Math.sin(2 * Math.PI * (f * 2) * t);
+          const f3 = 0.22 * Math.sin(2 * Math.PI * (f * 3) * t);
+          val += (f1 + f2 + f3) * attack * decay * 0.72;
+        }
+      }
+
+      // High-attention Dual Telephone Bell Shimmer (1.88s - 2.85s)
+      const bell1 = t >= 1.88 && t < 2.30;
+      const bell2 = t >= 2.42 && t < 2.85;
+      if (bell1 || bell2) {
+        const bellMod = 0.65 + 0.35 * Math.sin(2 * Math.PI * 22 * t);
+        const bellWave =
+          0.55 * Math.sin(2 * Math.PI * 880 * t) +
+          0.45 * Math.sin(2 * Math.PI * 1174.66 * t);
+        val += bellWave * bellMod * 0.78;
+      }
+
+      const sample = Math.max(-32767, Math.min(32767, Math.floor(val * 32767)));
+      view.setInt16(offset, sample, true);
+      offset += 2;
+    }
+
+    return new Blob([buffer], { type: 'audio/wav' });
+  } catch (e) {
+    console.warn('IncomingRingtone WAV generation error:', e);
     return null;
   }
 }
 
 class SoundSynthesizer {
   private ctx: AudioContext | null = null;
-  private audioEl: HTMLAudioElement | null = null;
+  private callerTuneAudioEl: HTMLAudioElement | null = null;
+  private ringtoneAudioEl: HTMLAudioElement | null = null;
   private ringInterval: number | null = null;
+  private voiceTimeout: number | null = null;
   private vibrateInterval: number | null = null;
   private isRinging: boolean = false;
+  private activeMode: 'caller_tune' | 'ringtone' | null = null;
   private isUnlocked: boolean = false;
   private ringVolume: number = 1.0;
   private paymentAlarmInterval: number | null = null;
@@ -93,8 +197,12 @@ class SoundSynthesizer {
 
   public setRingtoneVolume(vol: number) {
     this.ringVolume = Math.max(0, Math.min(1.5, vol));
-    if (this.audioEl) {
-      this.audioEl.volume = Math.min(1.0, this.ringVolume);
+    const clampedVol = Math.min(1.0, this.ringVolume);
+    if (this.callerTuneAudioEl) {
+      this.callerTuneAudioEl.volume = clampedVol;
+    }
+    if (this.ringtoneAudioEl) {
+      this.ringtoneAudioEl.volume = clampedVol;
     }
   }
 
@@ -105,13 +213,22 @@ class SoundSynthesizer {
   private setupHtmlAudio() {
     if (typeof window === 'undefined') return;
     try {
-      const wavBlob = createRingtoneWavBlob();
-      if (wavBlob) {
-        const url = URL.createObjectURL(wavBlob);
-        this.audioEl = new Audio(url);
-        this.audioEl.loop = true;
-        this.audioEl.volume = 1.0;
-        this.audioEl.preload = 'auto';
+      const callerTuneBlob = createCallerTuneWavBlob();
+      if (callerTuneBlob) {
+        const url = URL.createObjectURL(callerTuneBlob);
+        this.callerTuneAudioEl = new Audio(url);
+        this.callerTuneAudioEl.loop = true;
+        this.callerTuneAudioEl.volume = 1.0;
+        this.callerTuneAudioEl.preload = 'auto';
+      }
+
+      const ringtoneBlob = createIncomingRingtoneWavBlob();
+      if (ringtoneBlob) {
+        const url = URL.createObjectURL(ringtoneBlob);
+        this.ringtoneAudioEl = new Audio(url);
+        this.ringtoneAudioEl.loop = true;
+        this.ringtoneAudioEl.volume = 1.0;
+        this.ringtoneAudioEl.preload = 'auto';
       }
     } catch (e) {
       console.warn('HTMLAudio setup note:', e);
@@ -146,7 +263,6 @@ class SoundSynthesizer {
         if (ctx.state === 'suspended') {
           ctx.resume().catch(() => {});
         }
-        // Play silent 1-sample buffer to permanently unlock hardware audio pipeline
         const silentBuffer = ctx.createBuffer(1, 1, 22050);
         const source = ctx.createBufferSource();
         source.buffer = silentBuffer;
@@ -154,11 +270,11 @@ class SoundSynthesizer {
         source.start(0);
       }
 
-      if (this.audioEl) {
-        this.audioEl.load();
-        // If currently supposed to be ringing, start playing HTMLAudio immediately
-        if (this.isRinging) {
-          this.audioEl.play().catch(() => {});
+      if (this.isRinging) {
+        if (this.activeMode === 'ringtone' && this.ringtoneAudioEl) {
+          this.ringtoneAudioEl.play().catch(() => {});
+        } else if (this.activeMode === 'caller_tune' && this.callerTuneAudioEl) {
+          this.callerTuneAudioEl.play().catch(() => {});
         }
       }
 
@@ -168,8 +284,34 @@ class SoundSynthesizer {
     }
   }
 
-  // Pleasant Melodic Caller Tune Web Audio synthesis
-  private playWebAudioRingCycle() {
+  // Speak branded Hindi voice line for Suno Sakhi Caller Tune or Incoming Ringtone
+  private speakSunoSakhiVoice(text: string, pitch = 1.1, rate = 1.0) {
+    try {
+      if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+      if (this.isPaymentAlarmActive) return;
+      window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.rate = rate;
+      utter.pitch = pitch;
+      utter.volume = Math.min(1.0, Math.max(0.3, this.ringVolume));
+      const voices = window.speechSynthesis.getVoices();
+      const preferredVoice =
+        voices.find(
+          (v) =>
+            (v.lang.startsWith('hi') || v.lang.startsWith('en-IN')) &&
+            /female|swara|heera|kalpana|google|lekha|neerja/i.test(v.name)
+        ) ||
+        voices.find((v) => v.lang.startsWith('hi') || v.lang.startsWith('en-IN')) ||
+        voices.find((v) => v.lang.startsWith('en'));
+      if (preferredVoice) {
+        utter.voice = preferredVoice;
+      }
+      window.speechSynthesis.speak(utter);
+    } catch {}
+  }
+
+  // Web Audio synthesis for Outgoing Suno Sakhi Caller Tune
+  private playWebAudioCallerTuneCycle() {
     try {
       const ctx = this.initCtx();
       if (!ctx) return;
@@ -180,19 +322,21 @@ class SoundSynthesizer {
 
       const now = ctx.currentTime;
       const master = ctx.createGain();
-      master.gain.setValueAtTime(0.85 * this.ringVolume, now);
+      master.gain.setValueAtTime(0.8 * this.ringVolume, now);
       master.connect(ctx.destination);
 
-      // Melodic 8-note Caller Tune arpeggio (Sa-Ga-Pa-Dha-Sa'-Dha-Pa-Ga)
+      // Suno Sakhi Romantic 10-note Caller Tune arpeggio + Tring-Tring ringback
       const notes = [
-        { f: 523.25, delay: 0.0, dur: 0.25 },
-        { f: 659.25, delay: 0.26, dur: 0.25 },
-        { f: 783.99, delay: 0.52, dur: 0.25 },
-        { f: 880.00, delay: 0.78, dur: 0.32 },
-        { f: 1046.50, delay: 1.15, dur: 0.25 },
-        { f: 880.00, delay: 1.41, dur: 0.25 },
-        { f: 783.99, delay: 1.67, dur: 0.28 },
-        { f: 659.25, delay: 1.98, dur: 0.50 },
+        { f: 523.25, delay: 0.00, dur: 0.25 }, // Sa
+        { f: 587.33, delay: 0.26, dur: 0.25 }, // Re
+        { f: 659.25, delay: 0.52, dur: 0.28 }, // Ga
+        { f: 783.99, delay: 0.82, dur: 0.26 }, // Pa
+        { f: 880.00, delay: 1.10, dur: 0.30 }, // Dha
+        { f: 1046.50, delay: 1.42, dur: 0.38 },// Sa'
+        { f: 880.00, delay: 1.84, dur: 0.25 }, // Dha
+        { f: 783.99, delay: 2.10, dur: 0.26 }, // Pa
+        { f: 659.25, delay: 2.38, dur: 0.28 }, // Ga
+        { f: 523.25, delay: 2.68, dur: 0.45 }, // Sa
       ];
 
       notes.forEach((n) => {
@@ -207,11 +351,11 @@ class SoundSynthesizer {
         overtone.frequency.setValueAtTime(n.f * 2, now + n.delay);
 
         g.gain.setValueAtTime(0, now + n.delay);
-        g.gain.linearRampToValueAtTime(0.75, now + n.delay + 0.025);
+        g.gain.linearRampToValueAtTime(0.7, now + n.delay + 0.022);
         g.gain.exponentialRampToValueAtTime(0.001, now + n.delay + n.dur);
 
         og.gain.setValueAtTime(0, now + n.delay);
-        og.gain.linearRampToValueAtTime(0.22, now + n.delay + 0.02);
+        og.gain.linearRampToValueAtTime(0.22, now + n.delay + 0.018);
         og.gain.exponentialRampToValueAtTime(0.001, now + n.delay + n.dur * 0.8);
 
         osc.connect(g);
@@ -224,56 +368,236 @@ class SoundSynthesizer {
         osc.stop(now + n.delay + n.dur + 0.04);
         overtone.stop(now + n.delay + n.dur + 0.04);
       });
+
+      // Classic Telecom Ringback Double-Tone ("Tring-Tring") at 3.35s and 3.95s
+      [3.35, 3.95].forEach((ringStart) => {
+        const r1 = ctx.createOscillator();
+        const r2 = ctx.createOscillator();
+        const rg = ctx.createGain();
+        r1.type = 'sine';
+        r2.type = 'sine';
+        r1.frequency.setValueAtTime(425, now + ringStart);
+        r2.frequency.setValueAtTime(450, now + ringStart);
+        rg.gain.setValueAtTime(0, now + ringStart);
+        rg.gain.linearRampToValueAtTime(0.32, now + ringStart + 0.02);
+        rg.gain.setValueAtTime(0.32, now + ringStart + 0.35);
+        rg.gain.linearRampToValueAtTime(0.001, now + ringStart + 0.40);
+        r1.connect(rg);
+        r2.connect(rg);
+        rg.connect(master);
+        r1.start(now + ringStart);
+        r2.start(now + ringStart);
+        r1.stop(now + ringStart + 0.42);
+        r2.stop(now + ringStart + 0.42);
+      });
     } catch (e) {
-      console.warn('Web Audio ring cycle error:', e);
+      console.warn('Web Audio caller tune cycle error:', e);
     }
   }
 
-  // Realistic phone ringtone. Outgoing calls NEVER vibrate the caller's phone!
-  public startRingtone(options?: { vibrate?: boolean }) {
+  // Web Audio synthesis for Incoming Suno Sakhi Ringtone (Loud & Energetic)
+  private playWebAudioIncomingRingCycle() {
     try {
+      const ctx = this.initCtx();
+      if (!ctx) return;
+
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+
+      const now = ctx.currentTime;
+      const master = ctx.createGain();
+      master.gain.setValueAtTime(0.95 * this.ringVolume, now);
+      master.connect(ctx.destination);
+
+      const notes = [
+        { f: 659.25, delay: 0.00, dur: 0.17 },  // E5
+        { f: 783.99, delay: 0.18, dur: 0.17 },  // G5
+        { f: 987.77, delay: 0.36, dur: 0.17 },  // B5
+        { f: 1318.51, delay: 0.54, dur: 0.25 }, // E6
+        { f: 1174.66, delay: 0.82, dur: 0.17 }, // D6
+        { f: 987.77, delay: 1.00, dur: 0.17 },  // B5
+        { f: 783.99, delay: 1.18, dur: 0.20 },  // G5
+        { f: 1318.51, delay: 1.42, dur: 0.35 }, // E6
+      ];
+
+      notes.forEach((n) => {
+        const osc = ctx.createOscillator();
+        const harmonic = ctx.createOscillator();
+        const g = ctx.createGain();
+        const hg = ctx.createGain();
+
+        osc.type = 'triangle';
+        harmonic.type = 'sine';
+        osc.frequency.setValueAtTime(n.f, now + n.delay);
+        harmonic.frequency.setValueAtTime(n.f * 2, now + n.delay);
+
+        g.gain.setValueAtTime(0, now + n.delay);
+        g.gain.linearRampToValueAtTime(0.85, now + n.delay + 0.015);
+        g.gain.exponentialRampToValueAtTime(0.001, now + n.delay + n.dur);
+
+        hg.gain.setValueAtTime(0, now + n.delay);
+        hg.gain.linearRampToValueAtTime(0.35, now + n.delay + 0.012);
+        hg.gain.exponentialRampToValueAtTime(0.001, now + n.delay + n.dur * 0.75);
+
+        osc.connect(g);
+        harmonic.connect(hg);
+        g.connect(master);
+        hg.connect(master);
+
+        osc.start(now + n.delay);
+        harmonic.start(now + n.delay);
+        osc.stop(now + n.delay + n.dur + 0.03);
+        harmonic.stop(now + n.delay + n.dur + 0.03);
+      });
+
+      // Loud Dual-Bell Telephone Ring bursts (1.88s and 2.42s)
+      [1.88, 2.42].forEach((bellStart) => {
+        const b1 = ctx.createOscillator();
+        const b2 = ctx.createOscillator();
+        const bg = ctx.createGain();
+        b1.type = 'triangle';
+        b2.type = 'sine';
+        b1.frequency.setValueAtTime(880, now + bellStart);
+        b2.frequency.setValueAtTime(1174.66, now + bellStart);
+        bg.gain.setValueAtTime(0, now + bellStart);
+        bg.gain.linearRampToValueAtTime(0.75, now + bellStart + 0.015);
+        bg.gain.setValueAtTime(0.75, now + bellStart + 0.36);
+        bg.gain.linearRampToValueAtTime(0.001, now + bellStart + 0.42);
+        b1.connect(bg);
+        b2.connect(bg);
+        bg.connect(master);
+        b1.start(now + bellStart);
+        b2.start(now + bellStart);
+        b1.stop(now + bellStart + 0.44);
+        b2.stop(now + bellStart + 0.44);
+      });
+    } catch (e) {
+      console.warn('Web Audio incoming ringtone error:', e);
+    }
+  }
+
+  // Dedicated Suno Sakhi Caller Tune (Outgoing Calls — NEVER vibrates caller's phone)
+  public startCallerTune(sakhiName?: string) {
+    this.startRingtone({ vibrate: false, mode: 'caller_tune', sakhiName });
+  }
+
+  // Dedicated Suno Sakhi Incoming Ringtone (Incoming Calls — Loud ring + Vibration)
+  public startIncomingRingtone(callerName?: string) {
+    this.startRingtone({ vibrate: true, mode: 'ringtone', sakhiName: callerName });
+  }
+
+  // Universal entry point: automatically selects Caller Tune (outgoing) vs Ringtone (incoming)
+  public startRingtone(options?: {
+    vibrate?: boolean;
+    mode?: 'caller_tune' | 'ringtone';
+    sakhiName?: string;
+  }) {
+    try {
+      const isIncoming = options?.mode === 'ringtone' || options?.vibrate === true;
+      const targetMode: 'caller_tune' | 'ringtone' = isIncoming ? 'ringtone' : 'caller_tune';
+
+      // If already ringing in the exact same mode, just ensure audio is unlocked/playing
+      if (this.isRinging && this.activeMode === targetMode) {
+        const activeEl = isIncoming ? this.ringtoneAudioEl : this.callerTuneAudioEl;
+        if (activeEl && activeEl.paused) {
+          activeEl.play().catch(() => {});
+        }
+        return;
+      }
+
+      // Clean stop any previous cycle before starting fresh
+      this.stopRingtone();
       this.isRinging = true;
+      this.activeMode = targetMode;
 
-      // 1. Trigger HTML5 audio loop (primary engine for mobile background & native media)
-      if (this.audioEl) {
-        this.audioEl.currentTime = 0;
-        this.audioEl.volume = this.ringVolume;
-        this.audioEl.play().catch((err) => {
-          console.warn('HTMLAudio play note (will play upon tap):', err);
-        });
-      }
+      if (isIncoming) {
+        // ============================================================
+        // 1. INCOMING SUNO SAKHI RINGTONE (LOUD BELL + VIBRATION)
+        // ============================================================
+        if (this.ringtoneAudioEl) {
+          this.ringtoneAudioEl.currentTime = 0;
+          this.ringtoneAudioEl.volume = Math.min(1.0, this.ringVolume);
+          this.ringtoneAudioEl.play().catch(() => {});
+        }
 
-      // 2. Trigger Web Audio API synthesis
-      this.initCtx();
-      this.playWebAudioRingCycle();
+        this.initCtx();
+        this.playWebAudioIncomingRingCycle();
 
-      if (this.ringInterval) {
-        clearInterval(this.ringInterval);
-      }
-      this.ringInterval = window.setInterval(() => {
-        if (!this.isRinging) return;
-        this.playWebAudioRingCycle();
-      }, 2800);
+        this.voiceTimeout = window.setTimeout(() => {
+          if (this.isRinging && this.activeMode === 'ringtone') {
+            this.speakSunoSakhiVoice(
+              'Suno Sakhi par incoming call aa rahi hai. Kripya call receive karein.',
+              1.08,
+              1.02
+            );
+          }
+        }, 900);
 
-      // 3. Vibration: Strictly opt-in (defaults to false).
-      // IMPORTANT: When a user makes an outgoing call (voice or video), the caller's phone must NEVER vibrate!
-      const shouldVibrate = options?.vibrate === true;
-      if (shouldVibrate) {
+        let cycleCount = 0;
+        this.ringInterval = window.setInterval(() => {
+          if (!this.isRinging || this.activeMode !== 'ringtone') return;
+          cycleCount += 1;
+          this.playWebAudioIncomingRingCycle();
+          if (cycleCount % 3 === 0) {
+            this.speakSunoSakhiVoice(
+              'Suno Sakhi par incoming call aa rahi hai.',
+              1.08,
+              1.02
+            );
+          }
+        }, 3200);
+
         const triggerVibrate = () => {
           if (typeof navigator !== 'undefined' && navigator.vibrate) {
             navigator.vibrate([1000, 400, 1000, 400, 1200]);
           }
         };
         triggerVibrate();
-
-        if (this.vibrateInterval) {
-          clearInterval(this.vibrateInterval);
-        }
         this.vibrateInterval = window.setInterval(() => {
           if (!this.isRinging) return;
           triggerVibrate();
         }, 3000);
       } else {
+        // ============================================================
+        // 2. OUTGOING SUNO SAKHI CALLER TUNE (MELODY + VOICE + RINGBACK)
+        // ============================================================
+        if (this.callerTuneAudioEl) {
+          this.callerTuneAudioEl.currentTime = 0;
+          this.callerTuneAudioEl.volume = Math.min(1.0, this.ringVolume);
+          this.callerTuneAudioEl.play().catch(() => {});
+        }
+
+        this.initCtx();
+        this.playWebAudioCallerTuneCycle();
+
+        // Branded Suno Sakhi Caller Tune voice welcome
+        this.voiceTimeout = window.setTimeout(() => {
+          if (this.isRinging && this.activeMode === 'caller_tune') {
+            const partner = options?.sakhiName ? options.sakhiName : 'aapki Sakhi';
+            this.speakSunoSakhiVoice(
+              `Suno Sakhi mein aapka swagat hai. Dil se dil ki baat, ${partner} se aapki call connect ho rahi hai, kripya line par bane rahein.`,
+              1.12,
+              0.98
+            );
+          }
+        }, 500);
+
+        let callerCycleCount = 0;
+        this.ringInterval = window.setInterval(() => {
+          if (!this.isRinging || this.activeMode !== 'caller_tune') return;
+          callerCycleCount += 1;
+          this.playWebAudioCallerTuneCycle();
+          if (callerCycleCount % 2 === 0) {
+            this.speakSunoSakhiVoice(
+              'Suno Sakhi caller tune... Aapki call jald hi connect hone wali hai.',
+              1.12,
+              0.98
+            );
+          }
+        }, 5400);
+
+        // Outgoing calls NEVER vibrate the caller's phone
         if (typeof navigator !== 'undefined' && navigator.vibrate) {
           navigator.vibrate(0);
         }
@@ -286,24 +610,36 @@ class SoundSynthesizer {
   public stopRingtone() {
     try {
       this.isRinging = false;
+      this.activeMode = null;
 
-      // 1. Stop HTML5 audio
-      if (this.audioEl) {
-        this.audioEl.pause();
-        this.audioEl.currentTime = 0;
+      if (this.callerTuneAudioEl) {
+        this.callerTuneAudioEl.pause();
+        this.callerTuneAudioEl.currentTime = 0;
+      }
+      if (this.ringtoneAudioEl) {
+        this.ringtoneAudioEl.pause();
+        this.ringtoneAudioEl.currentTime = 0;
       }
 
-      // 2. Clear Web Audio intervals
       if (this.ringInterval) {
         clearInterval(this.ringInterval);
         this.ringInterval = null;
       }
-
-      // 3. Stop vibration
+      if (this.voiceTimeout) {
+        clearTimeout(this.voiceTimeout);
+        this.voiceTimeout = null;
+      }
       if (this.vibrateInterval) {
         clearInterval(this.vibrateInterval);
         this.vibrateInterval = null;
       }
+
+      if (!this.isPaymentAlarmActive && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        try {
+          window.speechSynthesis.cancel();
+        } catch {}
+      }
+
       if (typeof navigator !== 'undefined' && navigator.vibrate) {
         navigator.vibrate(0);
       }
@@ -428,13 +764,11 @@ class SoundSynthesizer {
         ctx.resume().catch(() => {});
       }
 
-      // Hardware vibration on mobile
       if (typeof navigator !== 'undefined' && navigator.vibrate) {
         navigator.vibrate([160, 70, 200]);
       }
 
       const now = ctx.currentTime;
-      // Rich 4-note ascending crystal bell ring: G5 -> B5 -> D6 -> G6 with warm harmonic overtone
       const notes = [
         { freq: 783.99, time: 0.0, duration: 0.18, vol: 0.75 },   // G5
         { freq: 987.77, time: 0.09, duration: 0.20, vol: 0.80 },  // B5
@@ -486,7 +820,6 @@ class SoundSynthesizer {
       }
 
       const now = ctx.currentTime;
-      // Resonant 6-bell melodic fanfare (C5, E5, G5, C6, E6, G6) + metallic sparkle
       const notes = [
         { freq: 523.25, time: 0, dur: 0.22, vol: 0.75 },    // C5
         { freq: 659.25, time: 0.12, dur: 0.22, vol: 0.8 },  // E5
@@ -513,7 +846,6 @@ class SoundSynthesizer {
         osc.stop(now + n.time + n.dur + 0.05);
       });
 
-      // Cash register harmonic shimmer (2637Hz & 3136Hz)
       const shimmer = ctx.createOscillator();
       const shimmerGain = ctx.createGain();
       shimmer.type = 'sine';
@@ -526,7 +858,6 @@ class SoundSynthesizer {
       shimmer.start(now + 0.8);
       shimmer.stop(now + 1.45);
 
-      // Hardware vibration on mobile
       if (typeof navigator !== 'undefined' && navigator.vibrate) {
         navigator.vibrate([600, 200, 600, 200, 800]);
       }
@@ -540,10 +871,8 @@ class SoundSynthesizer {
     if (this.isPaymentAlarmActive) return;
     this.isPaymentAlarmActive = true;
 
-    // 1. Play immediate soundbox chime
     this.playPaymentReceivedSound(amount);
 
-    // 2. Speak announcement via Web Speech API (Paytm/PhonePe Soundbox style announcement)
     const speakAnnouncement = () => {
       try {
         if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -565,12 +894,10 @@ class SoundSynthesizer {
       }
     };
 
-    // Small delay so initial bell chime finishes before speech starts
     setTimeout(() => {
       if (this.isPaymentAlarmActive) speakAnnouncement();
     }, 1200);
 
-    // 3. Show system push notification on desktop/mobile
     try {
       if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
         new Notification('💰 Naya Payment Prapt Hua! - SunoSakhi', {
@@ -580,7 +907,6 @@ class SoundSynthesizer {
       }
     } catch {}
 
-    // 4. Repeat alarm cycle every 5 seconds for a long ringtone (up to 35 seconds max)
     let elapsed = 0;
     if (this.paymentAlarmInterval) clearInterval(this.paymentAlarmInterval);
     this.paymentAlarmInterval = window.setInterval(() => {
@@ -598,7 +924,6 @@ class SoundSynthesizer {
     }, 5000);
   }
 
-  // Stop the payment alarm / ringtone immediately
   public stopPaymentReceivedAlarm() {
     this.isPaymentAlarmActive = false;
     if (this.paymentAlarmInterval) {
@@ -632,7 +957,6 @@ if (typeof window !== 'undefined') {
     window.addEventListener(evt, handleGlobalUnlock, { passive: true });
   });
 
-  // Resume when page becomes visible
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       sounds.initCtx();

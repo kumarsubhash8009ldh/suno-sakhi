@@ -14,7 +14,7 @@ export const CallerCard: React.FC<CallerCardProps> = ({ caller }) => {
   const { startCall } = useCall();
   const { openDirectChat } = useHost();
 
-  const isOnline = caller.isOnline === true && caller.status !== 'offline';
+  const isOnline = caller.status !== 'offline' && caller.status !== 'blocked' && caller.isOnline !== false;
   const cleanPhone = String(caller.phone || '').replace(/\D/g, '');
   const userDisplayId = formatUserId(caller.id, caller.phone);
   const userLabel = `User ID: ${userDisplayId}`;

@@ -80,12 +80,64 @@ export const subscribeToAllRealHosts = (
   let isUnsubscribed = false;
   const mergedHostsMap = new Map<string, Sakhi>();
 
+  const injectLoggedInHost = (targetMap: Map<string, Sakhi>) => {
+    try {
+      const rawHost = localStorage.getItem('sunosakhi_host_profile');
+      const isHostLogged = localStorage.getItem('sunosakhi_host_logged_in') === 'true';
+      if (rawHost && isHostLogged) {
+        const hp = JSON.parse(rawHost);
+        const rawPhoneDigits = String(hp.phone || '').replace(/\D/g, '');
+        const p = rawPhoneDigits.length >= 10 ? rawPhoneDigits.slice(-10) : '';
+        const em = (hp.email || '').trim().toLowerCase();
+        if (p.length === 10 || em) {
+          const k = p || em || hp.id;
+          const existing = targetMap.get(k);
+          const verStatus = hp.verification?.status;
+          const isHostVerified =
+            verStatus === 'pending' || verStatus === 'rejected'
+              ? false
+              : hp.isVerified !== false;
+          const activeStatus: 'online' | 'busy' | 'offline' =
+            hp.status === 'busy'
+              ? 'busy'
+              : hp.status === 'offline'
+              ? 'offline'
+              : 'online';
+
+          targetMap.set(k, {
+            ...(existing || {}),
+            id: hp.id || existing?.id || (p ? `sakhi-user-${p}` : `sakhi-host-${em.replace(/[^a-z0-9]/g, '_')}`),
+            name: hp.name && hp.name !== 'Sakhi Host' ? hp.name : existing?.name || 'Sakhi Host',
+            age: hp.age || existing?.age || 22,
+            city: hp.city || existing?.city || 'India',
+            avatar: hp.avatar || existing?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+            videoPoster: hp.videoPoster || hp.avatar || existing?.videoPoster || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+            status: activeStatus,
+            rating: hp.rating || existing?.rating || 5.0,
+            totalCalls: hp.totalCalls || existing?.totalCalls || 0,
+            languages: Array.isArray(hp.languages) && hp.languages.length > 0 ? hp.languages : existing?.languages || ['Hindi', 'English'],
+            bio: hp.bio || existing?.bio || 'Namaste! Main SunoSakhi par aapse baatein karne ke liye available hoon.',
+            interests: Array.isArray(hp.interests) && hp.interests.length > 0 ? hp.interests : existing?.interests || ['Friendly Chat', 'Life Talk'],
+            voiceRatePerMin: hp.voiceRatePerMin || existing?.voiceRatePerMin || 7,
+            videoRatePerMin: hp.videoRatePerMin || existing?.videoRatePerMin || 15,
+            tagline: hp.tagline || existing?.tagline || '🌸 Verified Sakhi Host',
+            audioSnippet: hp.audioSnippet || existing?.audioSnippet || '',
+            phone: p,
+            email: em,
+            isVerified: isHostVerified
+          });
+        }
+      }
+    } catch {}
+  };
+
   // 1. Deliver local cache immediately for instant UI
   const localList = getLocalRegisteredHosts();
   localList.forEach((h) => {
     const key = h.phone || h.email || h.id;
     mergedHostsMap.set(key, h);
   });
+  injectLoggedInHost(mergedHostsMap);
   if (mergedHostsMap.size > 0) {
     onUpdate(Array.from(mergedHostsMap.values()));
   }
@@ -93,6 +145,7 @@ export const subscribeToAllRealHosts = (
   // Helper to publish updates
   const publish = () => {
     if (isUnsubscribed) return;
+    injectLoggedInHost(mergedHostsMap);
     const clean = Array.from(mergedHostsMap.values()).filter(isRealHostAccount);
     const unique = deduplicateHosts(clean);
     try {
@@ -100,6 +153,22 @@ export const subscribeToAllRealHosts = (
     } catch {}
     onUpdate(unique);
   };
+
+  // Listen to local auth/host updates for instant zero-latency UI sync
+  const handleLocalSync = () => {
+    const latestLocal = getLocalRegisteredHosts();
+    latestLocal.forEach((h) => {
+      const key = h.phone || h.email || h.id;
+      mergedHostsMap.set(key, h);
+    });
+    publish();
+  };
+  if (typeof window !== 'undefined') {
+    window.addEventListener('sunosakhi-auth-changed', handleLocalSync);
+    window.addEventListener('user-auth-changed', handleLocalSync);
+    window.addEventListener('sunosakhi-hosts-updated', handleLocalSync);
+    window.addEventListener('storage', handleLocalSync);
+  }
 
   // 2. Real-Time Cloud Firestore Listener (Works across all devices & mobile)
   let firestoreUnsub: (() => void) | null = null;
@@ -109,22 +178,22 @@ export const subscribeToAllRealHosts = (
       firestoreUnsub = onSnapshot(
         colRef,
         (snapshot) => {
-          // Fresh map for current snapshot so deleted/purged hosts vanish immediately
           const currentSnapshotMap = new Map<string, Sakhi>();
           snapshot.forEach((docSnap) => {
             const data = docSnap.data() as any;
             if (data) {
               const docId = docSnap.id;
-              const phoneDigits = docId.replace(/\D/g, '').slice(-10);
-              const phone = data.phone ? String(data.phone).replace(/\D/g, '').slice(-10) : (phoneDigits.length === 10 ? phoneDigits : '');
+              const rawDocDigits = docId.replace(/\D/g, '');
+              const phoneDigits = rawDocDigits.length === 10 ? rawDocDigits : '';
+              const rawDataPhone = data.phone ? String(data.phone).replace(/\D/g, '') : '';
+              const phone = rawDataPhone.length >= 10 ? rawDataPhone.slice(-10) : phoneDigits;
               const email = data.email ? String(data.email).trim().toLowerCase() : (docId.includes('@') ? docId : '');
 
-              if (phone.length === 10 || email) {
+              if (phone.length === 10 || (email && email.includes('@'))) {
                 const displayName = data.name && data.name.trim() !== '' && data.name !== 'Sakhi Host'
                   ? data.name.trim()
                   : 'Sakhi Host';
 
-                // Rule: Any logged-in ID shows as Online (Green). Only explicitly logged-out ID ('offline') shows as Offline (Red).
                 const effectiveStatus: 'online' | 'busy' | 'offline' =
                   data.status === 'busy'
                     ? 'busy'
@@ -165,47 +234,9 @@ export const subscribeToAllRealHosts = (
             }
           });
 
-          // Also ensure local logged-in host profile appears immediately
-          try {
-            const rawHost = localStorage.getItem('sunosakhi_host_profile');
-            const isHostLogged = localStorage.getItem('sunosakhi_host_logged_in') === 'true';
-            if (rawHost && isHostLogged) {
-              const hp = JSON.parse(rawHost);
-              const p = String(hp.phone || hp.id || '').replace(/\D/g, '').slice(-10);
-              const em = (hp.email || '').trim().toLowerCase();
-              if (p.length === 10 || em) {
-                const k = p || em || hp.id;
-                if (!currentSnapshotMap.has(k)) {
-                  const verStatus = hp.verification?.status;
-                  const isHostVerified =
-                    verStatus === 'pending' || verStatus === 'rejected'
-                      ? false
-                      : hp.isVerified !== false;
-                  currentSnapshotMap.set(k, {
-                    id: hp.id || `sakhi-user-${p}`,
-                    name: hp.name || 'Sakhi Host',
-                    age: hp.age || 22,
-                    city: hp.city || 'India',
-                    avatar: hp.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
-                    videoPoster: hp.videoPoster || hp.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
-                    status: hp.status || 'online',
-                    rating: hp.rating || 5.0,
-                    totalCalls: hp.totalCalls || 0,
-                    languages: hp.languages || ['Hindi', 'English'],
-                    bio: hp.bio || 'Namaste! Main SunoSakhi par aapse baatein karne ke liye available hoon.',
-                    interests: hp.interests || ['Friendly Chat', 'Life Talk'],
-                    voiceRatePerMin: hp.voiceRatePerMin || 7,
-                    videoRatePerMin: hp.videoRatePerMin || 15,
-                    tagline: hp.tagline || '🌸 Verified Sakhi Host',
-                    audioSnippet: hp.audioSnippet || '',
-                    phone: p,
-                    email: em,
-                    isVerified: isHostVerified
-                  });
-                }
-              }
-            }
-          } catch {}
+          injectLoggedInHost(currentSnapshotMap);
+          mergedHostsMap.clear();
+          currentSnapshotMap.forEach((v, k) => mergedHostsMap.set(k, v));
 
           const clean = Array.from(currentSnapshotMap.values()).filter(isRealHostAccount);
           const unique = deduplicateHosts(clean);
@@ -252,6 +283,12 @@ export const subscribeToAllRealHosts = (
     isUnsubscribed = true;
     if (firestoreUnsub) firestoreUnsub();
     if (intervalId !== null) clearInterval(intervalId);
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('sunosakhi-auth-changed', handleLocalSync);
+      window.removeEventListener('user-auth-changed', handleLocalSync);
+      window.removeEventListener('sunosakhi-hosts-updated', handleLocalSync);
+      window.removeEventListener('storage', handleLocalSync);
+    }
   };
 };
 
@@ -264,11 +301,14 @@ export const updateHostOnlineStatus = async (
   extraProfile?: Partial<Sakhi>
 ): Promise<boolean> => {
   if (!hostId) return false;
-  const pDigits = hostId.replace(/\D/g, '').slice(-10);
+  const rawDigits = hostId.replace(/\D/g, '');
+  const pDigits = rawDigits.length === 10 ? rawDigits : '';
   const localList = getLocalRegisteredHosts();
   const matched = localList.find((h) => h.id === hostId || (pDigits.length === 10 && h.phone === pDigits));
 
-  const phone = extraProfile?.phone || matched?.phone || (pDigits.length === 10 ? pDigits : '');
+  const rawExtraPhone = extraProfile?.phone ? String(extraProfile.phone).replace(/\D/g, '') : '';
+  const phone = rawExtraPhone.length >= 10 ? rawExtraPhone.slice(-10) : (matched?.phone || pDigits);
+  const email = extraProfile?.email || matched?.email || '';
   const name = extraProfile?.name || matched?.name || 'Sakhi Host';
   const avatar = extraProfile?.avatar || matched?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400';
 
@@ -280,6 +320,7 @@ export const updateHostOnlineStatus = async (
         lastActiveAt: Date.now()
       };
       if (phone) payload.phone = phone;
+      if (email) payload.email = email;
       if (name) payload.name = name;
       if (avatar) payload.avatar = avatar;
       if (matched?.languages) payload.languages = matched.languages;
@@ -301,6 +342,9 @@ export const updateHostOnlineStatus = async (
   try {
     const updated = localList.map((h) => (h.id === hostId || (phone && h.phone === phone) ? { ...h, status } : h));
     localStorage.setItem(LOCAL_HOSTS_KEY, JSON.stringify(updated));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('sunosakhi-hosts-updated'));
+    }
   } catch {}
 
   // 3. Update in Server Backend if reachable
@@ -328,9 +372,11 @@ export const saveHostProfileToCloud = async (
 ): Promise<boolean> => {
   if (!profile || !profile.id) return false;
 
-  const cleanPhone = String(profile.phone || '').replace(/\D/g, '').slice(-10);
-  const idDigits = profile.id.replace(/\D/g, '').slice(-10);
-  const phone = cleanPhone.length === 10 ? cleanPhone : (idDigits.length === 10 ? idDigits : '');
+  const rawProfilePhone = String(profile.phone || '').replace(/\D/g, '');
+  const cleanPhone = rawProfilePhone.length >= 10 ? rawProfilePhone.slice(-10) : '';
+  const rawIdDigits = profile.id.replace(/\D/g, '');
+  const idDigits = rawIdDigits.length === 10 ? rawIdDigits : '';
+  const phone = cleanPhone.length === 10 ? cleanPhone : idDigits;
   const email = profile.email || '';
   if (!phone && !email) return false;
 
@@ -344,6 +390,13 @@ export const saveHostProfileToCloud = async (
       ? false
       : profile.isVerified !== false;
 
+  const effectiveStatus: 'online' | 'busy' | 'offline' =
+    profile.status === 'busy'
+      ? 'busy'
+      : profile.status === 'offline'
+      ? 'offline'
+      : 'online';
+
   const sakhiObj: Sakhi = {
     id: profile.id,
     name: displayName,
@@ -351,7 +404,7 @@ export const saveHostProfileToCloud = async (
     city: profile.city || 'India',
     avatar: profile.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
     videoPoster: profile.videoPoster || profile.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
-    status: profile.status || 'online',
+    status: effectiveStatus,
     rating: profile.rating || 5.0,
     totalCalls: profile.incomeHistory?.length || 0,
     languages: profile.languages && profile.languages.length > 0 ? profile.languages : ['Hindi', 'English'],
@@ -373,9 +426,10 @@ export const saveHostProfileToCloud = async (
         ...profile,
         ...sakhiObj,
         phone,
+        email,
         name: displayName,
         gender: 'female',
-        status: profile.status || 'online',
+        status: effectiveStatus,
         lastActiveAt: Date.now()
       }, { merge: true });
       console.log('✅ Host profile successfully saved to Cloud Firestore:', profile.id);
@@ -394,6 +448,9 @@ export const saveHostProfileToCloud = async (
       list.push(sakhiObj);
     }
     localStorage.setItem(LOCAL_HOSTS_KEY, JSON.stringify(deduplicateHosts(list)));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('sunosakhi-hosts-updated'));
+    }
   } catch {}
 
   // 3. Post to Server Backend if configured

@@ -189,7 +189,7 @@ export const registerHostWithPhone = async (params: {
 
   const newAccount: HostAccountRecord = {
     phone: isEmail ? '' : normalized,
-    email: isEmail ? normalized : undefined,
+    email: isEmail ? normalized : '',
     hostId,
     name: params.name.trim(),
     password: params.password,
@@ -222,7 +222,7 @@ export const registerHostWithPhone = async (params: {
     tagline: '🌸 Female Companion',
     isVerified: true,
     phone: isEmail ? '' : normalized,
-    email: isEmail ? normalized : undefined,
+    email: isEmail ? normalized : '',
     totalVoiceMinutes: 0,
     totalVideoMinutes: 0,
     totalGiftsReceived: 0,
@@ -372,10 +372,12 @@ export const loginHostWithCredentials = async (
 
   let account: HostAccountRecord | null = null;
 
+  const accountDocId = isEmail ? normalized.replace(/[^a-z0-9]/g, '_') : normalized;
+
   // 2. Check Cloud Firestore if configured
   if (isFirebaseConfigured() && db) {
     try {
-      const snap = await getDoc(doc(db, HOST_ACCOUNTS_COLLECTION, normalized));
+      const snap = await getDoc(doc(db, HOST_ACCOUNTS_COLLECTION, accountDocId));
       if (snap.exists()) {
         account = snap.data() as HostAccountRecord;
       }
@@ -389,14 +391,14 @@ export const loginHostWithCredentials = async (
     const raw = localStorage.getItem(LOCAL_ACCOUNTS_KEY);
     if (raw) {
       const store = JSON.parse(raw);
-      account = store[normalized] || null;
+      account = store[normalized] || store[accountDocId] || null;
     }
   }
 
   if (!account) {
     return {
       success: false,
-      error: 'Yeh mobile number registered nahi hai. Kripya pehle "Host Bano" par jakar register karein.'
+      error: 'Yeh mobile number/email registered nahi hai. Kripya pehle "Host Bano" par jakar register karein.'
     };
   }
 
@@ -404,13 +406,15 @@ export const loginHostWithCredentials = async (
     return { success: false, error: 'Galat password! Kripya sahi password dalein ya Forgot Password karein.' };
   }
 
-  // Fetch host profile
+  // Fetch host profile and mark online
   let profile: HostProfile | null = null;
   if (isFirebaseConfigured() && db && account.hostId) {
     try {
-      const hostSnap = await getDoc(doc(db, HOSTS_COLLECTION, account.hostId));
+      const hostRef = doc(db, HOSTS_COLLECTION, account.hostId);
+      const hostSnap = await getDoc(hostRef);
       if (hostSnap.exists()) {
-        profile = hostSnap.data() as HostProfile;
+        profile = { ...(hostSnap.data() as HostProfile), status: 'online', isVerified: true };
+        await setDoc(hostRef, { status: 'online', lastActiveAt: Date.now() }, { merge: true });
       }
     } catch (e) {
       console.warn('Error fetching host profile:', e);

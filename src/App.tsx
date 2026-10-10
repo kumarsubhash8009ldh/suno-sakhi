@@ -133,14 +133,21 @@ const MainContent: React.FC = () => {
     try {
       const caller = getCurrentUser();
       if (caller && (caller.phone || caller.email)) {
-        saveUserToCloud(caller);
+        saveUserToCloud({ ...caller, status: 'online', isOnline: true });
       }
       if (localStorage.getItem('sunosakhi_host_logged_in') === 'true') {
         const rawHost = localStorage.getItem('sunosakhi_host_profile');
         if (rawHost) {
           const hp = JSON.parse(rawHost);
           if (hp && (hp.phone || hp.email || hp.id)) {
-            saveHostProfileToCloud(hp);
+            const manualOffline = sessionStorage.getItem('sunosakhi_host_manual_offline') === 'true';
+            const updatedHp = {
+              ...hp,
+              status: manualOffline ? 'offline' : 'online',
+              isVerified: true
+            };
+            localStorage.setItem('sunosakhi_host_profile', JSON.stringify(updatedHp));
+            saveHostProfileToCloud(updatedHp);
           }
         }
       }
@@ -170,8 +177,9 @@ const MainContent: React.FC = () => {
   // Real-time Caller (User) presence heartbeat across all connected devices
   // Rule: Any logged-in ID shows as Online (Green). Only explicit Logout sets Offline (Red).
   useEffect(() => {
-    const isCaller = session.isLoggedIn && (session.role === 'caller' || userRole === 'caller');
-    if (!isCaller) return;
+    const currentUser = getCurrentUser();
+    const isCallerLoggedIn = Boolean(currentUser && (currentUser.phone || currentUser.email));
+    if (!isCallerLoggedIn) return;
 
     updateUserOnlinePresence(true);
     const interval = setInterval(() => {
@@ -237,20 +245,16 @@ const MainContent: React.FC = () => {
 
   // Strictly ONLY real verified Girl Hosts (Female) registered with Mobile or Email
   const filteredSakhis = useMemo(() => {
-    const myCallerPhone = String(session.phone || getCurrentUser()?.phone || '').replace(/\D/g, '').slice(-10);
-    const myCallerEmail = (session.email || getCurrentUser()?.email || '').toLowerCase().trim();
-
     const seen = new Set<string>();
     const list = realSakhis.filter((sakhi) => {
-      // Must NOT be the caller themselves
-      const pDigits = String(sakhi.phone || sakhi.id || '').replace(/\D/g, '').slice(-10);
-      const sEmail = (sakhi.email || '').toLowerCase().trim();
-      if (myCallerPhone && pDigits === myCallerPhone) return false;
-      if (myCallerEmail && sEmail === myCallerEmail) return false;
-
       // Must be female girl host
       if (sakhi.gender && sakhi.gender !== 'female') return false;
 
+      const rawPhone = String(sakhi.phone || '').replace(/\D/g, '');
+      const idDigits = String(sakhi.id || '').startsWith('sakhi-email-')
+        ? ''
+        : String(sakhi.id || '').replace(/\D/g, '');
+      const pDigits = rawPhone.length === 10 ? rawPhone : (idDigits.length === 10 ? idDigits : '');
       const hasValidPhone = pDigits.length === 10;
       const hasValidEmail = Boolean(sakhi.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sakhi.email));
       if (!hasValidPhone && !hasValidEmail) return false;
@@ -286,22 +290,13 @@ const MainContent: React.FC = () => {
       if (a.status !== 'online' && b.status === 'online') return 1;
       return 0;
     });
-  }, [realSakhis, session.phone, session.email, activeFilter, searchQuery, favoriteIds]);
+  }, [realSakhis, activeFilter, searchQuery, favoriteIds]);
 
-  // Filtered Callers for Host View (Strictly real online & active callers, excluding current host)
+  // Filtered Callers for Host View (All registered online & active callers)
   const filteredCallers = useMemo(() => {
-    const myHostPhone = String(hostProfile?.phone || session.phone || '').replace(/\D/g, '').slice(-10);
-    const myHostId = hostProfile?.id || session.id || '';
-    const myHostEmail = (hostProfile?.email || session.email || '').toLowerCase().trim();
-
     const list = registeredCallers.filter((caller) => {
       const cleanPhone = String(caller.phone || caller.id || '').replace(/\D/g, '').slice(-10);
       const cleanEmail = caller.email ? caller.email.toLowerCase().trim() : '';
-
-      // Don't show the current host to herself
-      if (myHostPhone && cleanPhone === myHostPhone) return false;
-      if (myHostId && (caller.id === myHostId || caller.id === `caller-${myHostPhone}`)) return false;
-      if (myHostEmail && cleanEmail === myHostEmail) return false;
 
       const hasValidPhone = cleanPhone.length === 10;
       const hasValidEmail = Boolean(cleanEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail));
@@ -315,13 +310,13 @@ const MainContent: React.FC = () => {
 
     // Sort: Online callers first, then recently active
     return list.sort((a, b) => {
-      const aOnline = a.status === 'online' || a.isOnline;
-      const bOnline = b.status === 'online' || b.isOnline;
+      const aOnline = a.status !== 'offline' && a.isOnline !== false;
+      const bOnline = b.status !== 'offline' && b.isOnline !== false;
       if (aOnline && !bOnline) return -1;
       if (!aOnline && bOnline) return 1;
       return (b.lastLoginAt || 0) - (a.lastLoginAt || 0);
     });
-  }, [registeredCallers, hostProfile?.phone, hostProfile?.id, hostProfile?.email, session.phone, session.id, session.email, searchQuery]);
+  }, [registeredCallers, searchQuery]);
 
   const handleScrollToSakhis = () => {
     const el = document.getElementById('sakhis-feed');

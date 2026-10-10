@@ -31,7 +31,8 @@ import {
   requestNotificationPermission,
   showSystemNotification,
   getChatThreadId,
-  getChatClientId
+  getChatClientId,
+  extractChatParticipantKey
 } from '../services/chatSync';
 import {
   subscribeToHostProfile,
@@ -90,7 +91,7 @@ interface HostContextType {
   }) => Promise<{ success: boolean; message: string; record?: HostPayoutRecord }>;
   // Chat & Messaging
   messages: Record<string, ChatMessage[]>;
-  sendMessage: (sakhiId: string, sakhiName: string, text: string) => { success: boolean; error?: string };
+  sendMessage: (sakhiId: string, sakhiName: string, text: string, companionPhone?: string) => { success: boolean; error?: string };
   sendHostManualReply: (
     threadId: string,
     callerId: string,
@@ -205,6 +206,8 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const [hostProfile, setHostProfile] = useState<HostProfile>(() => {
     try {
+      const isLogged = localStorage.getItem('sunosakhi_host_logged_in') === 'true';
+      if (!isLogged) return defaultHost;
       const saved = localStorage.getItem(HOST_STORAGE_KEY);
       return saved ? sanitizeHostProfile(JSON.parse(saved)) : defaultHost;
     } catch {
@@ -222,7 +225,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [activeMessageThreadId, setActiveMessageThreadId] = useState<string | null>(null);
   const dismissMessageNotification = () => setIncomingMessageNotification(null);
   const prevConvsRef = useRef<Record<string, { updatedAt: number; text: string }>>({});
-  const isInitialConvLoad = useRef(true);
+  const isInitialConvLoad = useRef<{ host: boolean; caller: boolean }>({ host: true, caller: true });
   const [payoutHistory, setPayoutHistory] = useState<HostPayoutRecord[]>(() => {
     const saved = localStorage.getItem(PAYOUT_STORAGE_KEY);
     if (!saved) return [];
@@ -265,9 +268,25 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const isLogged = localStorage.getItem('sunosakhi_host_logged_in') === 'true';
       setIsHostLoggedIn(isLogged);
       setUserRoleState(getActiveRole());
+      if (isLogged) {
+        try {
+          const saved = localStorage.getItem(HOST_STORAGE_KEY);
+          if (saved) setHostProfile(sanitizeHostProfile(JSON.parse(saved)));
+        } catch {
+          // ignore
+        }
+      } else {
+        setHostProfile(defaultHost);
+      }
     };
     window.addEventListener('sunosakhi-auth-changed', handleAuth);
-    return () => window.removeEventListener('sunosakhi-auth-changed', handleAuth);
+    window.addEventListener('user-auth-changed', handleAuth);
+    window.addEventListener('storage', handleAuth);
+    return () => {
+      window.removeEventListener('sunosakhi-auth-changed', handleAuth);
+      window.removeEventListener('user-auth-changed', handleAuth);
+      window.removeEventListener('storage', handleAuth);
+    };
   }, []);
 
   const openLoginModal = () => setIsLoginModalOpen(true);
@@ -382,6 +401,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updateHostOnlineStatus(hostProfile.id, 'offline');
     }
     setIsHostLoggedIn(false);
+    setHostProfile(defaultHost);
     setUserRole('caller');
     localStorage.removeItem(HOST_STORAGE_KEY);
     localStorage.removeItem('sunosakhi_host_logged_in');
@@ -389,7 +409,9 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    localStorage.setItem(HOST_STORAGE_KEY, JSON.stringify(hostProfile));
+    if (isHostLoggedIn && (hostProfile.phone || (hostProfile as any).email || hostProfile.id)) {
+      localStorage.setItem(HOST_STORAGE_KEY, JSON.stringify(hostProfile));
+    }
     if (
       isHostLoggedIn &&
       userRole === 'host' &&
@@ -411,6 +433,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Real-time live host profile & earnings sync (sath k sath update)
   useEffect(() => {
+    if (!isHostLoggedIn) return;
     const targetHostId = hostProfile.id || (hostProfile.phone ? `host_${hostProfile.phone.replace(/\D/g, '')}` : '');
     const cleanPhone = (hostProfile.phone || '').replace(/\D/g, '');
     if (!targetHostId && cleanPhone.length < 10) return;
@@ -442,6 +465,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Real-time Host Payouts / Withdrawal status sync from Cloud Firestore
   useEffect(() => {
+    if (!isHostLoggedIn) return;
     const targetHostId = hostProfile.id || (hostProfile.phone ? `sakhi-user-${hostProfile.phone.replace(/\D/g, '').slice(-10)}` : '');
     const cleanPhone = (hostProfile.phone || '').replace(/\D/g, '').slice(-10);
     if (!targetHostId && cleanPhone.length < 10) return;
@@ -505,34 +529,33 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const currentUser = getCurrentUser();
     const isHost = Boolean(
-      userRole === 'host' ||
-      isHostLoggedIn ||
-      session.role === 'host' ||
-      localStorage.getItem('sunosakhi_host_logged_in') === 'true' ||
-      localStorage.getItem('sunosakhi_active_role') === 'host' ||
-      (hostProfile?.phone && String(hostProfile.phone).replace(/\D/g, '').length >= 10)
+      userRole === 'host' &&
+      (isHostLoggedIn || session.role === 'host' || localStorage.getItem('sunosakhi_host_logged_in') === 'true')
     );
 
-    const hostTargetId = (hostProfile?.phone || hostProfile?.id || (isHost ? session.phone : '') || '').replace(/\D/g, '').slice(-10) || hostProfile?.id || '';
-    const callerTargetPhone = (session.phone || currentUser?.phone || '').replace(/\D/g, '').slice(-10);
+    const hostTargetId = extractChatParticipantKey(
+      hostProfile?.phone || hostProfile?.id || (isHost ? (session.phone || session.email || session.id) : '')
+    );
+    const callerTargetPhone = extractChatParticipantKey(
+      session.phone || currentUser?.phone || (!isHost ? (session.email || currentUser?.email || session.id || currentUser?.id) : '')
+    );
 
     const handleNewConversations = (convs: ConversationItem[], role: 'host' | 'caller') => {
       if (role === 'host') {
         setHostConversations(convs);
       }
 
-      if (isInitialConvLoad.current) {
+      if (isInitialConvLoad.current[role]) {
         convs.forEach((c) => {
-          prevConvsRef.current[c.threadId] = { updatedAt: c.updatedAt, text: c.lastMessage };
+          prevConvsRef.current[`${role}_${c.threadId}`] = { updatedAt: c.updatedAt, text: c.lastMessage };
         });
-        isInitialConvLoad.current = false;
+        isInitialConvLoad.current[role] = false;
 
         // Check if there are active unread incoming messages from the last 30 minutes
         for (const c of convs) {
           const isIncomingToMe = (role === 'host' && c.lastSender === 'user') || (role === 'caller' && c.lastSender === 'sakhi');
           const isRecent = Date.now() - (c.updatedAt || 0) < 30 * 60 * 1000;
           if (isIncomingToMe && ((c.unreadCount && c.unreadCount > 0) || isRecent)) {
-            const senderName = role === 'host' ? (c.callerName || 'Caller') : (c.sakhiName || 'Sakhi');
             setIncomingMessageNotification({
               id: 'notif-' + Date.now(),
               callerId: c.callerId,
@@ -554,7 +577,8 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // Check if a new incoming message has arrived
       for (const c of convs) {
-        const prev = prevConvsRef.current[c.threadId];
+        const refKey = `${role}_${c.threadId}`;
+        const prev = prevConvsRef.current[refKey];
         const isNewer = !prev || c.updatedAt > prev.updatedAt;
         const isDifferent = !prev || c.lastMessage !== prev.text;
 
@@ -612,22 +636,21 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // Cache updated snapshot
       convs.forEach((c) => {
-        prevConvsRef.current[c.threadId] = { updatedAt: c.updatedAt, text: c.lastMessage };
+        prevConvsRef.current[`${role}_${c.threadId}`] = { updatedAt: c.updatedAt, text: c.lastMessage };
       });
     };
 
     const unsubs: (() => void)[] = [];
     if (isHost && hostTargetId) {
       unsubs.push(subscribeToHostConversations(hostTargetId, (convs) => handleNewConversations(convs, 'host')));
-    }
-    if (callerTargetPhone) {
+    } else if (!isHost && callerTargetPhone) {
       unsubs.push(subscribeToUserConversations(callerTargetPhone, (convs) => handleNewConversations(convs, 'caller')));
     }
 
     return () => {
       unsubs.forEach((u) => u());
     };
-  }, [isHostLoggedIn, hostProfile.id, hostProfile.phone, userRole, session.phone, session.isLoggedIn]);
+  }, [isHostLoggedIn, hostProfile.id, hostProfile.phone, userRole, session.phone, session.email, session.id, session.isLoggedIn]);
 
   // Keep Host status 'online' in real-time as long as host is logged in
   useEffect(() => {
@@ -675,12 +698,17 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!directChatSakhi) return;
     const session = getActiveSession();
     const currentUser = getCurrentUser();
-    const isHost = userRole === 'host' || isHostLoggedIn || session.role === 'host';
-    const myPhone = (session.phone || currentUser?.phone || hostProfile?.phone || '').replace(/\D/g, '');
-    const companionPhone = (directChatSakhi.phone || directChatSakhi.id || '').replace(/\D/g, '');
+    const isHost = Boolean(
+      userRole === 'host' &&
+      (isHostLoggedIn || session.role === 'host' || localStorage.getItem('sunosakhi_host_logged_in') === 'true')
+    );
+    const myKey = isHost
+      ? extractChatParticipantKey(hostProfile?.phone || session.phone || (hostProfile as any)?.email || session.email || hostProfile?.id || session.id)
+      : extractChatParticipantKey(session.phone || currentUser?.phone || session.email || currentUser?.email || session.id || currentUser?.id);
+    const peerKey = extractChatParticipantKey(directChatSakhi.phone || directChatSakhi.id);
 
     // STRICT AUTH GATE: Unauthenticated users cannot receive or read chat messages
-    if (!session.isLoggedIn && !isHost && (!myPhone || myPhone.length < 10)) {
+    if (!session.isLoggedIn && !isHost && !myKey) {
       setMessages((prev) => ({
         ...prev,
         [directChatSakhi.id]: []
@@ -688,9 +716,9 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    const hostPhone = isHost ? (myPhone || (hostProfile?.phone ? hostProfile.phone.replace(/\D/g, '') : '')) : companionPhone;
-    const callerPhone = isHost ? companionPhone : myPhone;
-    const canonicalThreadId = (hostPhone.length >= 10 && callerPhone.length >= 10)
+    const hostPhone = isHost ? myKey : peerKey;
+    const callerPhone = isHost ? peerKey : myKey;
+    const canonicalThreadId = (hostPhone && callerPhone)
       ? getChatThreadId(hostPhone, callerPhone)
       : directChatSakhi.id;
 
@@ -704,7 +732,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       if (unsub) unsub();
     };
-  }, [directChatSakhi, isHostLoggedIn, userRole, hostProfile?.phone]);
+  }, [directChatSakhi, isHostLoggedIn, userRole, hostProfile?.phone, hostProfile?.id]);
 
   const openGiftTray = () => setIsGiftTrayOpen(true);
   const closeGiftTray = () => setIsGiftTrayOpen(false);
@@ -785,7 +813,8 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const sendMessage = (
     sakhiId: string,
     sakhiName: string,
-    text: string
+    text: string,
+    companionPhoneArg?: string
   ): { success: boolean; error?: string } => {
     const trimmed = text.trim();
     if (!trimmed) {
@@ -803,6 +832,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Universal session check: if logged in as Caller OR Host, allow messaging seamlessly!
     const session = getActiveSession();
+    const currentUser = getCurrentUser();
 
     // STRICT AUTH GATE:
     // If NOT logged in, require login!
@@ -818,12 +848,8 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // STRICT RULE: Host is NEVER charged for messages! 100% FREE for Female/Girl Hosts.
     // Callers are charged MESSAGE_RATE (₹3.00/msg) deducted from wallet.
     const isHost = Boolean(
-      userRole === 'host' ||
-      isHostLoggedIn ||
-      session.role === 'host' ||
-      localStorage.getItem('sunosakhi_host_logged_in') === 'true' ||
-      localStorage.getItem('sunosakhi_active_role') === 'host' ||
-      (hostProfile?.phone && String(hostProfile.phone).replace(/\D/g, '').length >= 10)
+      userRole === 'host' &&
+      (isHostLoggedIn || session.role === 'host' || localStorage.getItem('sunosakhi_host_logged_in') === 'true')
     );
     let messageCost = 0;
 
@@ -841,18 +867,22 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
       messageCost = MESSAGE_RATE;
     }
 
-    const myPhone = (session.phone || (getCurrentUser()?.phone || '')).replace(/\D/g, '');
-    const companionPhone = String(sakhiId || '').replace(/\D/g, '');
+    const myKey = isHost
+      ? extractChatParticipantKey(hostProfile?.phone || session.phone || (hostProfile as any)?.email || session.email || hostProfile?.id || session.id)
+      : extractChatParticipantKey(session.phone || currentUser?.phone || session.email || currentUser?.email || session.id || currentUser?.id);
+    const peerKey = extractChatParticipantKey(companionPhoneArg || directChatSakhi?.phone || sakhiId);
 
     // Canonical IDs and Thread
-    const hostPhone = isHost ? (myPhone || (hostProfile?.phone ? hostProfile.phone.replace(/\D/g, '') : '')) : companionPhone;
-    const callerPhone = isHost ? companionPhone : myPhone;
-    const threadId = getChatThreadId(hostPhone, callerPhone);
+    const hostPhone = isHost ? myKey : peerKey;
+    const callerPhone = isHost ? peerKey : myKey;
+    const threadId = (hostPhone && callerPhone)
+      ? getChatThreadId(hostPhone, callerPhone)
+      : sakhiId;
 
     const senderRole: 'user' | 'sakhi' = isHost ? 'sakhi' : 'user';
     const effectiveSakhiId = isHost ? (hostProfile.id || `sakhi-user-${hostPhone}`) : sakhiId;
     const effectiveCallerId = isHost ? sakhiId : `caller_${callerPhone}`;
-    const effectiveCallerName = isHost ? sakhiName : (session.name || 'Caller');
+    const effectiveCallerName = isHost ? sakhiName : (session.name || currentUser?.name || 'Caller');
 
     const newCallerMsg: ChatMessage = {
       id: 'msg-' + Date.now(),
@@ -940,10 +970,16 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const trimmed = text.trim();
     if (!trimmed) return { success: false, error: 'Reply cannot be empty.' };
 
+    const cleanHostPhone = extractChatParticipantKey(hostProfile.phone || session.phone || (hostProfile as any).email || hostProfile.id);
+    const cleanCallerPhone = extractChatParticipantKey(callerId || threadId);
+    const canonicalThreadId = (cleanHostPhone && cleanCallerPhone)
+      ? getChatThreadId(cleanHostPhone, cleanCallerPhone)
+      : threadId;
+
     const replyMsg: ChatMessage = {
       id: 'host-reply-' + Date.now(),
-      sakhiId: hostProfile.id,
-      callerId,
+      sakhiId: hostProfile.id || `sakhi-user-${cleanHostPhone}`,
+      callerId: callerId || `caller_${cleanCallerPhone}`,
       callerName,
       sender: 'sakhi',
       senderId: getChatClientId(),
@@ -957,18 +993,17 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Update local messages state
     setMessages((prev) => ({
       ...prev,
-      [hostProfile.id]: [...(prev[hostProfile.id] || []), replyMsg]
+      [hostProfile.id]: [...(prev[hostProfile.id] || []), replyMsg],
+      [threadId]: [...(prev[threadId] || []), replyMsg],
+      [canonicalThreadId]: [...(prev[canonicalThreadId] || []), replyMsg]
     }));
 
-    const cleanHostPhone = String(hostProfile.phone || hostProfile.id || '').replace(/\D/g, '').slice(-10);
-    const cleanCallerPhone = String(callerId || threadId).replace(/\D/g, '').slice(-10);
-
     // Send to Firestore
-    await sendCloudChatMessage(threadId, replyMsg, {
-      threadId,
-      sakhiId: hostProfile.id,
+    await sendCloudChatMessage(canonicalThreadId, replyMsg, {
+      threadId: canonicalThreadId,
+      sakhiId: hostProfile.id || `sakhi-user-${cleanHostPhone}`,
       sakhiName: hostProfile.name,
-      callerId,
+      callerId: callerId || `caller_${cleanCallerPhone}`,
       callerName,
       callerPhone: cleanCallerPhone,
       hostPhone: cleanHostPhone,

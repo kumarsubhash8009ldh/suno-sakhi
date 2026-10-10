@@ -4,7 +4,7 @@ import { useHost, MESSAGE_RATE, MAX_MESSAGE_WORDS } from '../context/HostContext
 import { useWallet } from '../context/WalletContext';
 import { useCall } from '../context/CallContext';
 import { useAdmin } from '../context/AdminContext';
-import { markThreadAsRead, getChatClientId, subscribeToCloudChat, getChatThreadId } from '../services/chatSync';
+import { markThreadAsRead, getChatClientId, subscribeToCloudChat, getChatThreadId, extractChatParticipantKey } from '../services/chatSync';
 import { getCurrentUser, useActiveSession } from '../services/userAuthSync';
 import { formatHostId, formatUserId } from '../utils/idFormatter';
 import { ChatMessage } from '../types';
@@ -49,25 +49,23 @@ export const DirectChatModal: React.FC = () => {
 
   const myClientId = getChatClientId();
   const session = useActiveSession();
+  const currentUser = getCurrentUser();
   const isHostViewer = Boolean(
-    session.role === 'host' ||
-    userRole === 'host' ||
-    isHostLoggedIn ||
-    localStorage.getItem('sunosakhi_host_logged_in') === 'true' ||
-    localStorage.getItem('sunosakhi_active_role') === 'host' ||
-    (hostProfile?.phone && String(hostProfile.phone).replace(/\D/g, '').length >= 10)
+    userRole === 'host' &&
+    (isHostLoggedIn || session.role === 'host' || localStorage.getItem('sunosakhi_host_logged_in') === 'true')
   );
   const isLoggedIn = session.isLoggedIn;
 
-  const hostPhone = isHostViewer
-    ? (session.phone || (hostProfile?.phone ? hostProfile.phone.replace(/\D/g, '') : '')).slice(-10)
-    : (directChatSakhi?.phone || directChatSakhi?.id || '').replace(/\D/g, '').slice(-10);
+  const myKey = isHostViewer
+    ? extractChatParticipantKey(hostProfile?.phone || session.phone || (hostProfile as any)?.email || session.email || hostProfile?.id || session.id)
+    : extractChatParticipantKey(session.phone || currentUser?.phone || session.email || currentUser?.email || session.id || currentUser?.id);
 
-  const callerPhone = isHostViewer
-    ? (directChatSakhi?.phone || directChatSakhi?.id || '').replace(/\D/g, '').slice(-10)
-    : (session.phone || getCurrentUser()?.phone || '').replace(/\D/g, '').slice(-10);
+  const peerKey = extractChatParticipantKey(directChatSakhi?.phone || directChatSakhi?.id || '');
 
-  const canonicalThreadId = (hostPhone.length === 10 && callerPhone.length === 10)
+  const hostPhone = isHostViewer ? myKey : peerKey;
+  const callerPhone = isHostViewer ? peerKey : myKey;
+
+  const canonicalThreadId = (hostPhone && callerPhone)
     ? getChatThreadId(hostPhone, callerPhone)
     : (directChatSakhi ? directChatSakhi.id : '');
 
@@ -76,13 +74,15 @@ export const DirectChatModal: React.FC = () => {
     if (!directChatSakhi || !canonicalThreadId) return;
 
     const initial = messages[canonicalThreadId] || messages[directChatSakhi.id] || [];
-    if (initial.length > 0) {
-      setLiveMessages(initial);
-    }
+    setLiveMessages(initial);
 
+    const mySenderRole = isHostViewer ? 'sakhi' : 'user';
     const unsub = subscribeToCloudChat(canonicalThreadId, (cloudMsgs) => {
       setLiveMessages(cloudMsgs);
-      markThreadAsRead(canonicalThreadId, isHostViewer ? 'sakhi' : 'user');
+      const hasUnreadFromPeer = cloudMsgs.some((m) => m.sender !== mySenderRole && m.status !== 'read');
+      if (hasUnreadFromPeer) {
+        markThreadAsRead(canonicalThreadId, mySenderRole);
+      }
     });
 
     return () => {
@@ -110,7 +110,11 @@ export const DirectChatModal: React.FC = () => {
   useEffect(() => {
     if (directChatSakhi) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      markThreadAsRead(canonicalThreadId || directChatSakhi.id, isHostViewer ? 'sakhi' : 'user');
+      const mySenderRole = isHostViewer ? 'sakhi' : 'user';
+      const lastMsg = thread[thread.length - 1];
+      if (lastMsg && lastMsg.sender !== mySenderRole && lastMsg.status !== 'read') {
+        markThreadAsRead(canonicalThreadId || directChatSakhi.id, mySenderRole);
+      }
     }
   }, [thread, directChatSakhi, canonicalThreadId, isHostViewer]);
 
@@ -127,7 +131,7 @@ export const DirectChatModal: React.FC = () => {
       return;
     }
 
-    const res = sendMessage(directChatSakhi.id, directChatSakhi.name, inputText);
+    const res = sendMessage(directChatSakhi.id, directChatSakhi.name, inputText, directChatSakhi.phone);
     if (res.success) {
       const interlocutorUserLabel = `User ID: ${formatUserId(directChatSakhi.id, directChatSakhi.phone)}`;
       const optimisticMsg: ChatMessage = {

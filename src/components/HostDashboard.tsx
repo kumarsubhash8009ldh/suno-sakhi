@@ -212,16 +212,22 @@ export const HostDashboard: React.FC = () => {
 
   // Subscribe to messages of the currently selected conversation
   useEffect(() => {
-    if (!selectedConv) return;
-    markThreadAsRead(selectedConv.threadId, 'sakhi');
-    const unsub = subscribeToCloudChat(selectedConv.threadId, (msgs) => {
+    if (!selectedConv?.threadId) return;
+    const threadId = selectedConv.threadId;
+    if (selectedConv.lastSender === 'user') {
+      markThreadAsRead(threadId, 'sakhi');
+    }
+    const unsub = subscribeToCloudChat(threadId, (msgs) => {
       setActiveThreadMsgs(msgs);
-      markThreadAsRead(selectedConv.threadId, 'sakhi');
+      const hasUnreadFromCaller = msgs.some((m) => m.sender === 'user' && m.status !== 'read');
+      if (hasUnreadFromCaller) {
+        markThreadAsRead(threadId, 'sakhi');
+      }
     });
     return () => {
       if (unsub) unsub();
     };
-  }, [selectedConv]);
+  }, [selectedConv?.threadId]);
 
   // Auto-scroll chat to bottom
   useEffect(() => {
@@ -274,7 +280,7 @@ export const HostDashboard: React.FC = () => {
     setReplyLoading(true);
     const res = await sendHostManualReply(
       selectedConv.threadId,
-      selectedConv.callerId,
+      selectedConv.callerPhone || selectedConv.callerId,
       selectedConv.callerName,
       trimmed
     );

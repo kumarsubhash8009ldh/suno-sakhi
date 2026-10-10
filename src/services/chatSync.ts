@@ -1,24 +1,103 @@
-import { collection, doc, setDoc, onSnapshot, getDocs, increment } from 'firebase/firestore';
+import { collection, doc, setDoc, onSnapshot, increment } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase';
 import { ChatMessage, ConversationItem } from '../types';
-import { getApiBaseUrl } from './apiConfig';
+import { getApiBaseUrl, hasExternalApiBackend } from './apiConfig';
 
 const CONVERSATIONS_COLLECTION = 'conversations';
 
 /**
+ * Helper to strip undefined fields before writing to Firestore (prevents FirebaseError: Unsupported field value: undefined)
+ */
+const stripUndefined = <T extends Record<string, any>>(obj: T): Record<string, any> => {
+  const clean: Record<string, any> = {};
+  Object.keys(obj).forEach((key) => {
+    if (obj[key] !== undefined) {
+      clean[key] = obj[key];
+    }
+  });
+  return clean;
+};
+
+/**
+ * Extracts a canonical participant key (10-digit phone number if valid, or normalized account/email key)
+ */
+export const extractChatParticipantKey = (idOrPhone?: string | null): string => {
+  if (!idOrPhone) return '';
+  const raw = String(idOrPhone).trim();
+  if (!raw) return '';
+
+  // If it looks like an email-based ID (e.g. sakhi-host-pw2173398_gmail_com or caller-abc_gmail_com), preserve the email slug
+  const lower = raw.toLowerCase();
+  if (lower.includes('@') || lower.includes('_gmail_') || lower.includes('_yahoo_') || lower.includes('_outlook_') || lower.includes('_hotmail_')) {
+    return lower
+      .replace(/^sakhi-user-/, '')
+      .replace(/^sakhi-host-/, '')
+      .replace(/^host_/, '')
+      .replace(/^caller-/, '')
+      .replace(/^caller_/, '')
+      .replace(/[^a-z0-9_]/g, '_');
+  }
+
+  // Otherwise check if it contains a valid 10-digit phone number
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length === 10) {
+    return digits;
+  }
+  if (digits.length === 12 && digits.startsWith('91')) {
+    return digits.slice(2);
+  }
+  if (digits.length === 11 && digits.startsWith('0')) {
+    return digits.slice(1);
+  }
+  // Do NOT slice 13-digit timestamps (like user_1728561234567) into fake 10-digit phone numbers
+  if (digits.length > 10 && !raw.startsWith('user_') && !raw.startsWith('client_') && !raw.startsWith('msg_')) {
+    return digits.slice(-10);
+  }
+
+  return lower
+    .replace(/^sakhi-user-/, '')
+    .replace(/^sakhi-host-/, '')
+    .replace(/^host_/, '')
+    .replace(/^caller-/, '')
+    .replace(/^caller_/, '');
+};
+
+/**
  * Generate a consistent, canonical thread identifier between a Sakhi and a Caller.
- * Groups by 10-digit mobile numbers so that all messages from the same user always
- * stay in the EXACT SAME message box without creating duplicate threads.
+ * Supports both 10-digit mobile numbers and email/ID-based accounts.
  */
 export const getChatThreadId = (sakhiId: string, callerId: string): string => {
-  const hostDigits = String(sakhiId || '').replace(/\D/g, '');
-  const callerDigits = String(callerId || '').replace(/\D/g, '');
-  if (hostDigits.length >= 10 && callerDigits.length >= 10) {
-    const cleanHost = hostDigits.slice(-10);
-    const cleanCaller = callerDigits.slice(-10);
-    return `chat_${cleanHost}_${cleanCaller}`;
+  const sRaw = String(sakhiId || '').trim();
+  if (sRaw.startsWith('chat_') && !callerId) {
+    return sRaw;
   }
-  return `${sakhiId}_${callerId}`;
+  const hostKey = extractChatParticipantKey(sakhiId);
+  const callerKey = extractChatParticipantKey(callerId);
+  if (hostKey && callerKey) {
+    return `chat_${hostKey}_${callerKey}`;
+  }
+  return `${sakhiId || 'host'}_${callerId || 'caller'}`;
+};
+
+/**
+ * Given a threadId (e.g. `chat_A_B` or `A_B`), returns candidate thread IDs including the reverse pair
+ * so messages are always received even if one side initiated with swapped order or legacy format.
+ */
+export const getCandidateThreadIds = (threadId: string): string[] => {
+  const clean = String(threadId || '').trim();
+  if (!clean) return [];
+  const candidates = new Set<string>([clean]);
+
+  const withoutPrefix = clean.startsWith('chat_') ? clean.slice(5) : clean;
+  const parts = withoutPrefix.split('_');
+  if (parts.length === 2 && parts[0] && parts[1]) {
+    const [a, b] = parts;
+    candidates.add(`chat_${a}_${b}`);
+    candidates.add(`chat_${b}_${a}`);
+    candidates.add(`${a}_${b}`);
+    candidates.add(`${b}_${a}`);
+  }
+  return Array.from(candidates);
 };
 
 /**
@@ -35,7 +114,7 @@ export const getChatClientId = (): string => {
 
 /**
  * Subscribe to real-time chat messages for a specific conversation thread or Sakhi.
- * Uses direct Cloud Firestore listener with instant local storage fallback.
+ * Listens across primary and reverse/legacy thread IDs so no message is ever missed.
  */
 export const subscribeToCloudChat = (
   threadOrSakhiId: string,
@@ -43,55 +122,89 @@ export const subscribeToCloudChat = (
 ): (() => void) => {
   if (!threadOrSakhiId) return () => {};
 
+  const candidateIds = getCandidateThreadIds(threadOrSakhiId);
+
   // 1. Deliver cached messages immediately
   try {
-    const stored = localStorage.getItem(`chat_${threadOrSakhiId}`);
-    if (stored) {
-      onUpdate(JSON.parse(stored));
+    const mergedLocal = new Map<string, ChatMessage>();
+    candidateIds.forEach((cid) => {
+      const stored = localStorage.getItem(`chat_${cid}`);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((m: ChatMessage) => {
+            if (m && m.text) {
+              mergedLocal.set(m.id || `${m.timestamp}_${m.text}`, m);
+            }
+          });
+        }
+      }
+    });
+    if (mergedLocal.size > 0) {
+      const sorted = Array.from(mergedLocal.values()).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      onUpdate(sorted);
     }
   } catch {}
 
-  // 2. Direct Cloud Firestore onSnapshot Listener (Zero external server dependency)
+  // 2. Direct Cloud Firestore onSnapshot Listeners across candidate thread IDs
   if (isFirebaseConfigured() && db) {
     try {
-      const messagesRef = collection(db, CONVERSATIONS_COLLECTION, threadOrSakhiId, 'messages');
-      const unsub = onSnapshot(
-        messagesRef,
-        (snapshot) => {
-          const cloudMsgs: ChatMessage[] = [];
-          snapshot.forEach((docSnap) => {
-            const data = docSnap.data() as ChatMessage;
-            if (data && data.text) {
-              cloudMsgs.push({
-                ...data,
-                id: docSnap.id
-              });
+      const threadMsgsMap: Record<string, ChatMessage[]> = {};
+      const unsubs: (() => void)[] = [];
+
+      const publishMerged = () => {
+        const dedup = new Map<string, ChatMessage>();
+        Object.values(threadMsgsMap).forEach((list) => {
+          list.forEach((m) => {
+            if (m && m.text) {
+              const key = m.id || `${m.timestamp}_${m.text}`;
+              dedup.set(key, m);
             }
           });
+        });
+        const merged = Array.from(dedup.values()).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        try {
+          localStorage.setItem(`chat_${threadOrSakhiId}`, JSON.stringify(merged));
+        } catch {}
+        onUpdate(merged);
+      };
 
-          // Sort chronologically
-          cloudMsgs.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      candidateIds.forEach((cid) => {
+        const messagesRef = collection(db!, CONVERSATIONS_COLLECTION, cid, 'messages');
+        const unsub = onSnapshot(
+          messagesRef,
+          (snapshot) => {
+            const cloudMsgs: ChatMessage[] = [];
+            snapshot.forEach((docSnap) => {
+              const data = docSnap.data() as ChatMessage;
+              if (data && data.text) {
+                cloudMsgs.push({
+                  ...data,
+                  id: docSnap.id
+                });
+              }
+            });
+            threadMsgsMap[cid] = cloudMsgs;
+            publishMerged();
+          },
+          (err) => {
+            console.warn('Firestore chat onSnapshot note:', err);
+          }
+        );
+        unsubs.push(unsub);
+      });
 
-          try {
-            localStorage.setItem(`chat_${threadOrSakhiId}`, JSON.stringify(cloudMsgs));
-          } catch {}
-
-          onUpdate(cloudMsgs);
-        },
-        (err) => {
-          console.warn('Firestore chat onSnapshot note:', err);
-        }
-      );
-
-      return unsub;
+      return () => {
+        unsubs.forEach((u) => u());
+      };
     } catch (err) {
       console.warn('Error initiating Firestore chat listener:', err);
     }
   }
 
-  // 3. Fallback: Optional Polling if a custom backend URL is configured
-  const baseUrl = getApiBaseUrl();
-  if (baseUrl) {
+  // 3. Fallback: Optional Polling ONLY if a custom external backend URL is configured
+  if (hasExternalApiBackend()) {
+    const baseUrl = getApiBaseUrl();
     let lastMessagesJson = '';
     const intervalId = window.setInterval(async () => {
       try {
@@ -106,7 +219,7 @@ export const subscribeToCloudChat = (
           }
         }
       } catch (err) {}
-    }, 1200);
+    }, 1500);
 
     return () => clearInterval(intervalId);
   }
@@ -141,23 +254,27 @@ export const sendCloudChatMessage = async (
   // 2. Direct Cloud Firestore Storage (Syncs to all devices in <100ms)
   if (isFirebaseConfigured() && db) {
     try {
-      const hostDigits = String((_conversationMeta as any)?.hostPhone || _conversationMeta?.sakhiId || threadId).replace(/\D/g, '').slice(-10);
-      const callerDigits = String((_conversationMeta as any)?.callerPhone || _conversationMeta?.callerId || threadId).replace(/\D/g, '').slice(-10);
+      const hostKey = extractChatParticipantKey((_conversationMeta as any)?.hostPhone || _conversationMeta?.sakhiId || '');
+      const callerKey = extractChatParticipantKey((_conversationMeta as any)?.callerPhone || _conversationMeta?.callerId || '');
+
+      const cleanMsgData = stripUndefined(enrichedMessage as Record<string, any>);
 
       // Save individual message to subcollection
       await setDoc(
         doc(db, CONVERSATIONS_COLLECTION, threadId, 'messages', msgId),
-        enrichedMessage
+        cleanMsgData
       );
+
+      const cleanMeta = stripUndefined((_conversationMeta || {}) as Record<string, any>);
 
       // Update conversation overview document with atomic unread count increment
       await setDoc(
         doc(db, CONVERSATIONS_COLLECTION, threadId),
         {
+          ...cleanMeta,
           threadId,
-          ...(_conversationMeta || {}),
-          hostPhone: hostDigits,
-          callerPhone: callerDigits,
+          hostPhone: hostKey || cleanMeta.hostPhone || '',
+          callerPhone: callerKey || cleanMeta.callerPhone || '',
           lastMessage: enrichedMessage.text,
           lastSender: enrichedMessage.sender,
           updatedAt: enrichedMessage.timestamp || Date.now(),
@@ -169,13 +286,13 @@ export const sendCloudChatMessage = async (
       console.log('✅ [ChatSync] Message saved to Cloud Firestore:', threadId, msgId);
       return true;
     } catch (firestoreErr) {
-      console.warn('Firestore send message error:', firestoreErr);
+      console.error('❌ Firestore send message error:', firestoreErr);
     }
   }
 
   // 3. Fallback: Post to local/custom backend if configured
-  const baseUrl = getApiBaseUrl();
-  if (baseUrl) {
+  if (hasExternalApiBackend()) {
+    const baseUrl = getApiBaseUrl();
     try {
       await fetch(`${baseUrl}/api/chat/send`, {
         method: 'POST',
@@ -213,8 +330,8 @@ export const markThreadAsRead = async (
     } catch (err) {}
   }
 
-  const baseUrl = getApiBaseUrl();
-  if (baseUrl) {
+  if (hasExternalApiBackend()) {
+    const baseUrl = getApiBaseUrl();
     try {
       await fetch(`${baseUrl}/api/chat/read`, {
         method: 'POST',
@@ -270,7 +387,7 @@ export const subscribeToHostConversations = (
 ): (() => void) => {
   if (!hostId) return () => {};
 
-  const cleanHost = String(hostId).replace(/\D/g, '').slice(-10);
+  const hostKey = extractChatParticipantKey(hostId);
 
   // 1. Direct Cloud Firestore onSnapshot
   if (isFirebaseConfigured() && db) {
@@ -279,39 +396,57 @@ export const subscribeToHostConversations = (
       const unsub = onSnapshot(
         convCol,
         (snapshot) => {
-          const list: ConversationItem[] = [];
+          const dedupByPeer = new Map<string, ConversationItem>();
           snapshot.forEach((docSnap) => {
             const c = docSnap.data() as any;
             if (!c || !c.lastMessage) return;
 
-            const itemHostDigits = String(c.hostPhone || c.sakhiId || '').replace(/\D/g, '').slice(-10);
-            const isMatch = (
-              c.sakhiId === hostId ||
-              (cleanHost && itemHostDigits === cleanHost) ||
-              (cleanHost && String(c.threadId || '').includes(cleanHost)) ||
-              (cleanHost && String(c.hostPhone || '').includes(cleanHost))
-            );
+            const docId = docSnap.id;
+            const itemHostKey = extractChatParticipantKey(c.hostPhone || c.sakhiId || '');
+            const itemCallerKey = extractChatParticipantKey(c.callerPhone || c.callerId || '');
 
-            if (isMatch) {
-              list.push({
-                threadId: docSnap.id,
-                sakhiId: c.sakhiId || hostId,
-                sakhiName: c.sakhiName,
+            const isDirectHostMatch =
+              c.sakhiId === hostId ||
+              (hostKey && itemHostKey === hostKey) ||
+              (hostKey && String(c.threadId || docId).startsWith(`chat_${hostKey}_`)) ||
+              (hostKey && String(c.threadId || docId).startsWith(`${hostKey}_`));
+
+            const isReverseMatch =
+              hostKey &&
+              (itemCallerKey === hostKey ||
+                String(c.threadId || docId).endsWith(`_${hostKey}`));
+
+            if (isDirectHostMatch || isReverseMatch) {
+              const peerKey = isDirectHostMatch
+                ? (itemCallerKey || c.callerId || docId)
+                : (itemHostKey || c.sakhiId || docId);
+
+              // Ignore self-chats where host and caller are the exact same number
+              if (peerKey === hostKey && itemHostKey === itemCallerKey) return;
+
+              const item: ConversationItem = {
+                threadId: c.threadId || docId,
+                sakhiId: isDirectHostMatch ? (c.sakhiId || hostId) : (`sakhi-user-${hostKey}`),
+                sakhiName: isDirectHostMatch ? c.sakhiName : c.callerName,
                 sakhiAvatar: c.sakhiAvatar,
-                callerId: c.callerId || '',
-                callerName: c.callerName || 'Caller',
-                callerPhone: c.callerPhone || '',
+                callerId: isDirectHostMatch ? (c.callerId || `caller_${peerKey}`) : (c.sakhiId || `caller_${peerKey}`),
+                callerName: isDirectHostMatch ? (c.callerName || 'Caller') : (c.sakhiName || 'Caller'),
+                callerPhone: isDirectHostMatch ? (c.callerPhone || peerKey) : (c.hostPhone || peerKey),
                 callerAvatar: c.callerAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
                 lastMessage: c.lastMessage || '',
                 lastSender: c.lastSender || 'user',
                 updatedAt: c.updatedAt || Date.now(),
                 unreadCount: c.unreadCount || 0
-              });
+              };
+
+              const existing = dedupByPeer.get(peerKey);
+              if (!existing || (item.updatedAt || 0) > (existing.updatedAt || 0)) {
+                dedupByPeer.set(peerKey, item);
+              }
             }
           });
 
-          // Sort by latest message first
-          list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+          const list = Array.from(dedupByPeer.values()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
           onUpdate(list);
         },
         (err) => {
@@ -325,9 +460,9 @@ export const subscribeToHostConversations = (
     }
   }
 
-  // 2. Fallback to custom backend if configured
-  const baseUrl = getApiBaseUrl();
-  if (baseUrl) {
+  // 2. Fallback to custom backend ONLY if configured
+  if (hasExternalApiBackend()) {
+    const baseUrl = getApiBaseUrl();
     const fetchConversations = async () => {
       try {
         const res = await fetch(`${baseUrl}/api/chat/conversations?hostId=${encodeURIComponent(hostId)}`);
@@ -356,7 +491,7 @@ export const subscribeToUserConversations = (
 ): (() => void) => {
   if (!userPhoneOrId) return () => {};
 
-  const cleanPhone = String(userPhoneOrId).replace(/\D/g, '').slice(-10);
+  const callerKey = extractChatParticipantKey(userPhoneOrId);
 
   // 1. Direct Cloud Firestore onSnapshot
   if (isFirebaseConfigured() && db) {
@@ -365,35 +500,55 @@ export const subscribeToUserConversations = (
       const unsub = onSnapshot(
         convCol,
         (snapshot) => {
-          const list: ConversationItem[] = [];
+          const dedupByPeer = new Map<string, ConversationItem>();
           snapshot.forEach((docSnap) => {
             const c = docSnap.data() as any;
             if (!c || !c.lastMessage) return;
 
-            const itemCallerDigits = String(c.callerPhone || c.callerId || '').replace(/\D/g, '').slice(-10);
-            const isMatch = (
-              cleanPhone &&
-              (itemCallerDigits === cleanPhone || String(c.threadId || '').includes(cleanPhone))
-            );
+            const docId = docSnap.id;
+            const itemCallerKey = extractChatParticipantKey(c.callerPhone || c.callerId || '');
+            const itemHostKey = extractChatParticipantKey(c.hostPhone || c.sakhiId || '');
 
-            if (isMatch) {
-              list.push({
-                threadId: docSnap.id,
-                sakhiId: c.sakhiId || '',
-                sakhiName: c.sakhiName,
+            const isDirectCallerMatch =
+              c.callerId === userPhoneOrId ||
+              (callerKey && itemCallerKey === callerKey) ||
+              (callerKey && String(c.threadId || docId).endsWith(`_${callerKey}`));
+
+            const isReverseMatch =
+              callerKey &&
+              (itemHostKey === callerKey ||
+                String(c.threadId || docId).startsWith(`chat_${callerKey}_`) ||
+                String(c.threadId || docId).startsWith(`${callerKey}_`));
+
+            if (isDirectCallerMatch || isReverseMatch) {
+              const peerKey = isDirectCallerMatch
+                ? (itemHostKey || c.sakhiId || docId)
+                : (itemCallerKey || c.callerId || docId);
+
+              if (peerKey === callerKey && itemHostKey === itemCallerKey) return;
+
+              const item: ConversationItem = {
+                threadId: c.threadId || docId,
+                sakhiId: isDirectCallerMatch ? (c.sakhiId || `sakhi-user-${peerKey}`) : (c.callerId || `sakhi-user-${peerKey}`),
+                sakhiName: isDirectCallerMatch ? c.sakhiName : c.callerName,
                 sakhiAvatar: c.sakhiAvatar,
-                callerId: c.callerId || '',
-                callerName: c.callerName || 'Caller',
-                callerPhone: c.callerPhone || cleanPhone,
+                callerId: isDirectCallerMatch ? (c.callerId || `caller_${callerKey}`) : (`caller_${callerKey}`),
+                callerName: isDirectCallerMatch ? (c.callerName || 'Caller') : (c.sakhiName || 'Caller'),
+                callerPhone: callerKey,
                 lastMessage: c.lastMessage || '',
                 lastSender: c.lastSender || 'sakhi',
                 updatedAt: c.updatedAt || Date.now(),
                 unreadCount: c.unreadCount || 0
-              });
+              };
+
+              const existing = dedupByPeer.get(peerKey);
+              if (!existing || (item.updatedAt || 0) > (existing.updatedAt || 0)) {
+                dedupByPeer.set(peerKey, item);
+              }
             }
           });
 
-          list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+          const list = Array.from(dedupByPeer.values()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
           onUpdate(list);
         },
         (err) => {
@@ -407,12 +562,12 @@ export const subscribeToUserConversations = (
     }
   }
 
-  // 2. Fallback to custom backend if configured
-  const baseUrl = getApiBaseUrl();
-  if (baseUrl && cleanPhone) {
+  // 2. Fallback to custom backend ONLY if configured
+  if (hasExternalApiBackend() && callerKey) {
+    const baseUrl = getApiBaseUrl();
     const fetchConversations = async () => {
       try {
-        const res = await fetch(`${baseUrl}/api/chat/conversations?callerPhone=${encodeURIComponent(cleanPhone)}`);
+        const res = await fetch(`${baseUrl}/api/chat/conversations?callerPhone=${encodeURIComponent(callerKey)}`);
         const data = await res.json();
         if (data.success && Array.isArray(data.conversations)) {
           onUpdate(data.conversations);

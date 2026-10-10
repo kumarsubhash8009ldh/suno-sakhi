@@ -135,11 +135,13 @@ const MainContent: React.FC = () => {
       if (caller && (caller.phone || caller.email)) {
         saveUserToCloud(caller);
       }
-      const rawHost = localStorage.getItem('sunosakhi_host_profile');
-      if (rawHost) {
-        const hp = JSON.parse(rawHost);
-        if (hp && (hp.phone || hp.email || hp.id)) {
-          saveHostProfileToCloud(hp);
+      if (localStorage.getItem('sunosakhi_host_logged_in') === 'true') {
+        const rawHost = localStorage.getItem('sunosakhi_host_profile');
+        if (rawHost) {
+          const hp = JSON.parse(rawHost);
+          if (hp && (hp.phone || hp.email || hp.id)) {
+            saveHostProfileToCloud(hp);
+          }
         }
       }
     } catch {}
@@ -935,28 +937,36 @@ const MainContent: React.FC = () => {
         onOpenReply={(notif) => {
           dismissMessageNotification();
           if (notif.senderRole === 'sakhi') {
-            openDirectChat({
-              id: notif.sakhiId || 'sakhi-01',
-              name: notif.sakhiName || 'Sakhi',
-              age: 22,
-              city: 'India',
-              avatar: notif.senderAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80',
-              videoPoster: notif.senderAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=800&auto=format&fit=crop&q=80',
-              status: 'online',
-              rating: 5,
-              totalCalls: 1,
-              languages: ['Hindi'],
-              bio: 'Dil Se Baat',
-              interests: ['Friendly Chat'],
-              voiceRatePerMin: 5,
-              videoRatePerMin: 10,
-              audioSnippet: '',
-              tagline: 'Sakhi Online'
-            });
+            setUserRole('caller');
+            const matchedSakhi = realSakhis.find((s: Sakhi) => s.id === notif.sakhiId);
+            const rawDigits = String(notif.sakhiId || notif.threadId || '').replace(/\D/g, '');
+            const sakhiPhone = matchedSakhi?.phone || (rawDigits.length >= 10 ? rawDigits.slice(0, 10) : undefined);
+            openDirectChat(
+              matchedSakhi || {
+                id: notif.sakhiId || 'sakhi-01',
+                name: notif.sakhiName || 'Sakhi',
+                age: 22,
+                city: 'India',
+                avatar: notif.senderAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80',
+                videoPoster: notif.senderAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=800&auto=format&fit=crop&q=80',
+                status: 'online',
+                rating: 5,
+                totalCalls: 1,
+                languages: ['Hindi'],
+                bio: 'Dil Se Baat',
+                interests: ['Friendly Chat'],
+                voiceRatePerMin: 5,
+                videoRatePerMin: 10,
+                audioSnippet: '',
+                tagline: 'Sakhi Online',
+                phone: sakhiPhone
+              }
+            );
           } else {
             setUserRole('host');
             setActiveMessageThreadId(notif.threadId);
-            const cleanPhone = String(notif.callerPhone || notif.callerId || '').replace(/\D/g, '').slice(-10);
+            const rawCallerDigits = String(notif.callerPhone || notif.callerId || '').replace(/\D/g, '');
+            const cleanPhone = rawCallerDigits.length >= 10 ? rawCallerDigits.slice(-10) : (notif.callerPhone || '');
             openDirectChat({
               id: notif.callerId || `caller-${cleanPhone}`,
               name: notif.callerName || 'Caller',

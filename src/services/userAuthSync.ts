@@ -806,7 +806,7 @@ export const getCurrentUser = (): UserAccount | null => {
   if (raw) {
     try {
       const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && parsed.phone) {
+      if (parsed && typeof parsed === 'object' && (parsed.phone || parsed.email || parsed.id)) {
         return parsed;
       }
     } catch {
@@ -823,9 +823,10 @@ export const updateUserProfilePhoto = async (photoUrl: string): Promise<boolean>
   localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(current));
   saveUserToLocalRegistry(current);
 
-  if (isFirebaseConfigured() && db) {
+  const docKey = current.phone || current.email || current.id;
+  if (isFirebaseConfigured() && db && docKey) {
     try {
-      await setDoc(doc(db, USER_ACCOUNTS_COLLECTION, current.phone), { avatar: photoUrl }, { merge: true });
+      await setDoc(doc(db, USER_ACCOUNTS_COLLECTION, docKey), { avatar: photoUrl }, { merge: true });
     } catch (err) {
       console.warn('Could not update user photo in cloud:', err);
     }
@@ -841,9 +842,10 @@ export const updateUserProfileName = async (newName: string): Promise<boolean> =
   localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(current));
   saveUserToLocalRegistry(current);
 
-  if (isFirebaseConfigured() && db) {
+  const docKey = current.phone || current.email || current.id;
+  if (isFirebaseConfigured() && db && docKey) {
     try {
-      await setDoc(doc(db, USER_ACCOUNTS_COLLECTION, current.phone), { name: newName }, { merge: true });
+      await setDoc(doc(db, USER_ACCOUNTS_COLLECTION, docKey), { name: newName }, { merge: true });
     } catch (err) {
       console.warn('Could not update user name in cloud:', err);
     }
@@ -877,6 +879,7 @@ export const getActiveRole = (): 'caller' | 'host' => {
 export const setActiveRole = (role: 'caller' | 'host'): void => {
   if (typeof window === 'undefined') return;
   localStorage.setItem(ACTIVE_ROLE_KEY, role);
+  localStorage.setItem('sunosakhi_user_role', role);
   broadcastAuthChange();
 };
 
@@ -898,7 +901,7 @@ export const getActiveSession = (): ActiveSession => {
     if (isHostLoggedIn && rawHost) {
       try {
         const host = JSON.parse(rawHost);
-        const hostPhone = host?.phone ? String(host.phone).replace(/\D/g, '') : '';
+        const hostPhone = host?.phone ? String(host.phone).replace(/\D/g, '').slice(-10) : '';
         const hostEmail = host?.email ? String(host.email).trim().toLowerCase() : '';
         if (hostPhone.length >= 10 || hostEmail) {
           return {
@@ -919,10 +922,10 @@ export const getActiveSession = (): ActiveSession => {
 
   const resolveCallerSession = (): ActiveSession | null => {
     const caller = getCurrentUser();
-    if (caller && (caller.phone || caller.email)) {
-      const cleanPhone = (caller.phone || '').replace(/\D/g, '');
+    if (caller && (caller.phone || caller.email || caller.id)) {
+      const cleanPhone = (caller.phone || '').replace(/\D/g, '').slice(-10);
       const cleanEmail = (caller.email || '').trim().toLowerCase();
-      if (cleanPhone.length >= 10 || cleanEmail) {
+      if (cleanPhone.length >= 10 || cleanEmail || caller.id) {
         return {
           isLoggedIn: true,
           role: 'caller',
@@ -941,6 +944,8 @@ export const getActiveSession = (): ActiveSession => {
   if (preferredRole === 'caller') {
     const callerSession = resolveCallerSession();
     if (callerSession) return callerSession;
+    const fallbackHost = resolveHostSession();
+    if (fallbackHost) return { ...fallbackHost, role: 'caller' };
     return {
       isLoggedIn: false,
       role: 'caller',
@@ -956,6 +961,8 @@ export const getActiveSession = (): ActiveSession => {
   if (preferredRole === 'host') {
     const hostSession = resolveHostSession();
     if (hostSession) return hostSession;
+    const fallbackCaller = resolveCallerSession();
+    if (fallbackCaller) return { ...fallbackCaller, role: 'host' };
     return {
       isLoggedIn: false,
       role: 'host',

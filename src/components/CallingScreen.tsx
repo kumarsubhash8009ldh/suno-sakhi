@@ -101,8 +101,8 @@ export const CallingScreen: React.FC = () => {
           <Sparkles className="w-4 h-4" />
           <span>
             {isHost
-              ? '🎵 Suno Sakhi Caller Tune Playing... (Connecting to User)'
-              : '🎵 Suno Sakhi Caller Tune Playing... (Auto-Bypass Active)'}
+              ? '📞 Calling User... Ringing'
+              : `📞 Calling ${activeSakhi.name}... Ringing`}
           </span>
         </p>
 

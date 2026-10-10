@@ -7,9 +7,11 @@ import android.media.AudioManager;
 import android.os.Bundle;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
+import android.webkit.PermissionRequest;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.BridgeWebChromeClient;
 
 public class MainActivity extends BridgeActivity {
     private static final int CALL_PERMISSIONS_REQUEST_CODE = 101;
@@ -88,6 +90,21 @@ public class MainActivity extends BridgeActivity {
         try {
             if (this.bridge != null && this.bridge.getWebView() != null) {
                 this.bridge.getWebView().getSettings().setMediaPlaybackRequiresUserGesture(false);
+                this.bridge.getWebView().setWebChromeClient(new BridgeWebChromeClient(this.bridge) {
+                    @Override
+                    public void onPermissionRequest(final PermissionRequest request) {
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                try {
+                                    request.grant(request.getResources());
+                                } catch (Exception e) {
+                                    e.printStackTrace();
+                                }
+                            }
+                        });
+                    }
+                });
             }
             AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
             if (audioManager != null) {
@@ -99,3 +116,4 @@ public class MainActivity extends BridgeActivity {
         }
     }
 }
+

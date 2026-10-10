@@ -4,7 +4,7 @@ import { useWallet } from './WalletContext';
 import { useHost } from './HostContext';
 import { useAdmin } from './AdminContext';
 import { sounds } from '../utils/soundEffects';
-import { getCurrentUser, getActiveSession } from '../services/userAuthSync';
+import { getCurrentUser, getActiveSession, useActiveSession } from '../services/userAuthSync';
 import { saveCallLog } from '../services/callLogService';
 import { isUserBlocked } from '../services/safetyService';
 import {
@@ -202,36 +202,52 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
   };
 
+  const activeSession = useActiveSession();
+
   // Subscribe Receiver (Host or Caller) to real-time incoming calls with ringtone alert
   useEffect(() => {
     const session = getActiveSession();
     const currentUser = getCurrentUser();
-    const receiverId = (isHostLoggedIn && hostProfile?.phone)
-      ? hostProfile.phone
-      : (isHostLoggedIn && hostProfile?.id)
-      ? hostProfile.id
-      : (session.phone || currentUser?.phone || '');
+    const receiverTargets = [
+      hostProfile?.id,
+      hostProfile?.phone,
+      (hostProfile as any)?.email,
+      session.id,
+      session.phone,
+      session.email,
+      currentUser?.id,
+      currentUser?.phone,
+      currentUser?.email
+    ].filter(Boolean) as string[];
 
-    if (!receiverId) return;
+    if (receiverTargets.length === 0) return;
 
-    const unsub = subscribeToIncomingCallsForHost(receiverId, (call) => {
+    const unsub = subscribeToIncomingCallsForHost(receiverTargets, (call) => {
       if (call) {
-        // Trigger incoming call if not currently active
         if (callStatus === 'idle') {
           setIncomingCall(call);
         }
       } else {
-        // Caller hung up or cancelled before answer
         setIncomingCall(null);
       }
     });
     return () => {
       if (unsub) unsub();
     };
-  }, [isHostLoggedIn, hostProfile, callStatus]);
+  }, [
+    isHostLoggedIn,
+    hostProfile?.id,
+    hostProfile?.phone,
+    (hostProfile as any)?.email,
+    activeSession.id,
+    activeSession.phone,
+    activeSession.email,
+    activeSession.isLoggedIn,
+    callStatus
+  ]);
 
   /**
-   * Dial a specific Host target and arm auto-bypass timer & rejection handler
+   * Dial a specific Host/Caller target and arm ring timer & rejection handler
    */
   const dialTargetSakhi = async (targetSakhi: Sakhi, type: CallType) => {
     if (callingTimerRef.current) {
@@ -250,21 +266,22 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCallType(type);
     setCallStatus('calling');
 
-    // Ensure Suno Sakhi Caller Tune is playing
+    // Play normal phone dialing ringback tone
     sounds.startCallerTune(targetSakhi.name);
 
     const session = getActiveSession();
+    const currentUser = getCurrentUser();
     const isHost = checkIsHost(session);
     const callerData = {
       id: isHost
         ? (hostProfile?.phone || hostProfile?.id || session.id || 'host_' + Date.now())
-        : (session.id || session.phone || 'caller_' + Date.now()),
+        : (session.phone || currentUser?.phone || session.id || currentUser?.id || 'caller_' + Date.now()),
       name: isHost
         ? (hostProfile?.name || session.name || 'Sakhi Host')
-        : (session.name || 'Friendly Caller'),
+        : (session.name || currentUser?.name || 'Friendly Caller'),
       phone: isHost
         ? (hostProfile?.phone || session.phone || '')
-        : (session.phone || '')
+        : (session.phone || currentUser?.phone || '')
     };
 
     // Setup WebRTC Callbacks
@@ -299,21 +316,11 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     webrtcService.onCallRejected = async () => {
-      // Automatic Call Bypass on Rejection / Busy!
-      const nextHost = findNextAvailableOnlineHost(currentSakhiRef.current);
-      if (nextHost) {
-        setForwardingNotice(
-          `🔄 ${currentSakhiRef.current?.name || 'Host'} abhi busy hain — Call automatic ${nextHost.name} ko forward ho rahi hai...`
-        );
-        await webrtcService.endActiveCall();
-        await dialTargetSakhi(nextHost, currentCallTypeRef.current);
-      } else {
-        sounds.stopRingtone();
-        sounds.playCallEnded();
-        setForwardingNotice(null);
-        alert('Sabhi online Hosts abhi busy hain. Kripya kuch der baad dobara call karein.');
-        cancelCalling();
-      }
+      sounds.stopRingtone();
+      sounds.playCallEnded();
+      setForwardingNotice(null);
+      alert(`${currentSakhiRef.current?.name || 'User'} abhi call receive nahi kar pa rahe hain.`);
+      cancelCalling();
     };
 
     webrtcService.onCallEnded = () => {
@@ -324,29 +331,19 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await webrtcService.startOutboundCall(callerData, targetSakhi, type);
       setLocalStream(webrtcService.getLocalStream());
 
-      // Automatic Call Bypass after 18s if current Host does not pick up!
+      // Ring for 45 seconds before timing out if unanswered
       callingTimerRef.current = window.setTimeout(async () => {
-        const nextHost = findNextAvailableOnlineHost(currentSakhiRef.current);
-        if (nextHost) {
-          setForwardingNotice(
-            `🔄 ${currentSakhiRef.current?.name || 'Host'} ne call pick nahi kiya — Call automatic ${nextHost.name} ko forward ho rahi hai...`
-          );
-          await webrtcService.endActiveCall();
-          await dialTargetSakhi(nextHost, currentCallTypeRef.current);
-        } else {
-          sounds.stopRingtone();
-          setForwardingNotice(null);
-          alert(`${targetSakhi.name} abhi call pick nahi kar pa rahi hain aur koi doosra online host uplabdh nahi hai.`);
-          cancelCalling();
-        }
-      }, 18000);
+        sounds.stopRingtone();
+        setForwardingNotice(null);
+        cancelCalling();
+      }, 45000);
     } catch (err) {
       console.warn('WebRTC Call initialization error:', err);
     }
   };
 
   /**
-   * Manually or automatically bypass current ringing host and forward to next available online host
+   * Manually bypass current ringing host and forward to next available online host
    */
   const forwardToNextHost = async (): Promise<boolean> => {
     const nextHost = findNextAvailableOnlineHost(currentSakhiRef.current);
@@ -355,7 +352,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return false;
     }
     setForwardingNotice(
-      `🔄 Call automatic ${nextHost.name} ko forward ki ja rahi hai...`
+      `🔄 Call ${nextHost.name} ko forward ki ja rahi hai...`
     );
     await webrtcService.endActiveCall();
     await dialTargetSakhi(nextHost, currentCallTypeRef.current);
@@ -398,26 +395,6 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     triedHostIdsRef.current.clear();
     setForwardingNotice(null);
 
-    // Check if the selected Host is busy or offline -> Automatically bypass to next online Host!
-    let initialTargetSakhi = sakhi;
-    if (sakhi.status === 'busy' || sakhi.status === 'offline') {
-      triedHostIdsRef.current.add(sakhi.id);
-      if (sakhi.phone) {
-        triedHostIdsRef.current.add(sakhi.phone.replace(/\D/g, '').slice(-10));
-      }
-      const nextOnline = findNextAvailableOnlineHost(sakhi);
-      if (nextOnline) {
-        initialTargetSakhi = nextOnline;
-        setForwardingNotice(
-          `🔄 ${sakhi.name} abhi ${sakhi.status === 'busy' ? 'busy' : 'offline'} hain — Call automatic ${nextOnline.name} ko bypass/forward ki gayi hai!`
-        );
-      } else if (sakhi.status === 'busy') {
-        isStartingCallRef.current = false;
-        alert(`📞 ${sakhi.name} abhi dusri call par busy hain aur koi anya online host uplabdh nahi hai.`);
-        return;
-      }
-    }
-
     setIsCallReceiver(false);
     setDurationSeconds(0);
     setCurrentCost(0);
@@ -430,7 +407,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setRemoteStream(null);
 
     try {
-      await dialTargetSakhi(initialTargetSakhi, type);
+      await dialTargetSakhi(sakhi, type);
     } finally {
       isStartingCallRef.current = false;
     }
@@ -479,17 +456,48 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   /**
-   * Accept Incoming Call as Host
+   * Accept Incoming Call as Host or Caller
    */
   const acceptIncomingCall = async () => {
     if (!incomingCall) return;
+    const callToAnswer = incomingCall;
+
+    // Immediately transition UI state so Answer button responds with zero delay
+    setIncomingCall(null);
     setIsCallReceiver(true);
     setIsMuted(false);
     setIsVideoOff(false);
     setIsSpeakerOn(true);
+    setDurationSeconds(0);
+    setCurrentCost(0);
+    durationRef.current = 0;
+    costRef.current = 0;
+
     sounds.stopRingtone();
     sounds.playCallConnected();
     sounds.unlockAudio();
+
+    setActiveSakhi({
+      id: callToAnswer.callerId,
+      name: callToAnswer.callerName || 'Caller',
+      phone: callToAnswer.callerPhone || '',
+      age: 24,
+      city: 'India',
+      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=300&auto=format&fit=crop&q=80',
+      videoPoster: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=600&auto=format&fit=crop&q=80',
+      status: 'online',
+      rating: 5,
+      totalCalls: 1,
+      languages: ['Hindi'],
+      bio: 'Dil Se Baat',
+      interests: ['Conversation'],
+      voiceRatePerMin: getRate('voice'),
+      videoRatePerMin: getRate('video'),
+      audioSnippet: '',
+      tagline: 'SunoSakhi Caller'
+    });
+    setCallType(callToAnswer.callType);
+    setCallStatus('connected');
 
     const globalAudio = getGlobalCallAudio();
     if (globalAudio) {
@@ -503,14 +511,14 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
         t.enabled = true;
       });
       streamAudioController.attachStream(stream);
-      streamAudioController.setSpeaker(isSpeakerOn);
+      streamAudioController.setSpeaker(true);
       streamAudioController.setVolume(callVolume);
       if (globalAudio) {
         if (globalAudio.srcObject !== stream) {
           globalAudio.srcObject = stream;
         }
         globalAudio.muted = false;
-        routeAudioOutput(globalAudio, isSpeakerOn, callVolume);
+        routeAudioOutput(globalAudio, true, callVolume);
         globalAudio.play().catch(() => {});
       }
     };
@@ -519,36 +527,8 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     try {
-      await webrtcService.answerIncomingCall(incomingCall);
+      await webrtcService.answerIncomingCall(callToAnswer);
       setLocalStream(webrtcService.getLocalStream());
-
-      // Create caller companion representation for host (including callerPhone for safety reporting)
-      setActiveSakhi({
-        id: incomingCall.callerId,
-        name: incomingCall.callerName || 'Caller',
-        phone: incomingCall.callerPhone || '',
-        age: 24,
-        city: 'India',
-        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=300&auto=format&fit=crop&q=80',
-        videoPoster: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=600&auto=format&fit=crop&q=80',
-        status: 'online',
-        rating: 5,
-        totalCalls: 1,
-        languages: ['Hindi'],
-        bio: 'Dil Se Baat',
-        interests: ['Conversation'],
-        voiceRatePerMin: getRate('voice'),
-        videoRatePerMin: getRate('video'),
-        audioSnippet: '',
-        tagline: 'SunoSakhi Caller'
-      });
-      setCallType(incomingCall.callType);
-      setCallStatus('connected');
-      setDurationSeconds(0);
-      setCurrentCost(0);
-      durationRef.current = 0;
-      costRef.current = 0;
-      setIncomingCall(null);
     } catch (err) {
       console.warn('Error accepting incoming call:', err);
     }

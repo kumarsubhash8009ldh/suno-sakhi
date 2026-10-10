@@ -470,25 +470,45 @@ export const recordHostIncomeToCloud = async (
   extra?: { hostPhone?: string; durationSec?: number; callType?: string }
 ): Promise<boolean> => {
   // 1. Update Firestore if configured
-  if (isFirebaseConfigured() && db && hostId) {
+  if (isFirebaseConfigured() && db && (hostId || extra?.hostPhone)) {
     try {
-      const hostDocRef = doc(db, HOSTS_COLLECTION, hostId);
-      const hostSnap = await getDoc(hostDocRef);
-      if (hostSnap.exists()) {
-        const hData = hostSnap.data() as any;
-        const currentHistory = Array.isArray(hData.incomeHistory) ? hData.incomeHistory : [];
-        const nextHistory = [incomeRecord, ...currentHistory];
-        const nextNet = updatedEarnings ? updatedEarnings.netIncome : (hData.netIncome || 0) + (incomeRecord.hostEarned || 0);
-        const nextPending = updatedEarnings ? updatedEarnings.pendingPayout : (hData.pendingPayout || 0) + (incomeRecord.hostEarned || 0);
-        const nextGross = updatedEarnings ? updatedEarnings.grossRevenue : (hData.grossRevenue || 0) + (incomeRecord.grossAmount || 0);
+      const cleanPhone = String(extra?.hostPhone || hostId || '').replace(/\D/g, '').slice(-10);
+      const candidates = Array.from(
+        new Set(
+          [
+            hostId,
+            cleanPhone.length === 10 ? `sakhi-user-${cleanPhone}` : '',
+            cleanPhone.length === 10 ? `host_${cleanPhone}` : '',
+            cleanPhone.length === 10 ? cleanPhone : ''
+          ].filter(Boolean)
+        )
+      );
 
-        await setDoc(hostDocRef, {
-          incomeHistory: nextHistory,
-          netIncome: parseFloat(Number(nextNet).toFixed(2)),
-          pendingPayout: parseFloat(Number(nextPending).toFixed(2)),
-          grossRevenue: parseFloat(Number(nextGross).toFixed(2)),
-          lastActiveAt: Date.now()
-        }, { merge: true });
+      for (const candidateId of candidates) {
+        const hostDocRef = doc(db, HOSTS_COLLECTION, candidateId);
+        const hostSnap = await getDoc(hostDocRef);
+        if (hostSnap.exists()) {
+          const hData = hostSnap.data() as any;
+          const currentHistory = Array.isArray(hData.incomeHistory) ? hData.incomeHistory : [];
+          const nextHistory = [incomeRecord, ...currentHistory];
+          const nextNet = updatedEarnings ? updatedEarnings.netIncome : (hData.netIncome || 0) + (incomeRecord.hostEarned || 0);
+          const nextPending = updatedEarnings ? updatedEarnings.pendingPayout : (hData.pendingPayout || 0) + (incomeRecord.hostEarned || 0);
+          const nextGross = updatedEarnings ? updatedEarnings.grossRevenue : (hData.grossRevenue || 0) + (incomeRecord.grossAmount || 0);
+          const nextMessages =
+            extra?.callType === 'message' || incomeRecord.type === 'message'
+              ? (hData.totalMessagesReceived || 0) + 1
+              : (hData.totalMessagesReceived || 0);
+
+          await setDoc(hostDocRef, {
+            incomeHistory: nextHistory,
+            netIncome: parseFloat(Number(nextNet).toFixed(2)),
+            pendingPayout: parseFloat(Number(nextPending).toFixed(2)),
+            grossRevenue: parseFloat(Number(nextGross).toFixed(2)),
+            totalMessagesReceived: nextMessages,
+            lastActiveAt: Date.now()
+          }, { merge: true });
+          break;
+        }
       }
     } catch (err) {
       console.warn('Could not record host income to Firestore:', err);

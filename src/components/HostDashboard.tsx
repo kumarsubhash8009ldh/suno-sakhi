@@ -28,7 +28,7 @@ import {
   Wifi,
   WifiOff
 } from 'lucide-react';
-import { useHost } from '../context/HostContext';
+import { useHost, MAX_MESSAGE_WORDS, MESSAGE_RATE } from '../context/HostContext';
 import { useCall } from '../context/CallContext';
 import { ConversationItem, ChatMessage, Sakhi } from '../types';
 import { subscribeToCloudChat, markThreadAsRead } from '../services/chatSync';
@@ -79,6 +79,7 @@ export const HostDashboard: React.FC = () => {
     updateHostProfile,
     openVerificationModal,
     openWithdrawModal,
+    openDirectChat,
     requestPayout,
     hostConversations,
     sendHostManualReply,
@@ -1030,8 +1031,36 @@ export const HostDashboard: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Action Buttons: 📞 Voice, 📹 Video, 💬 Chat */}
+                    {/* Action Buttons: 💬 Free Chat, 📞 Voice, 📹 Video */}
                     <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        onClick={() =>
+                          openDirectChat({
+                            id: caller.id || `caller-${cleanPhone}`,
+                            name: caller.name || 'Caller',
+                            age: 24,
+                            city: 'India',
+                            avatar: caller.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&auto=format&fit=crop&q=80',
+                            videoPoster: caller.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
+                            status: 'online',
+                            rating: 5,
+                            totalCalls: 1,
+                            languages: ['Hindi'],
+                            bio: 'SunoSakhi Caller',
+                            interests: ['Friendly Chat'],
+                            voiceRatePerMin: 5,
+                            videoRatePerMin: 10,
+                            audioSnippet: '',
+                            tagline: 'Active Caller',
+                            phone: cleanPhone || caller.phone
+                          })
+                        }
+                        className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-emerald-600/40 transition-all hover:scale-105 active:scale-95"
+                        title="Direct Message bhejein (Host 100% Free ₹0)"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Chat (Free)</span>
+                      </button>
                       <button
                         onClick={() => handleCallCaller(caller, 'voice')}
                         className="px-3 py-2 rounded-xl bg-pink-600 hover:bg-pink-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-pink-600/40 transition-all hover:scale-105 active:scale-95"
@@ -1068,7 +1097,7 @@ export const HostDashboard: React.FC = () => {
                   <MessageCircle className="w-4 h-4 text-pink-400" />
                   <span>Callers Inbox</span>
                 </h3>
-                <p className="text-[11px] text-gray-400">Manual replies earn ₹1.20/msg</p>
+                <p className="text-[11px] text-emerald-400 font-semibold">Caller: ₹{MESSAGE_RATE}/msg • Host Reply: FREE (₹0)</p>
               </div>
               <span className="text-xs px-2 py-0.5 rounded-full bg-pink-500/20 text-pink-300 font-bold">
                 {hostConversations.length} Users
@@ -1140,7 +1169,7 @@ export const HostDashboard: React.FC = () => {
                       </h4>
                       <p className="text-[10px] text-emerald-400 flex items-center gap-1">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
-                        <span>Direct Manual 2-Way Chat (Zero Bots)</span>
+                        <span>Host Chat 100% FREE (₹0) • Caller Paid ₹{MESSAGE_RATE}/msg ({MAX_MESSAGE_WORDS} words)</span>
                       </p>
                     </div>
                   </div>
@@ -1170,8 +1199,8 @@ export const HostDashboard: React.FC = () => {
                       <Video className="w-3.5 h-3.5" />
                       <span className="hidden sm:inline">Video</span>
                     </button>
-                    <span className="text-[11px] px-2.5 py-1 rounded-full bg-pink-500/20 text-pink-300 font-bold border border-pink-500/30 hidden xs:inline">
-                      Host Earn
+                    <span className="text-[11px] px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30 hidden xs:inline">
+                      Host Free ₹0
                     </span>
                   </div>
                 </div>
@@ -1180,7 +1209,7 @@ export const HostDashboard: React.FC = () => {
                 <div className="flex-1 p-3 sm:p-4 overflow-y-auto bg-[#0b141a]">
                   {activeThreadMsgs.length === 0 ? (
                     <div className="text-center py-16 text-gray-400 text-xs">
-                      Iss user ke sath baatcheet shuru karein. Host replies are 100% free with zero output charges.
+                      Iss user ke sath baatcheet shuru karein. Host replies are 100% free (₹0) with max {MAX_MESSAGE_WORDS} words per message.
                     </div>
                   ) : (
                     <div className="w-full flex flex-col space-y-2 py-1">
@@ -1212,7 +1241,7 @@ export const HostDashboard: React.FC = () => {
                                       isSentByHost ? 'bg-emerald-400' : 'bg-pink-400'
                                     }`}
                                   ></span>
-                                  <span>{isSentByHost ? 'Aap (Host • Sender)' : `${msg.callerName || selectedConv?.callerName || 'Caller'} (Receiver)`}</span>
+                                  <span>{isSentByHost ? 'Aap (Host • Free ₹0)' : `${msg.callerName || selectedConv?.callerName || 'Caller'} (Paid ₹${MESSAGE_RATE})`}</span>
                                 </span>
                               </div>
 
@@ -1225,7 +1254,11 @@ export const HostDashboard: React.FC = () => {
                                   isSentByHost ? 'text-emerald-200/75' : 'text-[#8696a0]'
                                 }`}
                               >
-                                {isSentByHost && <span>Host (₹0) •</span>}
+                                {isSentByHost ? (
+                                  <span className="text-emerald-300 font-semibold">Free (₹0) •</span>
+                                ) : (
+                                  <span className="text-pink-300 font-semibold">Caller Paid ₹{msg.cost > 0 ? msg.cost : MESSAGE_RATE} •</span>
+                                )}
                                 <span>
                                   {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                 </span>
@@ -1241,22 +1274,34 @@ export const HostDashboard: React.FC = () => {
                 </div>
 
                 {/* Manual Reply Input Form */}
-                <form onSubmit={handleSendReply} className="p-3 border-t border-pink-500/20 bg-black/60 flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={replyText}
-                    onChange={(e) => setReplyText(e.target.value)}
-                    placeholder="Apna manual reply likhein..."
-                    className="flex-1 px-4 py-3 rounded-2xl bg-black/70 border border-pink-500/30 text-white text-xs focus:outline-none focus:border-pink-500"
-                  />
-                  <button
-                    type="submit"
-                    disabled={replyLoading || !replyText.trim()}
-                    className="py-3 px-5 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 text-white font-bold text-xs shadow-lg flex items-center gap-1.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                    <span>Send Reply</span>
-                  </button>
+                <form onSubmit={handleSendReply} className="p-3 border-t border-pink-500/20 bg-black/60 flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-emerald-400 font-bold">🌸 Host Reply: 100% Free (₹0 Charges)</span>
+                    <span className={`font-mono font-bold px-2 py-0.5 rounded-full ${
+                      replyText.trim().split(/\s+/).filter(Boolean).length > MAX_MESSAGE_WORDS
+                        ? 'bg-red-500/20 text-red-400'
+                        : 'bg-white/10 text-gray-300'
+                    }`}>
+                      {replyText.trim().split(/\s+/).filter(Boolean).length} / {MAX_MESSAGE_WORDS} words
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={replyText}
+                      onChange={(e) => setReplyText(e.target.value)}
+                      placeholder={`Apna manual reply likhein (100% Free ₹0, max ${MAX_MESSAGE_WORDS} words)...`}
+                      className="flex-1 px-4 py-3 rounded-2xl bg-black/70 border border-pink-500/30 text-white text-xs focus:outline-none focus:border-pink-500"
+                    />
+                    <button
+                      type="submit"
+                      disabled={replyLoading || !replyText.trim() || replyText.trim().split(/\s+/).filter(Boolean).length > MAX_MESSAGE_WORDS}
+                      className="py-3 px-5 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 text-white font-bold text-xs shadow-lg flex items-center gap-1.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>Send (Free ₹0)</span>
+                    </button>
+                  </div>
                 </form>
 
                 {replyError && (

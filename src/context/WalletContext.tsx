@@ -32,6 +32,7 @@ interface WalletContextType {
     method?: string
   ) => Promise<{ success: boolean; message: string; request?: RechargeRequest }>;
   deductLiveAmount: (amount: number) => boolean;
+  deductChatExpense: (sakhiName: string, amount: number, wordCount: number) => boolean;
   recordCallExpense: (sakhi: Sakhi, callType: CallType, durationSec: number, cost: number) => void;
   resetToDefault: () => void;
   creditLoginBonus: (phone: string, isNewUser: boolean, hasReferral: boolean) => void;
@@ -327,31 +328,72 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const deductLiveAmount = (amount: number): boolean => {
     // STRICT RULE: Host accounts are 100% FREE! Zero charges for Girl Hosts!
     const activeSess = getActiveSession();
+    const activeRole = localStorage.getItem('sunosakhi_active_role') || activeSess.role || 'caller';
     const isHostActive =
-      activeSess.role === 'host' ||
-      localStorage.getItem('sunosakhi_host_logged_in') === 'true' ||
-      localStorage.getItem('sunosakhi_active_role') === 'host';
+      activeRole === 'host' &&
+      (activeSess.role === 'host' || localStorage.getItem('sunosakhi_host_logged_in') === 'true');
     if (isHostActive) {
       return true;
     }
 
-    if (balance <= 0) return false;
+    if (balance < amount || balance <= 0) return false;
 
     const next = parseFloat(Math.max(0, balance - amount).toFixed(2));
     setBalance(next);
+
+    if (activeSess.phone) {
+      const cleanPhone = activeSess.phone.replace(/\D/g, '');
+      localStorage.setItem(getPhoneKey(cleanPhone), next.toString());
+    }
 
     // Sync tick to cloud asynchronously
     syncLiveBalanceToCloud(userId, next);
     return true;
   };
 
+  const deductChatExpense = (sakhiName: string, amount: number, wordCount: number): boolean => {
+    // STRICT RULE: Host accounts are 100% FREE! Zero charges for Girl Hosts!
+    const activeSess = getActiveSession();
+    const activeRole = localStorage.getItem('sunosakhi_active_role') || activeSess.role || 'caller';
+    const isHostActive =
+      activeRole === 'host' &&
+      (activeSess.role === 'host' || localStorage.getItem('sunosakhi_host_logged_in') === 'true');
+    if (isHostActive) {
+      return true;
+    }
+
+    if (balance < amount || balance <= 0) return false;
+
+    const next = parseFloat(Math.max(0, balance - amount).toFixed(2));
+    setBalance(next);
+
+    const newTx: WalletTransaction = {
+      id: 'tx-chat-' + Date.now(),
+      type: 'debit',
+      amount: parseFloat(amount.toFixed(2)),
+      description: `💬 Chat Message to ${sakhiName} (${wordCount} words • ₹${amount}/msg)`,
+      timestamp: Date.now(),
+      sakhiName
+    };
+    setTransactions((prev) => [newTx, ...prev]);
+
+    if (activeSess.phone) {
+      const cleanPhone = activeSess.phone.replace(/\D/g, '');
+      localStorage.setItem(getPhoneKey(cleanPhone), next.toString());
+    }
+
+    // Sync balance & transaction to Cloud Firestore
+    syncTransactionToCloud(userId, next, newTx);
+    return true;
+  };
+
   const recordCallExpense = (sakhi: Sakhi, callType: CallType, durationSec: number, cost: number) => {
     // STRICT RULE: Never record call expense on Girl Host ID!
     const activeSess = getActiveSession();
+    const activeRole = localStorage.getItem('sunosakhi_active_role') || activeSess.role || 'caller';
     if (
-      activeSess.role === 'host' ||
-      localStorage.getItem('sunosakhi_host_logged_in') === 'true' ||
-      localStorage.getItem('sunosakhi_active_role') === 'host'
+      activeRole === 'host' &&
+      (activeSess.role === 'host' || localStorage.getItem('sunosakhi_host_logged_in') === 'true')
     ) {
       return;
     }
@@ -444,6 +486,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         recharge,
         submitRecharge,
         deductLiveAmount,
+        deductChatExpense,
         recordCallExpense,
         resetToDefault,
         creditLoginBonus,

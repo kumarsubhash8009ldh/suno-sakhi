@@ -40,7 +40,7 @@ export const DirectChatModal: React.FC = () => {
 
   const voiceRate = directChatSakhi?.voiceRatePerMin || settings?.voiceRatePerMin || 7;
   const videoRate = directChatSakhi?.videoRatePerMin || settings?.videoRatePerMin || 15;
-  const chatRate = settings?.sakhiChatRate || MESSAGE_RATE || 3;
+  const chatRate = MESSAGE_RATE; // Strictly ₹3 per message (max 120 words) for Caller, ₹0 Free for Host
 
   const [inputText, setInputText] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -174,7 +174,7 @@ export const DirectChatModal: React.FC = () => {
               </h3>
               <p className="text-[11px] text-emerald-400 flex items-center gap-1.5 font-medium">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span>online • {isHostViewer ? 'Host Account (100% Free • ₹0 Charges)' : `Sakhi Chat (₹${chatRate}/msg)`}</span>
+                <span>online • {isHostViewer ? `Host Account (100% Free • ₹0 Charges • ${MAX_MESSAGE_WORDS} words)` : `Sakhi Chat (₹${chatRate}/msg • ${MAX_MESSAGE_WORDS} words)`}</span>
               </p>
             </div>
           </div>
@@ -316,7 +316,11 @@ export const DirectChatModal: React.FC = () => {
                           isSentByMe ? 'text-emerald-200/75' : 'text-[#8696a0]'
                         }`}
                       >
-                        {isSentByMe && msg.cost > 0 && <span className="text-emerald-300 font-semibold">₹{msg.cost} •</span>}
+                        {isSentByMe && (
+                          <span className="text-emerald-300 font-semibold">
+                            {isHostViewer ? 'Free (₹0) •' : `-₹${msg.cost > 0 ? msg.cost : chatRate} •`}
+                          </span>
+                        )}
                         <span>
                           {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
@@ -364,18 +368,18 @@ export const DirectChatModal: React.FC = () => {
               {isHostViewer ? (
                 <span className="text-emerald-400 font-bold flex items-center gap-1">
                   <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>🌸 Host Account: 100% Free (Zero Charges)</span>
+                  <span>🌸 Host Account: 100% Free (₹0 Charges • Max {MAX_MESSAGE_WORDS} words)</span>
                 </span>
               ) : (
                 <span className="text-gray-400">
-                  Wallet Balance: <strong className="text-white">₹{((balance ?? 0) || 0).toFixed(2)}</strong> (₹{chatRate}/msg)
+                  Wallet Balance: <strong className="text-white">₹{((balance ?? 0) || 0).toFixed(2)}</strong> (₹{chatRate}/msg • {MAX_MESSAGE_WORDS} words)
                 </span>
               )}
               <span
                 className={`font-mono font-bold px-2.5 py-0.5 rounded-full ${
                   isOverLimit
                     ? 'bg-red-500/20 text-red-400 border border-red-500/40 animate-pulse'
-                    : wordCount > 90
+                    : wordCount > 100
                     ? 'bg-amber-500/20 text-amber-300'
                     : 'bg-white/10 text-gray-300'
                 }`}
@@ -401,7 +405,7 @@ export const DirectChatModal: React.FC = () => {
             <div className="flex items-center gap-2">
               <input
                 type="text"
-                placeholder={isHostViewer ? `Host reply (100% Free, max ${MAX_MESSAGE_WORDS} words)...` : `Type a message (Sakhi Chat: ₹${chatRate} per msg, max ${MAX_MESSAGE_WORDS} words)...`}
+                placeholder={isHostViewer ? `Host reply (100% Free ₹0, max ${MAX_MESSAGE_WORDS} words)...` : `Type a message (Sakhi Chat: ₹${chatRate} per msg, max ${MAX_MESSAGE_WORDS} words)...`}
                 value={inputText}
                 onChange={(e) => {
                   setInputText(e.target.value);
@@ -419,7 +423,7 @@ export const DirectChatModal: React.FC = () => {
                 className="py-3 px-5 rounded-2xl bg-gradient-to-r from-pink-600 via-rose-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white font-extrabold text-xs shadow-lg shadow-pink-900/40 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 transition-all flex-shrink-0"
               >
                 <Send className="w-3.5 h-3.5" />
-                <span>{isHostViewer ? 'Send (Free)' : `Send (₹${chatRate})`}</span>
+                <span>{isHostViewer ? 'Send (Free ₹0)' : `Send (₹${chatRate})`}</span>
               </button>
             </div>
           </form>

@@ -56,8 +56,8 @@ const CHAT_STORAGE_KEY = 'sunosakhi_chat_messages';
 const PAYOUT_STORAGE_KEY = 'sunosakhi_host_payouts';
 const HOST_PAYOUTS_COLLECTION = 'host_payouts';
 const HOST_INCOME_PERCENT = 60; // 60% Host Share!
-export const MESSAGE_RATE = 3.0; // ₹3 per message
-export const MAX_MESSAGE_WORDS = 150; // 150 words limit
+export const MESSAGE_RATE = 3.0; // ₹3 per message for Caller (Host is ₹0 Free)
+export const MAX_MESSAGE_WORDS = 120; // 120 words limit per message
 export const HOST_CHAT_EARNING = 1.5; // ₹1.50 per message direct host income
 
 interface HostContextType {
@@ -201,7 +201,7 @@ const sanitizeHostProfile = (data: any): HostProfile => {
 const HostContext = createContext<HostContextType | undefined>(undefined);
 
 export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { balance, deductLiveAmount, openWalletModal } = useWallet();
+  const { balance, deductLiveAmount, deductChatExpense, openWalletModal } = useWallet();
   const session = useActiveSession();
 
   const [hostProfile, setHostProfile] = useState<HostProfile>(() => {
@@ -846,7 +846,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     // STRICT RULE: Host is NEVER charged for messages! 100% FREE for Female/Girl Hosts.
-    // Callers are charged MESSAGE_RATE (₹3.00/msg) deducted from wallet.
+    // Callers are charged MESSAGE_RATE (₹3.00/msg up to 120 words) deducted from wallet.
     const isHost = Boolean(
       userRole === 'host' &&
       (isHostLoggedIn || session.role === 'host' || localStorage.getItem('sunosakhi_host_logged_in') === 'true')
@@ -856,14 +856,14 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!isHost) {
       // Check caller balance (Must have at least ₹3.00)
       if (balance < MESSAGE_RATE) {
-        alert(`⚠️ Message bhejne ke liye ₹${MESSAGE_RATE.toFixed(2)} balance hona chahiye. Kripya apna wallet recharge karein.`);
+        alert(`⚠️ Message bhejne ke liye ₹${MESSAGE_RATE.toFixed(2)} balance hona chahiye (1 msg = ₹${MESSAGE_RATE} up to ${MAX_MESSAGE_WORDS} words). Kripya apna wallet recharge karein.`);
         openWalletModal();
-        return { success: false, error: 'Insufficient balance' };
+        return { success: false, error: `Insufficient balance (₹${MESSAGE_RATE} required per message)` };
       }
 
-      // Deduct ₹3.00 from caller's wallet (Host pays ₹0.00 Free!)
-      const deducted = deductLiveAmount(MESSAGE_RATE);
-      if (!deducted) return { success: false, error: 'Failed to deduct balance' };
+      // Deduct ₹3.00 from caller's wallet & record transaction (Host pays ₹0.00 Free!)
+      const deducted = deductChatExpense(sakhiName, MESSAGE_RATE, words.length);
+      if (!deducted) return { success: false, error: 'Failed to deduct ₹3.00 chat charge from wallet' };
       messageCost = MESSAGE_RATE;
     }
 
@@ -920,36 +920,22 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     if (!isHost) {
-      // Host income: ₹1.50 direct per message
+      // Host income: ₹1.50 direct per message credited to Host in Cloud
       const hostEarned = HOST_CHAT_EARNING;
       const newIncomeRecord: HostIncomeRecord = {
         id: 'msg-inc-' + Date.now(),
         type: 'message',
-        description: `💬 Chat Message from ${effectiveCallerName} (${words.length} words)`,
+        description: `💬 Chat Message from ${effectiveCallerName} (${words.length} words • Caller Paid ₹${MESSAGE_RATE})`,
         grossAmount: MESSAGE_RATE,
         hostSharePercent: 50,
         hostEarned,
         timestamp: Date.now()
       };
 
-      setHostProfile((prev) => {
-        const updated = {
-          ...prev,
-          totalMessagesReceived: prev.totalMessagesReceived + 1,
-          grossRevenue: parseFloat((prev.grossRevenue + MESSAGE_RATE).toFixed(2)),
-          netIncome: parseFloat((prev.netIncome + hostEarned).toFixed(2)),
-          pendingPayout: parseFloat((prev.pendingPayout + hostEarned).toFixed(2)),
-          incomeHistory: [newIncomeRecord, ...prev.incomeHistory]
-        };
-        recordHostIncomeToCloud(sakhiId, newIncomeRecord, {
-          grossRevenue: updated.grossRevenue,
-          netIncome: updated.netIncome,
-          pendingPayout: updated.pendingPayout
-        }, {
-          durationSec: 0,
-          callType: 'message'
-        });
-        return updated;
+      recordHostIncomeToCloud(sakhiId, newIncomeRecord, undefined, {
+        hostPhone: peerKey,
+        durationSec: 0,
+        callType: 'message'
       });
 
       sounds.playCoinSound();
@@ -959,7 +945,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   /**
-   * Host sends manual reply to a specific user (100% Free - Zero Output Charge)
+   * Host sends manual reply to a specific user (100% Free - Zero Output Charge, max 120 words)
    */
   const sendHostManualReply = async (
     threadId: string,
@@ -969,6 +955,14 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
   ): Promise<{ success: boolean; error?: string }> => {
     const trimmed = text.trim();
     if (!trimmed) return { success: false, error: 'Reply cannot be empty.' };
+
+    const words = trimmed.split(/\s+/).filter(Boolean);
+    if (words.length > MAX_MESSAGE_WORDS) {
+      return {
+        success: false,
+        error: `Message ${MAX_MESSAGE_WORDS} words se zyada nahi hona chahiye (Current: ${words.length} words).`
+      };
+    }
 
     const cleanHostPhone = extractChatParticipantKey(hostProfile.phone || session.phone || (hostProfile as any).email || hostProfile.id);
     const cleanCallerPhone = extractChatParticipantKey(callerId || threadId);
@@ -984,7 +978,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
       sender: 'sakhi',
       senderId: getChatClientId(),
       text: trimmed,
-      wordCount: trimmed.split(/\s+/).filter(Boolean).length,
+      wordCount: words.length,
       cost: 0,
       timestamp: Date.now(),
       status: 'sent'

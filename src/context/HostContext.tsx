@@ -190,6 +190,8 @@ const sanitizeHostProfile = (data: any): HostProfile => {
     grossRevenue: typeof data.grossRevenue === 'number' && !isNaN(data.grossRevenue) ? data.grossRevenue : 0,
     netIncome: typeof data.netIncome === 'number' && !isNaN(data.netIncome) ? data.netIncome : 0,
     pendingPayout: typeof data.pendingPayout === 'number' && !isNaN(data.pendingPayout) ? data.pendingPayout : 0,
+    referralIncome: typeof data.referralIncome === 'number' && !isNaN(data.referralIncome) ? data.referralIncome : 0,
+    referralCount: typeof data.referralCount === 'number' && !isNaN(data.referralCount) ? data.referralCount : 0,
     totalVoiceMinutes: typeof data.totalVoiceMinutes === 'number' && !isNaN(data.totalVoiceMinutes) ? data.totalVoiceMinutes : 0,
     totalVideoMinutes: typeof data.totalVideoMinutes === 'number' && !isNaN(data.totalVideoMinutes) ? data.totalVideoMinutes : 0,
     totalGiftsReceived: typeof data.totalGiftsReceived === 'number' && !isNaN(data.totalGiftsReceived) ? data.totalGiftsReceived : 0,
@@ -281,10 +283,12 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     window.addEventListener('sunosakhi-auth-changed', handleAuth);
     window.addEventListener('user-auth-changed', handleAuth);
+    window.addEventListener('sunosakhi-host-income-updated', handleAuth);
     window.addEventListener('storage', handleAuth);
     return () => {
       window.removeEventListener('sunosakhi-auth-changed', handleAuth);
       window.removeEventListener('user-auth-changed', handleAuth);
+      window.removeEventListener('sunosakhi-host-income-updated', handleAuth);
       window.removeEventListener('storage', handleAuth);
     };
   }, []);
@@ -445,6 +449,8 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (cloudData.pendingPayout !== undefined) merged.pendingPayout = cloudData.pendingPayout;
         if (cloudData.netIncome !== undefined) merged.netIncome = cloudData.netIncome;
         if (cloudData.grossRevenue !== undefined) merged.grossRevenue = cloudData.grossRevenue;
+        if (cloudData.referralIncome !== undefined) merged.referralIncome = cloudData.referralIncome;
+        if (cloudData.referralCount !== undefined) merged.referralCount = cloudData.referralCount;
         if (cloudData.totalCalls !== undefined) merged.totalCalls = cloudData.totalCalls;
         if (cloudData.totalVoiceMinutes !== undefined) merged.totalVoiceMinutes = cloudData.totalVoiceMinutes;
         if (cloudData.totalVideoMinutes !== undefined) merged.totalVideoMinutes = cloudData.totalVideoMinutes;
@@ -652,13 +658,13 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [isHostLoggedIn, hostProfile.id, hostProfile.phone, userRole, session.phone, session.email, session.id, session.isLoggedIn]);
 
-  // Keep Host status 'online' in real-time as long as host is logged in
+  // Keep Host status 'online' in real-time as long as host ID is logged in.
+  // Rule: Only explicit Logout sets status to 'offline'.
   useEffect(() => {
     if (!isHostLoggedIn || !hostProfile.id) return;
-    const sendHostHeartbeat = (forceStatus?: 'online' | 'offline') => {
-      const isVisible = document.visibilityState === 'visible';
-      const targetStatus = forceStatus || (isVisible ? 'online' : 'offline');
-      updateHostOnlineStatus(hostProfile.id, targetStatus, {
+    const sendHostHeartbeat = () => {
+      const currentStatus = hostProfile.status === 'offline' ? 'offline' : hostProfile.status === 'busy' ? 'busy' : 'online';
+      updateHostOnlineStatus(hostProfile.id, currentStatus, {
         name: hostProfile.name,
         phone: hostProfile.phone,
         avatar: hostProfile.avatar,
@@ -668,30 +674,22 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
     };
 
-    sendHostHeartbeat('online');
-    const interval = setInterval(() => sendHostHeartbeat(), 6000);
+    sendHostHeartbeat();
+    const interval = setInterval(() => sendHostHeartbeat(), 10000);
 
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
-        sendHostHeartbeat('online');
-      } else {
-        sendHostHeartbeat('offline');
+        sendHostHeartbeat();
       }
     };
 
-    const handleUnload = () => {
-      sendHostHeartbeat('offline');
-    };
-
     document.addEventListener('visibilitychange', handleVisibility);
-    window.addEventListener('beforeunload', handleUnload);
 
     return () => {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibility);
-      window.removeEventListener('beforeunload', handleUnload);
     };
-  }, [isHostLoggedIn, hostProfile.id, hostProfile.name, hostProfile.phone, hostProfile.avatar]);
+  }, [isHostLoggedIn, hostProfile.id, hostProfile.status, hostProfile.name, hostProfile.phone, hostProfile.avatar]);
 
   // Sync active direct chat messages from Backend Server
   useEffect(() => {

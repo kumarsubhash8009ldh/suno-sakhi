@@ -26,7 +26,9 @@ import {
   Star,
   Flame,
   Wifi,
-  WifiOff
+  WifiOff,
+  Copy,
+  Share2
 } from 'lucide-react';
 import { useHost, MAX_MESSAGE_WORDS, MESSAGE_RATE } from '../context/HostContext';
 import { useCall } from '../context/CallContext';
@@ -36,6 +38,7 @@ import { updateHostOnlineStatus } from '../services/hostSync';
 import { getApiBaseUrl } from '../services/apiConfig';
 import { getHostRankTier } from '../utils/hostRankTiers';
 import { subscribeToAllRealCallers } from '../services/userAuthSync';
+import { getHostReferenceId, getReferralShareUrl } from '../services/referralSync';
 
 import { HostWithdrawModal } from './HostWithdrawModal';
 import { CreditCard } from 'lucide-react';
@@ -201,6 +204,21 @@ export const HostDashboard: React.FC = () => {
   const myHostPhone = String(hostProfile?.phone || '').replace(/\D/g, '').slice(-10);
   const myHostId = hostProfile?.id || '';
   const myHostEmail = (hostProfile?.email || '').toLowerCase().trim();
+
+  // Host Reference ID & 1% Referral Commission stats
+  const [refCopied, setRefCopied] = useState<'id' | 'link' | null>(null);
+  const hostRefId = getHostReferenceId(hostProfile?.id, myHostPhone);
+  const hostShareUrl = getReferralShareUrl(hostRefId);
+  const calculatedReferralFromHistory = (hostProfile?.incomeHistory || [])
+    .filter((item) => item.type === 'referral')
+    .reduce((sum, item) => sum + (Number(item.hostEarned) || 0), 0);
+  const totalReferralIncome = Math.max(
+    Number(hostProfile?.referralIncome || 0),
+    calculatedReferralFromHistory
+  );
+  const referralTransactionsCount = (hostProfile?.incomeHistory || []).filter(
+    (item) => item.type === 'referral'
+  ).length;
 
   const filteredCallersList = registeredCallers.filter((c) => {
     const cp = String(c.phone || c.id || '').replace(/\D/g, '').slice(-10);
@@ -788,7 +806,7 @@ export const HostDashboard: React.FC = () => {
               </span>
             </div>
 
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5">
+            <div className="grid grid-cols-2 lg:grid-cols-6 gap-3.5">
               {/* Card 1: Net Income */}
               <div className="p-4 rounded-3xl bg-gradient-to-b from-[#1c2c20] to-[#101b13] border border-emerald-500/40 shadow-xl">
                 <div className="flex items-center justify-between text-emerald-300 mb-1">
@@ -801,7 +819,7 @@ export const HostDashboard: React.FC = () => {
                   </span>
                 </div>
                 <p className="text-[10px] text-emerald-400/80 mt-1">
-                  Calls, gifts & messages
+                  Calls, chat, gifts & refer bonus
                 </p>
               </div>
 
@@ -818,7 +836,7 @@ export const HostDashboard: React.FC = () => {
                   <span className="text-xs text-pink-200">mins</span>
                 </div>
                 <div className="flex items-center gap-2 text-[9px] text-gray-400 mt-1">
-                  <span>🎙️ {hostProfile?.totalVoiceMinutes || 0}m</span>
+                  <span>🎙️ {hostProfile?.totalVoiceMinutes || 0}m (₹2/m)</span>
                   <span>📹 {hostProfile?.totalVideoMinutes || 0}m</span>
                 </div>
               </div>
@@ -853,11 +871,27 @@ export const HostDashboard: React.FC = () => {
                   <span className="text-xs text-blue-200">msgs</span>
                 </div>
                 <p className="text-[10px] text-blue-300/80 mt-1">
-                  ₹1.20 per Sakhi Chat
+                  ₹1.50 per Sakhi Chat
                 </p>
               </div>
 
-              {/* Card 5: Available Payout */}
+              {/* Card 5: Refer Income / 1% Invite Bonus Column */}
+              <div className="p-4 rounded-3xl bg-gradient-to-b from-[#38270c] to-[#1d1405] border border-amber-500/40 shadow-xl">
+                <div className="flex items-center justify-between text-amber-300 mb-1">
+                  <span className="text-[10px] uppercase font-bold tracking-wider">Refer Income (1%)</span>
+                  <Users className="w-4 h-4 text-amber-400" />
+                </div>
+                <div className="flex items-baseline gap-1 mt-1">
+                  <span className="text-2xl sm:text-3xl font-black text-amber-300">
+                    ₹{totalReferralIncome.toFixed(2)}
+                  </span>
+                </div>
+                <p className="text-[10px] text-amber-300/80 mt-1">
+                  1% Invite Bonus ({referralTransactionsCount} recharges)
+                </p>
+              </div>
+
+              {/* Card 6: Available Payout */}
               <div className="p-4 rounded-3xl bg-gradient-to-b from-[#28163f] to-[#130822] border border-pink-500/40 shadow-xl flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between text-pink-300 mb-1">
@@ -887,6 +921,66 @@ export const HostDashboard: React.FC = () => {
                 <span>{payoutMessage}</span>
               </div>
             )}
+
+            {/* HOST REFERENCE ID & 1% RECHARGE COMMISSION BANNER */}
+            <div className="mt-4 p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-[#281907]/90 via-[#1f0e33]/90 to-[#11241a]/90 border border-amber-500/40 shadow-xl flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+              <div className="space-y-1.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-amber-500 text-black text-[10px] font-black uppercase tracking-wider shadow">
+                    🤝 1% Invite & Recharge Bonus
+                  </span>
+                  <h3 className="text-sm sm:text-base font-black text-white">
+                    Host Reference ID: <span className="text-amber-300 font-mono">{hostRefId}</span>
+                  </h3>
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold">
+                    Earned: ₹{totalReferralIncome.toFixed(2)}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-300 max-w-2xl leading-relaxed">
+                  Jab bhi koi Caller ya User aapke <strong>Reference ID ({hostRefId})</strong> ya Invite Link se join karega, toh uske har <strong>Wallet Recharge par flat 1% Commission</strong> seedhe aapki Host ID aur Refer Income column me add hoga!
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-start lg:justify-end flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(hostRefId);
+                    setRefCopied('id');
+                    setTimeout(() => setRefCopied(null), 2500);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-200 text-xs font-extrabold flex items-center gap-1.5 transition-all active:scale-95"
+                >
+                  <Copy className="w-3.5 h-3.5 text-amber-300" />
+                  <span>{refCopied === 'id' ? 'Copied Reference ID! ✅' : `Copy ID (${hostRefId})`}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(hostShareUrl);
+                    setRefCopied('link');
+                    setTimeout(() => setRefCopied(null), 2500);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/20 text-white text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95"
+                >
+                  <Copy className="w-3.5 h-3.5 text-pink-300" />
+                  <span>{refCopied === 'link' ? 'Invite Link Copied! ✅' : 'Copy Invite Link'}</span>
+                </button>
+
+                <a
+                  href={`https://wa.me/?text=${encodeURIComponent(
+                    `🌸 Join SunoSakhi using my Host Reference ID: *${hostRefId}* and get ₹20 Free Bonus Coins! Call & Chat live with me:\n${hostShareUrl}`
+                  )}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white text-xs font-black flex items-center gap-1.5 shadow-lg shadow-emerald-900/40 transition-all active:scale-95"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>📲 Share on WhatsApp</span>
+                </a>
+              </div>
+            </div>
           </div>
 
           {/* Verification Card & Live Photo Status */}
@@ -927,7 +1021,7 @@ export const HostDashboard: React.FC = () => {
             <div className="flex items-center justify-between pb-3 border-b border-white/10">
               <div>
                 <h3 className="text-base font-bold text-white">Host Income Passbook</h3>
-                <p className="text-xs text-gray-400">Live record of calls, gifts and messages with host share calculation</p>
+                <p className="text-xs text-gray-400">Live record of calls, gifts, chat messages & 1% referral recharge bonuses</p>
               </div>
               <span className="text-xs text-emerald-400 font-bold">
                 Total Records: {hostProfile.incomeHistory.length}
@@ -941,21 +1035,37 @@ export const HostDashboard: React.FC = () => {
                   className="flex items-center justify-between p-3.5 rounded-2xl bg-black/30 border border-white/5 hover:border-pink-500/30 transition-colors"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="p-2.5 rounded-xl bg-pink-500/20 text-pink-400 border border-pink-500/30">
+                    <div
+                      className={`p-2.5 rounded-xl border ${
+                        item.type === 'referral'
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                          : 'bg-pink-500/20 text-pink-400 border-pink-500/30'
+                      }`}
+                    >
                       {item.type === 'call' ? (
                         <Phone className="w-4 h-4" />
                       ) : item.type === 'gift' ? (
                         <Gift className="w-4 h-4" />
                       ) : item.type === 'incentive' ? (
                         <Flame className="w-4 h-4 text-amber-400" />
+                      ) : item.type === 'referral' ? (
+                        <Users className="w-4 h-4 text-amber-300" />
                       ) : (
                         <MessageCircle className="w-4 h-4" />
                       )}
                     </div>
                     <div>
-                      <p className="text-xs font-bold text-white">{item.description}</p>
+                      <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <span>{item.description}</span>
+                        {item.type === 'referral' && (
+                          <span className="px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[9px] font-black">
+                            1% Refer Bonus
+                          </span>
+                        )}
+                      </p>
                       <p className="text-[10px] text-gray-400">
-                        Gross: ₹{(item.grossAmount || 0).toFixed(2)} • Host Earning •{' '}
+                        Gross: ₹{(item.grossAmount || 0).toFixed(2)} •{' '}
+                        {item.type === 'referral' ? '1% Invite Commission' : 'Host Earning'} •{' '}
                         {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </p>
                     </div>

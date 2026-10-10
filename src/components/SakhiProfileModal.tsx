@@ -113,15 +113,15 @@ export const SakhiProfileModal: React.FC<SakhiProfileModalProps> = ({
                   ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/50'
                   : isBusy
                   ? 'bg-amber-950/80 text-amber-300 border-amber-500/50'
-                  : 'bg-black/70 text-gray-300 border-white/20'
+                  : 'bg-red-950/80 text-red-300 border-red-500/50'
               }`}
             >
               <span
                 className={`w-2 h-2 rounded-full ${
-                  isOnline ? 'bg-emerald-400 animate-pulse' : isBusy ? 'bg-amber-400 animate-pulse' : 'bg-gray-400'
+                  isOnline ? 'bg-emerald-500 animate-pulse' : isBusy ? 'bg-amber-400 animate-pulse' : 'bg-red-500'
                 }`}
               />
-              <span>{isOnline ? 'Live Online' : isBusy ? 'Busy on Call' : 'Offline'}</span>
+              <span>{isOnline ? '🟢 Online' : isBusy ? '🟡 Busy on Call' : '🔴 Offline'}</span>
             </span>
 
             <div className="flex items-center gap-2">
@@ -272,7 +272,7 @@ export const SakhiProfileModal: React.FC<SakhiProfileModalProps> = ({
 
             <button
               type="button"
-              disabled={blocked || isBusy}
+              disabled={blocked}
               onClick={() => {
                 onClose();
                 startCall(sakhi, 'voice');
@@ -285,7 +285,7 @@ export const SakhiProfileModal: React.FC<SakhiProfileModalProps> = ({
 
             <button
               type="button"
-              disabled={blocked || isBusy}
+              disabled={blocked}
               onClick={() => {
                 onClose();
                 startCall(sakhi, 'video');

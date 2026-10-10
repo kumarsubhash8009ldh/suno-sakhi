@@ -24,7 +24,7 @@ import {
   logoutCurrentUser,
   isProfileNameUnique
 } from '../services/userAuthSync';
-import { getSavedReferredBy } from '../services/referralSync';
+import { getSavedReferredBy, saveReferredBy, registerReferralJoin } from '../services/referralSync';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -49,6 +49,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [signupRole, setSignupRole] = useState<'caller' | 'host'>(defaultFocus === 'host' ? 'host' : 'caller');
   const [userName, setUserName] = useState('');
   const [identifier, setIdentifier] = useState('');
+  const [referralCode, setReferralCode] = useState<string>(() => getSavedReferredBy() || '');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -57,6 +58,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     if (isOpen) {
       setErrorMessage(null);
       setSuccessMessage(null);
+      const savedRef = getSavedReferredBy();
+      if (savedRef && !referralCode) {
+        setReferralCode(savedRef);
+      }
       if (defaultFocus === 'host') {
         setSignupRole('host');
       }
@@ -167,6 +172,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         }
       }
 
+      const finalRefCode = (referralCode.trim() || getSavedReferredBy() || '').trim().toUpperCase();
+      if (finalRefCode) {
+        saveReferredBy(finalRefCode);
+      }
+
       if (signupRole === 'host') {
         // Register brand new Sakhi Host
         const hostName = userName.trim() || 'Sakhi Host';
@@ -181,6 +191,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         });
 
         if (regHostRes.success) {
+          if (finalRefCode) {
+            await registerReferralJoin(clean, finalRefCode);
+          }
           setUserRole('host');
           setSuccessMessage(`🌸 Welcome ${hostName}! Host account register ho gaya hai. KYC verify hone par account activate hoga.`);
           broadcastAuthChange();
@@ -199,13 +212,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         }
       } else {
         // Register brand new Caller
-        const referredBy = getSavedReferredBy();
         const callerName = userName.trim() || undefined;
-        const res = await registerNewUser(clean, callerName, referredBy || undefined);
+        const res = await registerNewUser(clean, callerName, finalRefCode || undefined);
 
         if (res.success && res.user) {
+          if (finalRefCode) {
+            await registerReferralJoin(clean, finalRefCode);
+          }
           setUserRole('caller');
-          creditLoginBonus(res.user.phone || res.user.email || clean, true, Boolean(referredBy));
+          creditLoginBonus(res.user.phone || res.user.email || clean, true, Boolean(finalRefCode));
           setSuccessMessage('🎉 Welcome to SunoSakhi! Aapka Caller account ban gaya hai. ₹20 Free Coins add ho gaye!');
           broadcastAuthChange();
           setTimeout(closeAndNotify, 700);
@@ -487,6 +502,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   : '🎁 Caller banne par aapko ₹20 free bonus coins milenge.'}
               </p>
             </div>
+
+            {/* Optional Host Reference ID Input (During Sign Up) */}
+            {activeTab === 'signup' && (
+              <div>
+                <label className="text-xs font-semibold text-gray-300 block mb-1.5 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <span>🤝 Host Reference ID / Invite Code (Optional)</span>
+                  </span>
+                  <span className="text-[10px] text-amber-300 font-bold">
+                    1% Host Bonus
+                  </span>
+                </label>
+                <input
+                  type="text"
+                  value={referralCode}
+                  onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                  placeholder="e.g. SAKHI-9876543210 ya Host Phone No."
+                  className="w-full px-4 py-2.5 rounded-2xl bg-black/60 border border-amber-500/30 text-amber-200 font-mono text-xs placeholder-gray-500 focus:outline-none focus:border-amber-400"
+                />
+              </div>
+            )}
 
             {/* SUBMIT BUTTON */}
             <button

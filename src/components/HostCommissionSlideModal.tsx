@@ -40,9 +40,9 @@ export const HostCommissionSlideModal: React.FC<HostCommissionSlideModalProps> =
       slogan: 'Apne Ghar Baithe Aawaz Se Kamayein ₹30,000 se ₹85,000 Har Mahine!',
       description: 'Host ladkiyon ke liye 100% FREE Registration (₹0 Fees). Dil khol kar baatein karein aur har minute ka direct cash share paayein.',
       rates: [
-        { icon: <Phone className="w-4 h-4 text-pink-400" />, label: 'Voice Call', rate: '₹3.00 / min', sub: 'Rank 1 (Caller ₹7/min)' },
+        { icon: <Phone className="w-4 h-4 text-pink-400" />, label: 'Audio Call', rate: '₹2.00 / min', sub: 'Flat Rate (All Hosts)' },
         { icon: <Video className="w-4 h-4 text-purple-400" />, label: 'Video Call', rate: '₹7.00 / min', sub: 'Rank 1 (Caller ₹15/min)' },
-        { icon: <Coins className="w-4 h-4 text-amber-400" />, label: 'Chat & Gifts', rate: '₹1.50 / msg + Gifts', sub: 'Direct Cash Commission' }
+        { icon: <Coins className="w-4 h-4 text-amber-400" />, label: 'Chat & Refer', rate: '₹1.50/msg + 1% Refer', sub: 'Direct Cash Commission' }
       ],
       highlight: '💰 Daily Potential: 2 ghante call = ₹700 - ₹1,800 daily earning!'
     },

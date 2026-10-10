@@ -168,36 +168,27 @@ const MainContent: React.FC = () => {
   }, []);
 
   // Real-time Caller (User) presence heartbeat across all connected devices
+  // Rule: Any logged-in ID shows as Online (Green). Only explicit Logout sets Offline (Red).
   useEffect(() => {
     const isCaller = session.isLoggedIn && (session.role === 'caller' || userRole === 'caller');
     if (!isCaller) return;
 
     updateUserOnlinePresence(true);
     const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        updateUserOnlinePresence(true);
-      }
-    }, 6000);
+      updateUserOnlinePresence(true);
+    }, 10000);
 
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
         updateUserOnlinePresence(true);
-      } else {
-        updateUserOnlinePresence(false);
       }
     };
 
-    const handleUnload = () => {
-      updateUserOnlinePresence(false);
-    };
-
     document.addEventListener('visibilitychange', handleVisibility);
-    window.addEventListener('beforeunload', handleUnload);
 
     return () => {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibility);
-      window.removeEventListener('beforeunload', handleUnload);
     };
   }, [session.isLoggedIn, session.role, userRole]);
 

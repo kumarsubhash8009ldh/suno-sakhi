@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { PhoneOff, Mic, MicOff, Video, Sparkles, Volume2, Volume1 } from 'lucide-react';
+import { PhoneOff, Mic, MicOff, Video, Sparkles, Volume2, Volume1, FastForward } from 'lucide-react';
 import { useCall } from '../context/CallContext';
 import { useHost } from '../context/HostContext';
 import { useAdmin } from '../context/AdminContext';
@@ -17,6 +17,8 @@ export const CallingScreen: React.FC = () => {
     callType,
     callStatus,
     cancelCalling,
+    forwardToNextHost,
+    forwardingNotice,
     isSpeakerOn,
     callVolume,
     toggleSpeaker,
@@ -66,7 +68,7 @@ export const CallingScreen: React.FC = () => {
       <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 rounded-full bg-pink-600/20 blur-3xl pointer-events-none"></div>
 
       {/* Top Bar info */}
-      <div className="relative z-10 flex flex-col items-center pt-8 text-center">
+      <div className="relative z-10 flex flex-col items-center pt-8 text-center max-w-md w-full">
         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-pink-500/20 border border-pink-500/30 text-pink-300 text-xs font-semibold mb-3">
           {isHost ? (
             <span className="text-emerald-300 font-bold">🌸 Host Call • 100% FREE (₹0 Charges)</span>
@@ -78,7 +80,7 @@ export const CallingScreen: React.FC = () => {
           ) : (
             <>
               <Video className="w-3.5 h-3.5 text-purple-400" />
-              <span>Video Call • ₹{videoRate} / min</span>
+              <span>HD Video Call • ₹{videoRate} / min</span>
             </>
           )}
         </div>
@@ -97,8 +99,15 @@ export const CallingScreen: React.FC = () => {
         </div>
         <p className="text-sm font-medium text-pink-400 animate-pulse mt-3 flex items-center gap-1.5">
           <Sparkles className="w-4 h-4" />
-          <span>{isHost ? `Connecting to User...` : 'Ringing... Connecting with Sakhi'}</span>
+          <span>{isHost ? `Connecting to User...` : '🎵 Melodic Caller Tune Ringing... (Auto-Bypass Active)'}</span>
         </p>
+
+        {forwardingNotice && (
+          <div className="mt-3 px-4 py-2.5 rounded-2xl bg-amber-500/20 border border-amber-400/50 text-amber-200 text-xs font-bold shadow-lg flex items-center justify-center gap-2 animate-pulse">
+            <FastForward className="w-4 h-4 text-amber-300 flex-shrink-0" />
+            <span>{forwardingNotice}</span>
+          </div>
+        )}
       </div>
 
       {/* Center Avatar with Pulsing Rings */}
@@ -116,7 +125,7 @@ export const CallingScreen: React.FC = () => {
       </div>
 
       {/* Bottom Controls */}
-      <div className="relative z-10 flex flex-col items-center pb-12 gap-3 w-full max-w-xs">
+      <div className="relative z-10 flex flex-col items-center pb-10 gap-3 w-full max-w-xs">
         <p className="text-xs text-gray-400 text-center">
           {isHost
             ? '🌸 Host Calling: 100% FREE • Zero Balance Required'
@@ -125,6 +134,21 @@ export const CallingScreen: React.FC = () => {
 
         {/* Live Volume Up / Down & Speaker Control Bar */}
         <CallVolumeControls />
+
+        {/* Manual Next Host Bypass Button */}
+        {!isHost && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              forwardToNextHost();
+            }}
+            className="w-full py-2.5 px-4 rounded-2xl bg-gradient-to-r from-indigo-600/90 to-purple-600/90 hover:from-indigo-500 hover:to-purple-500 border border-indigo-400/40 text-white text-xs font-extrabold flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95"
+          >
+            <FastForward className="w-4 h-4 text-amber-300" />
+            <span>⏭️ Next Online Host Ko Call Forward Karein</span>
+          </button>
+        )}
 
         <div className="flex items-center justify-center gap-8 w-full mt-1">
           {/* Speaker On / Off Toggle */}

@@ -215,7 +215,9 @@ export const VideoCallModal: React.FC = () => {
             autoPlay
             playsInline
             className={`w-full h-full object-cover transition-all duration-300 ${
-              isPrivacyBlurred ? 'filter blur-3xl scale-110 brightness-50' : ''
+              isPrivacyBlurred
+                ? 'filter blur-3xl scale-110 brightness-50'
+                : 'filter contrast-[1.06] saturate-[1.12] brightness-[1.04]'
             }`}
           />
         ) : (
@@ -268,6 +270,9 @@ export const VideoCallModal: React.FC = () => {
             <span className="font-mono text-sm font-semibold tracking-wider text-white">
               {formatTime(durationSeconds)}
             </span>
+            <span className="px-1.5 py-0.5 rounded bg-emerald-500/25 border border-emerald-400/40 text-[9px] font-black text-emerald-300 tracking-wider">
+              HD 720p
+            </span>
           </div>
           {isHostUser ? (
             isCallReceiver ? (
@@ -307,7 +312,7 @@ export const VideoCallModal: React.FC = () => {
               autoPlay
               playsInline
               muted
-              className="w-full h-full object-cover transform scale-x-[-1]"
+              className="w-full h-full object-cover transform scale-x-[-1] filter contrast-[1.05] saturate-[1.1] brightness-[1.04]"
             />
           ) : (
             <div className="w-full h-full flex flex-col items-center justify-center bg-gray-900 text-gray-400">

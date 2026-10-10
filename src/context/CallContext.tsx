@@ -12,7 +12,7 @@ import {
   CallSessionDoc,
   subscribeToIncomingCallsForHost
 } from '../services/webrtcService';
-import { recordHostIncomeToCloud } from '../services/hostSync';
+import { recordHostIncomeToCloud, getLocalRegisteredHosts } from '../services/hostSync';
 import { getHostRankTier } from '../utils/hostRankTiers';
 import { streamAudioController, routeAudioOutput } from '../utils/audioOutput';
 import { setVideoScreenSecurity } from '../utils/screenSecurity';
@@ -55,7 +55,9 @@ interface CallContextType {
   isSummaryOpen: boolean;
   lowBalanceWarning: boolean;
   endReason: string | null;
+  forwardingNotice: string | null;
   startCall: (sakhi: Sakhi, type: CallType) => Promise<void>;
+  forwardToNextHost: () => Promise<boolean>;
   cancelCalling: () => void;
   acceptIncomingCall: () => Promise<void>;
   rejectIncomingCall: () => Promise<void>;
@@ -124,12 +126,49 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isSummaryOpen, setIsSummaryOpen] = useState<boolean>(false);
   const [lowBalanceWarning, setLowBalanceWarning] = useState<boolean>(false);
   const [endReason, setEndReason] = useState<string | null>(null);
+  const [forwardingNotice, setForwardingNotice] = useState<string | null>(null);
 
   const callingTimerRef = useRef<number | null>(null);
   const activeCallIntervalRef = useRef<number | null>(null);
   const durationRef = useRef<number>(0);
   const costRef = useRef<number>(0);
   const isStartingCallRef = useRef<boolean>(false);
+  const triedHostIdsRef = useRef<Set<string>>(new Set());
+  const currentSakhiRef = useRef<Sakhi | null>(null);
+  const currentCallTypeRef = useRef<CallType>('voice');
+
+  // Helper to find the next available online Host for automatic call bypass / forwarding
+  const findNextAvailableOnlineHost = (excludeSakhi?: Sakhi | null): Sakhi | null => {
+    try {
+      const allHosts = getLocalRegisteredHosts();
+      const session = getActiveSession();
+      const myPhone = String(session.phone || '').replace(/\D/g, '').slice(-10);
+
+      if (excludeSakhi) {
+        triedHostIdsRef.current.add(excludeSakhi.id);
+        if (excludeSakhi.phone) {
+          triedHostIdsRef.current.add(excludeSakhi.phone.replace(/\D/g, '').slice(-10));
+        }
+      }
+
+      const candidates = allHosts.filter((h) => {
+        if (!h || !h.id) return false;
+        const hPhone = String(h.phone || h.id || '').replace(/\D/g, '').slice(-10);
+        if (myPhone && hPhone === myPhone) return false;
+        if (isUserBlocked(h.id)) return false;
+        if (triedHostIdsRef.current.has(h.id)) return false;
+        if (hPhone && triedHostIdsRef.current.has(hPhone)) return false;
+        return h.status === 'online';
+      });
+
+      if (candidates.length > 0) {
+        return candidates[0];
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
 
   // Activate Android FLAG_SECURE and web anti-screenshot/recording safeguards ONLY during video calls
   useEffect(() => {
@@ -192,59 +231,41 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [isHostLoggedIn, hostProfile, callStatus]);
 
   /**
-   * Start Outbound Call as Caller or Host (Host is 100% Free)
+   * Dial a specific Host target and arm auto-bypass timer & rejection handler
    */
-  const startCall = async (sakhi: Sakhi, type: CallType) => {
-    // Prevent duplicate simultaneous call requests
-    if (callStatus !== 'idle' || isStartingCallRef.current) {
-      return;
+  const dialTargetSakhi = async (targetSakhi: Sakhi, type: CallType) => {
+    if (callingTimerRef.current) {
+      clearTimeout(callingTimerRef.current);
+      callingTimerRef.current = null;
     }
 
-    if (isUserBlocked(sakhi.id)) {
-      alert('🚫 Aapne is user ko block kiya hua hai. Call karne ke liye pehle Settings se Unblock karein.');
-      return;
+    currentSakhiRef.current = targetSakhi;
+    currentCallTypeRef.current = type;
+    triedHostIdsRef.current.add(targetSakhi.id);
+    if (targetSakhi.phone) {
+      triedHostIdsRef.current.add(targetSakhi.phone.replace(/\D/g, '').slice(-10));
     }
 
-    if (sakhi.status === 'busy') {
-      alert(`📞 ${sakhi.name} abhi dusri call par busy hain. Kripya kuch der baad call karein!`);
-      return;
-    }
-
-    const session = getActiveSession();
-    const requiredMin = getRate(type, sakhi);
-    const isHost = checkIsHost(session);
-
-    // Caller requires login before initiating a call
-    if (!isHost && !session.isLoggedIn) {
-      alert('🔒 Call start karne ke liye pehle apna mobile number login karein!');
-      window.dispatchEvent(new CustomEvent('open-user-auth', { detail: { focus: 'user' } }));
-      return;
-    }
-
-    // Caller requires minimum balance; Host has ZERO charges (100% Free!)
-    if (!isHost && balance < requiredMin) {
-      alert(`⚠️ Call start karne ke liye kam se kam ₹${requiredMin} balance hona chahiye. Kripya apna wallet recharge karein!`);
-      openWalletModal();
-      return;
-    }
-
-    isStartingCallRef.current = true;
-    setIsCallReceiver(false);
-    setActiveSakhi(sakhi);
+    setActiveSakhi(targetSakhi);
     setCallType(type);
     setCallStatus('calling');
-    setDurationSeconds(0);
-    setCurrentCost(0);
-    durationRef.current = 0;
-    costRef.current = 0;
-    setIsMuted(false);
-    setIsVideoOff(false);
-    setLowBalanceWarning(false);
-    setEndReason(null);
-    setRemoteStream(null);
 
-    // Play ringing tone
+    // Ensure melodic caller tune is playing
     sounds.startRingtone();
+
+    const session = getActiveSession();
+    const isHost = checkIsHost(session);
+    const callerData = {
+      id: isHost
+        ? (hostProfile?.phone || hostProfile?.id || session.id || 'host_' + Date.now())
+        : (session.id || session.phone || 'caller_' + Date.now()),
+      name: isHost
+        ? (hostProfile?.name || session.name || 'Sakhi Host')
+        : (session.name || 'Friendly Caller'),
+      phone: isHost
+        ? (hostProfile?.phone || session.phone || '')
+        : (session.phone || '')
+    };
 
     // Setup WebRTC Callbacks
     webrtcService.onRemoteStreamAvailable = (stream) => {
@@ -269,6 +290,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     webrtcService.onCallConnected = () => {
       sounds.stopRingtone();
       sounds.playCallConnected();
+      setForwardingNotice(null);
       setCallStatus('connected');
       if (callingTimerRef.current) {
         clearTimeout(callingTimerRef.current);
@@ -276,41 +298,139 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     };
 
-    webrtcService.onCallRejected = (reason) => {
-      sounds.stopRingtone();
-      sounds.playCallEnded();
-      alert(reason || 'Sakhi ne call reject kar diya ya wo abhi busy hain.');
-      cancelCalling();
+    webrtcService.onCallRejected = async () => {
+      // Automatic Call Bypass on Rejection / Busy!
+      const nextHost = findNextAvailableOnlineHost(currentSakhiRef.current);
+      if (nextHost) {
+        setForwardingNotice(
+          `🔄 ${currentSakhiRef.current?.name || 'Host'} abhi busy hain — Call automatic ${nextHost.name} ko forward ho rahi hai...`
+        );
+        await webrtcService.endActiveCall();
+        await dialTargetSakhi(nextHost, currentCallTypeRef.current);
+      } else {
+        sounds.stopRingtone();
+        sounds.playCallEnded();
+        setForwardingNotice(null);
+        alert('Sabhi online Hosts abhi busy hain. Kripya kuch der baad dobara call karein.');
+        cancelCalling();
+      }
     };
 
     webrtcService.onCallEnded = () => {
       endCall('remote_ended');
     };
 
-    const callerData = {
-      id: isHost
-        ? (hostProfile?.phone || hostProfile?.id || session.id || 'host_' + Date.now())
-        : (session.id || session.phone || 'caller_' + Date.now()),
-      name: isHost
-        ? (hostProfile?.name || session.name || 'Sakhi Host')
-        : (session.name || 'Friendly Caller'),
-      phone: isHost
-        ? (hostProfile?.phone || session.phone || '')
-        : (session.phone || '')
-    };
-
     try {
-      await webrtcService.startOutboundCall(callerData, sakhi, type);
+      await webrtcService.startOutboundCall(callerData, targetSakhi, type);
       setLocalStream(webrtcService.getLocalStream());
 
-      // Timeout after 35s if host does not answer
-      callingTimerRef.current = window.setTimeout(() => {
-        sounds.stopRingtone();
-        alert(`${sakhi.name} abhi utha nahi pa rahi hain. Kripya thodi der baad dobara call karein.`);
-        cancelCalling();
-      }, 35000);
+      // Automatic Call Bypass after 18s if current Host does not pick up!
+      callingTimerRef.current = window.setTimeout(async () => {
+        const nextHost = findNextAvailableOnlineHost(currentSakhiRef.current);
+        if (nextHost) {
+          setForwardingNotice(
+            `🔄 ${currentSakhiRef.current?.name || 'Host'} ne call pick nahi kiya — Call automatic ${nextHost.name} ko forward ho rahi hai...`
+          );
+          await webrtcService.endActiveCall();
+          await dialTargetSakhi(nextHost, currentCallTypeRef.current);
+        } else {
+          sounds.stopRingtone();
+          setForwardingNotice(null);
+          alert(`${targetSakhi.name} abhi call pick nahi kar pa rahi hain aur koi doosra online host uplabdh nahi hai.`);
+          cancelCalling();
+        }
+      }, 18000);
     } catch (err) {
       console.warn('WebRTC Call initialization error:', err);
+    }
+  };
+
+  /**
+   * Manually or automatically bypass current ringing host and forward to next available online host
+   */
+  const forwardToNextHost = async (): Promise<boolean> => {
+    const nextHost = findNextAvailableOnlineHost(currentSakhiRef.current);
+    if (!nextHost) {
+      setForwardingNotice('⚠️ Is samay koi doosri Online Host uplabdh nahi hai.');
+      return false;
+    }
+    setForwardingNotice(
+      `🔄 Call automatic ${nextHost.name} ko forward ki ja rahi hai...`
+    );
+    await webrtcService.endActiveCall();
+    await dialTargetSakhi(nextHost, currentCallTypeRef.current);
+    return true;
+  };
+
+  /**
+   * Start Outbound Call as Caller or Host (Host is 100% Free)
+   */
+  const startCall = async (sakhi: Sakhi, type: CallType) => {
+    // Prevent duplicate simultaneous call requests
+    if (callStatus !== 'idle' || isStartingCallRef.current) {
+      return;
+    }
+
+    if (isUserBlocked(sakhi.id)) {
+      alert('🚫 Aapne is user ko block kiya hua hai. Call karne ke liye pehle Settings se Unblock karein.');
+      return;
+    }
+
+    const session = getActiveSession();
+    const requiredMin = getRate(type, sakhi);
+    const isHost = checkIsHost(session);
+
+    // Caller requires login before initiating a call
+    if (!isHost && !session.isLoggedIn) {
+      alert('🔒 Call start karne ke liye pehle apna mobile number login karein!');
+      window.dispatchEvent(new CustomEvent('open-user-auth', { detail: { focus: 'user' } }));
+      return;
+    }
+
+    // Caller requires minimum balance; Host has ZERO charges (100% Free!)
+    if (!isHost && balance < requiredMin) {
+      alert(`⚠️ Call start karne ke liye kam se kam ₹${requiredMin} balance hona chahiye. Kripya apna wallet recharge karein!`);
+      openWalletModal();
+      return;
+    }
+
+    isStartingCallRef.current = true;
+    triedHostIdsRef.current.clear();
+    setForwardingNotice(null);
+
+    // Check if the selected Host is busy or offline -> Automatically bypass to next online Host!
+    let initialTargetSakhi = sakhi;
+    if (sakhi.status === 'busy' || sakhi.status === 'offline') {
+      triedHostIdsRef.current.add(sakhi.id);
+      if (sakhi.phone) {
+        triedHostIdsRef.current.add(sakhi.phone.replace(/\D/g, '').slice(-10));
+      }
+      const nextOnline = findNextAvailableOnlineHost(sakhi);
+      if (nextOnline) {
+        initialTargetSakhi = nextOnline;
+        setForwardingNotice(
+          `🔄 ${sakhi.name} abhi ${sakhi.status === 'busy' ? 'busy' : 'offline'} hain — Call automatic ${nextOnline.name} ko bypass/forward ki gayi hai!`
+        );
+      } else if (sakhi.status === 'busy') {
+        isStartingCallRef.current = false;
+        alert(`📞 ${sakhi.name} abhi dusri call par busy hain aur koi anya online host uplabdh nahi hai.`);
+        return;
+      }
+    }
+
+    setIsCallReceiver(false);
+    setDurationSeconds(0);
+    setCurrentCost(0);
+    durationRef.current = 0;
+    costRef.current = 0;
+    setIsMuted(false);
+    setIsVideoOff(false);
+    setLowBalanceWarning(false);
+    setEndReason(null);
+    setRemoteStream(null);
+
+    try {
+      await dialTargetSakhi(initialTargetSakhi, type);
     } finally {
       isStartingCallRef.current = false;
     }
@@ -321,6 +441,8 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
    */
   const cancelCalling = () => {
     isStartingCallRef.current = false;
+    setForwardingNotice(null);
+    triedHostIdsRef.current.clear();
     if (activeSakhi) {
       saveCallLog({
         sakhiId: activeSakhi.id,
@@ -630,6 +752,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setEndReason('insufficient_balance');
     }
 
+    setForwardingNotice(null);
     setCallStatus('idle');
     setIsCallReceiver(false);
     setActiveSakhi(null);
@@ -687,7 +810,9 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isSummaryOpen,
         lowBalanceWarning,
         endReason,
+        forwardingNotice,
         startCall,
+        forwardToNextHost,
         cancelCalling,
         acceptIncomingCall,
         rejectIncomingCall,

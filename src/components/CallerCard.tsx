@@ -54,12 +54,12 @@ export const CallerCard: React.FC<CallerCardProps> = ({ caller }) => {
               alt={userLabel}
               className="w-full h-full object-cover rounded-[14px]"
             />
-            {/* Online Indicator */}
+            {/* Online (Green) / Offline (Red) Indicator */}
             <span
               className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-[#170a2c] ${
-                isOnline ? 'bg-emerald-500 ring-2 ring-emerald-500/50 animate-pulse' : 'bg-gray-400'
+                isOnline ? 'bg-emerald-500 ring-2 ring-emerald-500/50 animate-pulse' : 'bg-red-500 ring-2 ring-red-500/50'
               }`}
-              title={isOnline ? '🟢 Caller Online' : '⚪ Caller Offline'}
+              title={isOnline ? '🟢 Caller Online (Logged In)' : '🔴 Caller Offline (Logged Out)'}
             ></span>
           </div>
 
@@ -70,13 +70,13 @@ export const CallerCard: React.FC<CallerCardProps> = ({ caller }) => {
               </h3>
               {isOnline ? (
                 <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 flex items-center gap-1 shadow-sm">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  <span>🟢 Live Online</span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span>🟢 Online</span>
                 </span>
               ) : (
-                <span className="px-2.5 py-0.5 rounded-full bg-gray-500/20 text-gray-400 text-[10px] font-medium border border-gray-500/30 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
-                  <span>Offline</span>
+                <span className="px-2.5 py-0.5 rounded-full bg-red-500/20 text-red-300 text-[10px] font-bold border border-red-500/40 flex items-center gap-1 shadow-sm">
+                  <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                  <span>🔴 Offline</span>
                 </span>
               )}
             </div>

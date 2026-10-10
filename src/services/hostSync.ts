@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, onSnapshot } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase';
 import { HostProfile, HostIncomeRecord, Sakhi } from '../types';
 import { getApiBaseUrl, hasExternalApiBackend } from './apiConfig';
@@ -124,14 +124,13 @@ export const subscribeToAllRealHosts = (
                   ? data.name.trim()
                   : 'Sakhi Host';
 
-                const lastActive = Number(data.lastActiveAt || 0);
-                const isRecentlyActive = lastActive > 0 && (Date.now() - lastActive) < 60 * 1000;
+                // Rule: Any logged-in ID shows as Online (Green). Only explicitly logged-out ID ('offline') shows as Offline (Red).
                 const effectiveStatus: 'online' | 'busy' | 'offline' =
                   data.status === 'busy'
                     ? 'busy'
-                    : data.status !== 'offline' && (data.status === 'online' || isRecentlyActive)
-                    ? 'online'
-                    : 'offline';
+                    : data.status === 'offline'
+                    ? 'offline'
+                    : 'online';
 
                 const verStatus = data.verification?.status;
                 const isHostVerified =
@@ -469,10 +468,11 @@ export const recordHostIncomeToCloud = async (
   updatedEarnings?: { grossRevenue: number; netIncome: number; pendingPayout: number },
   extra?: { hostPhone?: string; durationSec?: number; callType?: string }
 ): Promise<boolean> => {
+  const cleanPhone = String(extra?.hostPhone || hostId || '').replace(/\D/g, '').slice(-10);
+
   // 1. Update Firestore if configured
   if (isFirebaseConfigured() && db && (hostId || extra?.hostPhone)) {
     try {
-      const cleanPhone = String(extra?.hostPhone || hostId || '').replace(/\D/g, '').slice(-10);
       const candidates = Array.from(
         new Set(
           [
@@ -484,38 +484,101 @@ export const recordHostIncomeToCloud = async (
         )
       );
 
+      let matchedDocId: string | null = null;
+      let hData: any = null;
+
       for (const candidateId of candidates) {
         const hostDocRef = doc(db, HOSTS_COLLECTION, candidateId);
         const hostSnap = await getDoc(hostDocRef);
         if (hostSnap.exists()) {
-          const hData = hostSnap.data() as any;
-          const currentHistory = Array.isArray(hData.incomeHistory) ? hData.incomeHistory : [];
-          const nextHistory = [incomeRecord, ...currentHistory];
-          const nextNet = updatedEarnings ? updatedEarnings.netIncome : (hData.netIncome || 0) + (incomeRecord.hostEarned || 0);
-          const nextPending = updatedEarnings ? updatedEarnings.pendingPayout : (hData.pendingPayout || 0) + (incomeRecord.hostEarned || 0);
-          const nextGross = updatedEarnings ? updatedEarnings.grossRevenue : (hData.grossRevenue || 0) + (incomeRecord.grossAmount || 0);
-          const nextMessages =
-            extra?.callType === 'message' || incomeRecord.type === 'message'
-              ? (hData.totalMessagesReceived || 0) + 1
-              : (hData.totalMessagesReceived || 0);
-
-          await setDoc(hostDocRef, {
-            incomeHistory: nextHistory,
-            netIncome: parseFloat(Number(nextNet).toFixed(2)),
-            pendingPayout: parseFloat(Number(nextPending).toFixed(2)),
-            grossRevenue: parseFloat(Number(nextGross).toFixed(2)),
-            totalMessagesReceived: nextMessages,
-            lastActiveAt: Date.now()
-          }, { merge: true });
+          matchedDocId = candidateId;
+          hData = hostSnap.data();
           break;
         }
+      }
+
+      // Fallback: scan 'hosts' collection if direct ID wasn't matched
+      if (!matchedDocId && cleanPhone.length === 10) {
+        const allHostsSnap = await getDocs(collection(db, HOSTS_COLLECTION));
+        allHostsSnap.forEach((docSnap) => {
+          if (matchedDocId) return;
+          const d = docSnap.data() as any;
+          const dPhone = String(d.phone || d.id || docSnap.id || '').replace(/\D/g, '').slice(-10);
+          if (dPhone === cleanPhone) {
+            matchedDocId = docSnap.id;
+            hData = d;
+          }
+        });
+      }
+
+      if (matchedDocId && hData) {
+        const hostDocRef = doc(db, HOSTS_COLLECTION, matchedDocId);
+        const currentHistory = Array.isArray(hData.incomeHistory) ? hData.incomeHistory : [];
+        const nextHistory = [incomeRecord, ...currentHistory];
+        const nextNet = updatedEarnings ? updatedEarnings.netIncome : (hData.netIncome || 0) + (incomeRecord.hostEarned || 0);
+        const nextPending = updatedEarnings ? updatedEarnings.pendingPayout : (hData.pendingPayout || 0) + (incomeRecord.hostEarned || 0);
+        const nextGross = updatedEarnings ? updatedEarnings.grossRevenue : (hData.grossRevenue || 0) + (incomeRecord.grossAmount || 0);
+        const nextMessages =
+          extra?.callType === 'message' || incomeRecord.type === 'message'
+            ? (hData.totalMessagesReceived || 0) + 1
+            : (hData.totalMessagesReceived || 0);
+        const nextReferralIncome =
+          extra?.callType === 'referral' || incomeRecord.type === 'referral'
+            ? parseFloat(Number((hData.referralIncome || 0) + (incomeRecord.hostEarned || 0)).toFixed(2))
+            : (hData.referralIncome || 0);
+
+        await setDoc(hostDocRef, {
+          incomeHistory: nextHistory,
+          netIncome: parseFloat(Number(nextNet).toFixed(2)),
+          pendingPayout: parseFloat(Number(nextPending).toFixed(2)),
+          grossRevenue: parseFloat(Number(nextGross).toFixed(2)),
+          totalMessagesReceived: nextMessages,
+          referralIncome: nextReferralIncome,
+          lastActiveAt: Date.now()
+        }, { merge: true });
       }
     } catch (err) {
       console.warn('Could not record host income to Firestore:', err);
     }
   }
 
-  // 2. Post to backend if configured
+  // 2. Also update local host profile if the target host is logged in on this browser
+  if (typeof window !== 'undefined') {
+    try {
+      const rawLocalHost = localStorage.getItem('sunosakhi_host_profile');
+      if (rawLocalHost) {
+        const parsedHost = JSON.parse(rawLocalHost);
+        const localPhone = String(parsedHost.phone || parsedHost.id || '').replace(/\D/g, '').slice(-10);
+        if (
+          (hostId && parsedHost.id === hostId) ||
+          (cleanPhone.length === 10 && localPhone === cleanPhone)
+        ) {
+          const currentHistory = Array.isArray(parsedHost.incomeHistory) ? parsedHost.incomeHistory : [];
+          if (!currentHistory.some((r: any) => r.id === incomeRecord.id)) {
+            parsedHost.incomeHistory = [incomeRecord, ...currentHistory];
+            parsedHost.netIncome = parseFloat(
+              Number((parsedHost.netIncome || 0) + (incomeRecord.hostEarned || 0)).toFixed(2)
+            );
+            parsedHost.pendingPayout = parseFloat(
+              Number((parsedHost.pendingPayout || 0) + (incomeRecord.hostEarned || 0)).toFixed(2)
+            );
+            parsedHost.grossRevenue = parseFloat(
+              Number((parsedHost.grossRevenue || 0) + (incomeRecord.grossAmount || 0)).toFixed(2)
+            );
+            if (extra?.callType === 'referral' || incomeRecord.type === 'referral') {
+              parsedHost.referralIncome = parseFloat(
+                Number((parsedHost.referralIncome || 0) + (incomeRecord.hostEarned || 0)).toFixed(2)
+              );
+            }
+            localStorage.setItem('sunosakhi_host_profile', JSON.stringify(parsedHost));
+            window.dispatchEvent(new CustomEvent('sunosakhi-host-income-updated', { detail: parsedHost }));
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // 3. Post to backend if configured
   if (hasExternalApiBackend()) {
     const baseUrl = getApiBaseUrl();
     try {

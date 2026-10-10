@@ -74,10 +74,10 @@ export interface ActiveGiftAnimation {
 
 export interface HostIncomeRecord {
   id: string;
-  type: 'call' | 'gift' | 'message' | 'incentive';
+  type: 'call' | 'gift' | 'message' | 'incentive' | 'referral';
   description: string;
   grossAmount: number;
-  hostSharePercent: number; // 60%
+  hostSharePercent: number; // 60% or 1% for referral
   hostEarned: number;
   timestamp: number;
   durationMinutes?: number;
@@ -148,6 +148,9 @@ export interface HostProfile extends Sakhi {
   grossRevenue: number;
   netIncome: number;
   pendingPayout: number;
+  referralIncome?: number;
+  referralCount?: number;
+  referredBy?: string;
   verification: HostVerificationData;
   incomeHistory: HostIncomeRecord[];
 }

@@ -85,10 +85,20 @@ export class WebRTCService {
     this.currentFacingMode = this.currentFacingMode === 'user' ? 'environment' : 'user';
     try {
       const newStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: this.currentFacingMode, width: { ideal: 640 }, height: { ideal: 480 } }
+        video: {
+          facingMode: this.currentFacingMode,
+          width: { ideal: 1280, min: 640 },
+          height: { ideal: 720, min: 480 },
+          frameRate: { ideal: 30, min: 24 }
+        }
       });
       const newVideoTrack = newStream.getVideoTracks()[0];
       if (newVideoTrack) {
+        try {
+          if ('contentHint' in newVideoTrack) {
+            (newVideoTrack as any).contentHint = 'motion';
+          }
+        } catch {}
         const sender = this.peerConnection.getSenders().find((s) => s.track && s.track.kind === 'video');
         if (sender) {
           await sender.replaceTrack(newVideoTrack);
@@ -105,7 +115,32 @@ export class WebRTCService {
   }
 
   /**
-   * Acquire camera & microphone stream with automatic fallback synthesis
+   * Apply HD High-Bitrate (2.5 Mbps @ 30fps) WebRTC encoding parameters for crystal-clear video calls
+   */
+  private async applyHdVideoEncoding(pc: RTCPeerConnection): Promise<void> {
+    try {
+      const senders = pc.getSenders();
+      for (const sender of senders) {
+        if (sender.track && sender.track.kind === 'video' && typeof sender.getParameters === 'function') {
+          const params: any = sender.getParameters() || {};
+          if (!params.encodings || params.encodings.length === 0) {
+            params.encodings = [{}];
+          }
+          params.encodings[0].maxBitrate = 2500000; // 2.5 Mbps HD
+          params.encodings[0].maxFramerate = 30;
+          params.encodings[0].networkPriority = 'high';
+          params.encodings[0].priority = 'high';
+          params.degradationPreference = 'maintain-resolution';
+          await sender.setParameters(params).catch(() => {});
+        }
+      }
+    } catch (e) {
+      console.warn('HD encoding parameters note:', e);
+    }
+  }
+
+  /**
+   * Acquire HD 720p camera & crystal-clear microphone stream with automatic fallback synthesis
    */
   public async getMediaStream(callType: CallType): Promise<MediaStream> {
     try {
@@ -124,20 +159,38 @@ export class WebRTCService {
             audio: {
               echoCancellation: true,
               noiseSuppression: true,
-              autoGainControl: true
-            },
-            video: callType === 'video' ? { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: this.currentFacingMode } : false
+              autoGainControl: true,
+              sampleRate: 48000,
+              channelCount: 1
+            } as any,
+            video:
+              callType === 'video'
+                ? {
+                    width: { ideal: 1280, min: 640 },
+                    height: { ideal: 720, min: 480 },
+                    frameRate: { ideal: 30, min: 24 },
+                    facingMode: this.currentFacingMode
+                  }
+                : false
           });
           stream.getAudioTracks().forEach((t) => {
             t.enabled = true;
           });
+          stream.getVideoTracks().forEach((vt) => {
+            vt.enabled = true;
+            try {
+              if ('contentHint' in vt) {
+                (vt as any).contentHint = 'motion';
+              }
+            } catch {}
+          });
           this.localStream = stream;
           return stream;
         } catch (firstErr) {
-          console.warn('Advanced getUserMedia failed, attempting standard constraints:', firstErr);
+          console.warn('HD getUserMedia failed, attempting standard constraints:', firstErr);
           const fallbackStream = await navigator.mediaDevices.getUserMedia({
             audio: true,
-            video: callType === 'video'
+            video: callType === 'video' ? { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: this.currentFacingMode } : false
           });
           fallbackStream.getAudioTracks().forEach((t) => {
             t.enabled = true;
@@ -171,14 +224,14 @@ export class WebRTCService {
 
         if (callType === 'video') {
           const canvas = document.createElement('canvas');
-          canvas.width = 640;
-          canvas.height = 480;
+          canvas.width = 1280;
+          canvas.height = 720;
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.fillStyle = '#120520';
-            ctx.fillRect(0, 0, 640, 480);
+            ctx.fillRect(0, 0, 1280, 720);
           }
-          const canvasStream = (canvas as any).captureStream ? (canvas as any).captureStream(15) : null;
+          const canvasStream = (canvas as any).captureStream ? (canvas as any).captureStream(30) : null;
           if (canvasStream && canvasStream.getVideoTracks()[0]) {
             syntheticStream.addTrack(canvasStream.getVideoTracks()[0]);
           }
@@ -219,6 +272,9 @@ export class WebRTCService {
         track.enabled = true;
         pc.addTrack(track, localStream);
       });
+      if (callType === 'video') {
+        await this.applyHdVideoEncoding(pc);
+      }
     }
 
     pc.ontrack = (event) => {
@@ -427,6 +483,9 @@ export class WebRTCService {
         track.enabled = true;
         pc.addTrack(track, localStream);
       });
+      if (callType === 'video') {
+        await this.applyHdVideoEncoding(pc);
+      }
     }
 
     pc.ontrack = (event) => {

@@ -55,10 +55,10 @@ export const SakhiCard: React.FC<SakhiCardProps> = ({
           <div
             className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full overflow-hidden border-2 ${
               isOnline
-                ? 'border-emerald-500/60 shadow-lg shadow-emerald-950/50'
+                ? 'border-emerald-500/80 shadow-lg shadow-emerald-950/60'
                 : isBusy
-                ? 'border-amber-500/60 shadow-lg shadow-amber-950/50'
-                : 'border-white/20'
+                ? 'border-amber-500/70 shadow-lg shadow-amber-950/50'
+                : 'border-red-500/70 shadow-lg shadow-red-950/50'
             } shadow-md`}
           >
             <img
@@ -68,16 +68,16 @@ export const SakhiCard: React.FC<SakhiCardProps> = ({
               loading="lazy"
             />
           </div>
-          {/* Online / Busy / Offline status indicator dot */}
+          {/* Online (Green) / Busy (Amber) / Offline (Red) status indicator dot */}
           <span
             className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-[#170a2c] ${
               isOnline
-                ? 'bg-emerald-400 ring-2 ring-emerald-500/50 animate-pulse'
+                ? 'bg-emerald-500 ring-2 ring-emerald-400/60 animate-pulse'
                 : isBusy
                 ? 'bg-amber-400 ring-2 ring-amber-500/50 animate-pulse'
-                : 'bg-gray-400'
+                : 'bg-red-500 ring-2 ring-red-500/50'
             }`}
-            title={isOnline ? '🟢 Host Online' : isBusy ? '🟡 Busy on Call' : '⚪ Host Offline'}
+            title={isOnline ? '🟢 Host Online (Logged In)' : isBusy ? '🟡 Busy on Call (Auto-Forward Active)' : '🔴 Host Offline (Logged Out)'}
           />
         </div>
 
@@ -150,18 +150,18 @@ export const SakhiCard: React.FC<SakhiCardProps> = ({
 
             {isOnline ? (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold shadow-sm">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span>🟢 Live Online</span>
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>🟢 Online</span>
               </span>
             ) : isBusy ? (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold shadow-sm">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
-                <span>🟡 Busy on Call</span>
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                <span>🟡 Busy (Auto-Forward)</span>
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-gray-500/20 text-gray-400 border border-gray-500/30 text-[10px] font-medium">
-                <span className="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
-                <span>Offline</span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/40 text-[10px] font-bold shadow-sm">
+                <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                <span>🔴 Offline</span>
               </span>
             )}
 
@@ -219,25 +219,23 @@ export const SakhiCard: React.FC<SakhiCardProps> = ({
         {/* Center: Voice Call Primary Button with rate */}
         <button
           type="button"
-          disabled={isBusy}
           onClick={() => startCall(sakhi, 'voice')}
-          className="flex-1 py-2.5 px-2 rounded-2xl bg-gradient-to-r from-purple-700 via-indigo-700 to-pink-600 hover:from-purple-600 hover:to-pink-500 disabled:opacity-50 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-lg shadow-purple-950/50 transition-all active:scale-95"
-          title={isBusy ? 'Host is currently busy on a call' : isHostViewer ? 'Free Voice Call (Host Account)' : `Live Voice Call (₹${voiceRate}/min)`}
+          className="flex-1 py-2.5 px-2 rounded-2xl bg-gradient-to-r from-purple-700 via-indigo-700 to-pink-600 hover:from-purple-600 hover:to-pink-500 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-lg shadow-purple-950/50 transition-all active:scale-95"
+          title={isBusy ? 'Host is busy — Call will auto-forward to next available Host!' : isHostViewer ? 'Free Voice Call (Host Account)' : `Live Voice Call (₹${voiceRate}/min)`}
         >
           <Phone className="w-4 h-4 text-white" />
-          <span>{isBusy ? 'Busy' : isHostViewer ? 'Free Call' : `Call ₹${voiceRate}/m`}</span>
+          <span>{isHostViewer ? 'Free Call' : `Call ₹${voiceRate}/m`}</span>
         </button>
 
         {/* Right: Video Call Button with rate */}
         <button
           type="button"
-          disabled={isBusy}
           onClick={() => startCall(sakhi, 'video')}
-          className="py-2.5 px-3 rounded-2xl bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 disabled:opacity-50 border border-pink-400/40 text-white font-black text-xs sm:text-sm shadow-md shadow-pink-950/50 flex items-center justify-center gap-1 transition-all active:scale-95"
-          title={isBusy ? 'Host is currently busy on a call' : isHostViewer ? 'Free Video Call (Host Account)' : `Video Call (₹${videoRate}/min)`}
+          className="py-2.5 px-3 rounded-2xl bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 border border-pink-400/40 text-white font-black text-xs sm:text-sm shadow-md shadow-pink-950/50 flex items-center justify-center gap-1 transition-all active:scale-95"
+          title={isBusy ? 'Host is busy — Video Call will auto-forward to next available Host!' : isHostViewer ? 'Free Video Call (Host Account)' : `Video Call (₹${videoRate}/min)`}
         >
           <Video className="w-4 h-4 text-white" />
-          <span>{isBusy ? 'Busy' : isHostViewer ? 'Free' : `₹${videoRate}/m`}</span>
+          <span>{isHostViewer ? 'Free' : `₹${videoRate}/m`}</span>
         </button>
       </div>
     </div>

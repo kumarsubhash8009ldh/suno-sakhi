@@ -300,10 +300,15 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // Cloud sync
     syncTransactionToCloud(userId, newBal, newTx);
 
-    // Process referral bonus (₹100 Coins) for referrer when user adds cash
-    processReferralRewardOnRecharge(userId, amount, (rewardCoins, refCode) => {
-      console.log(`🎉 ₹${rewardCoins} Coins referral bonus processed for ${refCode}!`);
-    });
+    // Process 1% Host Referral Commission for referrer when user adds cash
+    processReferralRewardOnRecharge(
+      userId,
+      amount,
+      (rewardCoins, refCode) => {
+        console.log(`🎉 ₹${rewardCoins} (1% Host Referral Commission) processed for ${refCode}!`);
+      },
+      session.phone
+    );
   };
 
   const submitRecharge = async (

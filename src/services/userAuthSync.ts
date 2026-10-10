@@ -1142,10 +1142,9 @@ export const subscribeToAllRealCallers = (
               const cleanPhone = phone;
               const cleanEmail = String(email || '').trim().toLowerCase();
               if (cleanPhone.length === 10 || (cleanEmail && cleanEmail.includes('@'))) {
-                const now = Date.now();
                 const lastActive = Number(data.lastActiveAt || data.lastLoginAt || 0);
-                const isRecentlyActive = lastActive > 0 && (now - lastActive) < 60 * 1000;
-                const isUserOnline = data.status !== 'blocked' && data.status !== 'offline' && (data.isOnline === true || isRecentlyActive);
+                // Rule: Any logged-in ID shows as Online; only explicitly logged-out ID ('offline') shows as Offline.
+                const isUserOnline = data.status !== 'blocked' && data.status !== 'offline' && data.isOnline !== false;
 
                 const user: UserAccount = {
                   id: data.id || ('caller-' + (cleanPhone || cleanEmail.replace(/[^a-z0-9]/g, '_'))),

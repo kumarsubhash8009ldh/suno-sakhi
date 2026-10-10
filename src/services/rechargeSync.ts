@@ -292,10 +292,15 @@ export const approveRechargeRequest = async (
 
   await creditUserCloudWallet(updatedReq.userId, updatedReq.totalBalance, tx, updatedReq.userPhone);
 
-  // 2. Process referral bonus reward for referrer if applicable
-  processReferralRewardOnRecharge(updatedReq.userId, updatedReq.amount, (rewardCoins, refCode) => {
-    console.log(`🎉 ₹${rewardCoins} Coins referral bonus processed for ${refCode}!`);
-  });
+  // 2. Process 1% Host Referral Commission for referrer if applicable
+  await processReferralRewardOnRecharge(
+    updatedReq.userId,
+    updatedReq.amount,
+    (rewardCoins, refCode) => {
+      console.log(`🎉 ₹${rewardCoins} (1% Host Referral Commission) processed for ${refCode}!`);
+    },
+    updatedReq.userPhone
+  );
 
   // 3. Save updated request to Firestore
   if (isFirebaseConfigured() && db) {
@@ -418,6 +423,14 @@ export const adminDirectDeposit = async (params: {
       params.userPhone
     );
     newBalance = creditRes.newBalance;
+    await processReferralRewardOnRecharge(
+      callerId,
+      amount,
+      (rewardCoins, refCode) => {
+        console.log(`🎉 ₹${rewardCoins} (1% Host Referral Commission) processed for ${refCode}!`);
+      },
+      params.userPhone
+    );
   } else {
     // Credit Host earnings / pendingPayout in Firestore
     const hostId = params.userId;

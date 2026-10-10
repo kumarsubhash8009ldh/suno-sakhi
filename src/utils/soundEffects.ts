@@ -4,7 +4,7 @@
 function createRingtoneWavBlob(): Blob | null {
   try {
     const sampleRate = 22050;
-    const duration = 2.4; // 2.4s cycle
+    const duration = 2.8; // 2.8s sweet melodic Caller Tune cycle
     const numSamples = Math.floor(sampleRate * duration);
     const dataSize = numSamples * 2;
     const buffer = new ArrayBuffer(44 + dataSize);
@@ -30,31 +30,43 @@ function createRingtoneWavBlob(): Blob | null {
     writeString(36, 'data');
     view.setUint32(40, dataSize, true);
 
+    // Melodic Indian Pentatonic / Romantic Caller Tune notes (C5, D5, E5, G5, A5, C6, A5, G5)
+    const melody = [
+      { start: 0.0, dur: 0.26, freq: 523.25 },  // Sa (C5)
+      { start: 0.26, dur: 0.26, freq: 659.25 }, // Ga (E5)
+      { start: 0.52, dur: 0.26, freq: 783.99 }, // Pa (G5)
+      { start: 0.78, dur: 0.34, freq: 880.00 }, // Dha (A5)
+      { start: 1.15, dur: 0.26, freq: 1046.50 },// High Sa (C6)
+      { start: 1.41, dur: 0.26, freq: 880.00 }, // Dha (A5)
+      { start: 1.67, dur: 0.30, freq: 783.99 }, // Pa (G5)
+      { start: 1.98, dur: 0.55, freq: 659.25 }  // Warm Ga (E5) sustain
+    ];
+
     let offset = 44;
     for (let i = 0; i < numSamples; i++) {
       const t = i / sampleRate;
       let val = 0;
 
-      // Phase 1 (0.0s - 0.6s): Melodic smartphone bell chime (E6, G#6, B6, E7)
-      if (t < 0.6) {
-        const step = Math.floor(t / 0.15);
-        const stepT = t % 0.15;
-        const freqs = [1318.5, 1661.2, 1975.5, 2637.0];
-        const f = freqs[Math.min(step, 3)];
-        const decay = Math.exp(-stepT * 14);
-        val += (Math.sin(2 * Math.PI * f * t) + 0.35 * Math.sin(4 * Math.PI * f * t)) * decay * 0.85;
+      for (const note of melody) {
+        if (t >= note.start && t < note.start + note.dur) {
+          const localT = t - note.start;
+          const attack = Math.min(1, localT / 0.025);
+          const decay = Math.exp(-localT * 3.8);
+          const vibrato = 1 + 0.004 * Math.sin(2 * Math.PI * 5.5 * localT);
+          const f = note.freq * vibrato;
+          // Warm flute + santoor bell harmonics
+          const fundamental = Math.sin(2 * Math.PI * f * t);
+          const secondHarmonic = 0.35 * Math.sin(2 * Math.PI * (f * 2) * t);
+          const thirdHarmonic = 0.15 * Math.sin(2 * Math.PI * (f * 3) * t);
+          val += (fundamental + secondHarmonic + thirdHarmonic) * attack * decay * 0.62;
+        }
       }
-      // Phase 2 (0.7s - 1.5s): High-power Telephony Bell (853Hz + 960Hz) with 20Hz vibration tremolo
-      else if (t >= 0.7 && t < 1.5) {
-        const bellT = t - 0.7;
-        const decay = Math.exp(-bellT * 1.8);
-        const tremolo = 0.8 + 0.2 * Math.sin(2 * Math.PI * 20 * t);
-        const f1 = Math.sin(2 * Math.PI * 853 * t);
-        const f2 = Math.sin(2 * Math.PI * 960 * t);
-        const f3 = 0.4 * Math.sin(2 * Math.PI * 1706 * t);
-        val += (f1 + f2 + f3) * 0.55 * decay * tremolo;
+
+      // Soft warm pad chord underneath (C4 + G4)
+      if (t < 2.45) {
+        const padEnv = Math.sin((Math.PI * t) / 2.45) * 0.15;
+        val += (Math.sin(2 * Math.PI * 261.63 * t) + Math.sin(2 * Math.PI * 392.0 * t)) * padEnv;
       }
-      // Phase 3 (1.5s - 2.4s): Natural silence pause before loop
 
       const sample = Math.max(-32767, Math.min(32767, Math.floor(val * 32767)));
       view.setInt16(offset, sample, true);
@@ -156,7 +168,7 @@ class SoundSynthesizer {
     }
   }
 
-  // Web Audio synth burst (loud & crisp)
+  // Pleasant Melodic Caller Tune Web Audio synthesis
   private playWebAudioRingCycle() {
     try {
       const ctx = this.initCtx();
@@ -167,65 +179,51 @@ class SoundSynthesizer {
       }
 
       const now = ctx.currentTime;
-      // Volume master gain for mobile speakers / earpiece
       const master = ctx.createGain();
-      master.gain.setValueAtTime(0.9 * this.ringVolume, now);
+      master.gain.setValueAtTime(0.85 * this.ringVolume, now);
       master.connect(ctx.destination);
 
-      // Phase 1: 4 rapid ascending notes
+      // Melodic 8-note Caller Tune arpeggio (Sa-Ga-Pa-Dha-Sa'-Dha-Pa-Ga)
       const notes = [
-        { f: 1318.5, delay: 0.0, dur: 0.14 },
-        { f: 1661.2, delay: 0.15, dur: 0.14 },
-        { f: 1975.5, delay: 0.30, dur: 0.14 },
-        { f: 2637.0, delay: 0.45, dur: 0.2 },
+        { f: 523.25, delay: 0.0, dur: 0.25 },
+        { f: 659.25, delay: 0.26, dur: 0.25 },
+        { f: 783.99, delay: 0.52, dur: 0.25 },
+        { f: 880.00, delay: 0.78, dur: 0.32 },
+        { f: 1046.50, delay: 1.15, dur: 0.25 },
+        { f: 880.00, delay: 1.41, dur: 0.25 },
+        { f: 783.99, delay: 1.67, dur: 0.28 },
+        { f: 659.25, delay: 1.98, dur: 0.50 },
       ];
 
       notes.forEach((n) => {
         const osc = ctx.createOscillator();
+        const overtone = ctx.createOscillator();
         const g = ctx.createGain();
-        osc.type = 'triangle';
+        const og = ctx.createGain();
+
+        osc.type = 'sine';
+        overtone.type = 'triangle';
         osc.frequency.setValueAtTime(n.f, now + n.delay);
+        overtone.frequency.setValueAtTime(n.f * 2, now + n.delay);
 
         g.gain.setValueAtTime(0, now + n.delay);
-        g.gain.linearRampToValueAtTime(0.85, now + n.delay + 0.02);
+        g.gain.linearRampToValueAtTime(0.75, now + n.delay + 0.025);
         g.gain.exponentialRampToValueAtTime(0.001, now + n.delay + n.dur);
 
+        og.gain.setValueAtTime(0, now + n.delay);
+        og.gain.linearRampToValueAtTime(0.22, now + n.delay + 0.02);
+        og.gain.exponentialRampToValueAtTime(0.001, now + n.delay + n.dur * 0.8);
+
         osc.connect(g);
+        overtone.connect(og);
         g.connect(master);
+        og.connect(master);
+
         osc.start(now + n.delay);
-        osc.stop(now + n.delay + n.dur + 0.05);
+        overtone.start(now + n.delay);
+        osc.stop(now + n.delay + n.dur + 0.04);
+        overtone.stop(now + n.delay + n.dur + 0.04);
       });
-
-      // Phase 2: Telephony Bell (853Hz + 960Hz) at 0.7s
-      const bellStart = now + 0.7;
-      const bellDur = 0.75;
-      const bOsc1 = ctx.createOscillator();
-      const bOsc2 = ctx.createOscillator();
-      const bOsc3 = ctx.createOscillator();
-      const bGain = ctx.createGain();
-
-      bOsc1.type = 'sine';
-      bOsc2.type = 'sine';
-      bOsc3.type = 'triangle';
-      bOsc1.frequency.setValueAtTime(853, bellStart);
-      bOsc2.frequency.setValueAtTime(960, bellStart);
-      bOsc3.frequency.setValueAtTime(1706, bellStart);
-
-      bGain.gain.setValueAtTime(0, bellStart);
-      bGain.gain.linearRampToValueAtTime(0.75, bellStart + 0.04);
-      bGain.gain.exponentialRampToValueAtTime(0.001, bellStart + bellDur);
-
-      bOsc1.connect(bGain);
-      bOsc2.connect(bGain);
-      bOsc3.connect(bGain);
-      bGain.connect(master);
-
-      bOsc1.start(bellStart);
-      bOsc2.start(bellStart);
-      bOsc3.start(bellStart);
-      bOsc1.stop(bellStart + bellDur + 0.05);
-      bOsc2.stop(bellStart + bellDur + 0.05);
-      bOsc3.stop(bellStart + bellDur + 0.05);
     } catch (e) {
       console.warn('Web Audio ring cycle error:', e);
     }
@@ -255,7 +253,7 @@ class SoundSynthesizer {
       this.ringInterval = window.setInterval(() => {
         if (!this.isRinging) return;
         this.playWebAudioRingCycle();
-      }, 2500);
+      }, 2800);
 
       // 3. Vibration: Strictly opt-in (defaults to false).
       // IMPORTANT: When a user makes an outgoing call (voice or video), the caller's phone must NEVER vibrate!
@@ -421,7 +419,7 @@ class SoundSynthesizer {
     }
   }
 
-  // Crisp, loud, pleasant notification chime for incoming chat message (WhatsApp/iPhone tone style)
+  // Crisp, musical 4-note crystal chime ring for incoming chat messages
   public playMessageReceived() {
     try {
       const ctx = this.initCtx();
@@ -432,32 +430,46 @@ class SoundSynthesizer {
 
       // Hardware vibration on mobile
       if (typeof navigator !== 'undefined' && navigator.vibrate) {
-        navigator.vibrate([150, 80, 150]);
+        navigator.vibrate([160, 70, 200]);
       }
 
       const now = ctx.currentTime;
-      // High-clarity two-tone bell chime: C6 (1046.5Hz) followed by G6 (1568Hz) with volume 0.7
+      // Rich 4-note ascending crystal bell ring: G5 -> B5 -> D6 -> G6 with warm harmonic overtone
       const notes = [
-        { freq: 1046.5, time: 0, duration: 0.16, vol: 0.65 },
-        { freq: 1567.98, time: 0.12, duration: 0.38, vol: 0.7 },
+        { freq: 783.99, time: 0.0, duration: 0.18, vol: 0.75 },   // G5
+        { freq: 987.77, time: 0.09, duration: 0.20, vol: 0.80 },  // B5
+        { freq: 1174.66, time: 0.18, duration: 0.24, vol: 0.85 }, // D6
+        { freq: 1567.98, time: 0.28, duration: 0.55, vol: 0.92 }, // G6 crystal bell sustain
       ];
 
       notes.forEach((note) => {
         const osc = ctx.createOscillator();
+        const harmonic = ctx.createOscillator();
         const gain = ctx.createGain();
+        const hGain = ctx.createGain();
 
         osc.type = 'sine';
+        harmonic.type = 'triangle';
         osc.frequency.setValueAtTime(note.freq, now + note.time);
+        harmonic.frequency.setValueAtTime(note.freq * 2, now + note.time);
 
         gain.gain.setValueAtTime(0, now + note.time);
-        gain.gain.linearRampToValueAtTime(note.vol, now + note.time + 0.02);
+        gain.gain.linearRampToValueAtTime(note.vol, now + note.time + 0.018);
         gain.gain.exponentialRampToValueAtTime(0.001, now + note.time + note.duration);
 
+        hGain.gain.setValueAtTime(0, now + note.time);
+        hGain.gain.linearRampToValueAtTime(note.vol * 0.25, now + note.time + 0.015);
+        hGain.gain.exponentialRampToValueAtTime(0.001, now + note.time + note.duration * 0.7);
+
         osc.connect(gain);
+        harmonic.connect(hGain);
         gain.connect(ctx.destination);
+        hGain.connect(ctx.destination);
 
         osc.start(now + note.time);
+        harmonic.start(now + note.time);
         osc.stop(now + note.time + note.duration + 0.05);
+        harmonic.stop(now + note.time + note.duration + 0.05);
       });
     } catch (e) {
       console.warn('playMessageReceived error:', e);

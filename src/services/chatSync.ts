@@ -1,4 +1,4 @@
-import { collection, doc, setDoc, onSnapshot, increment } from 'firebase/firestore';
+import { collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, increment } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase';
 import { ChatMessage, ConversationItem } from '../types';
 import { getApiBaseUrl, hasExternalApiBackend } from './apiConfig';
@@ -26,20 +26,22 @@ export const extractChatParticipantKey = (idOrPhone?: string | null): string => 
   const raw = String(idOrPhone).trim();
   if (!raw) return '';
 
-  // If it looks like an email-based ID (e.g. sakhi-host-pw2173398_gmail_com or caller-abc_gmail_com), preserve the email slug
   const lower = raw.toLowerCase();
-  if (lower.includes('@') || lower.includes('_gmail_') || lower.includes('_yahoo_') || lower.includes('_outlook_') || lower.includes('_hotmail_')) {
-    return lower
-      .replace(/^sakhi-user-/, '')
-      .replace(/^sakhi-host-/, '')
-      .replace(/^host_/, '')
-      .replace(/^caller-/, '')
-      .replace(/^caller_/, '')
-      .replace(/[^a-z0-9_]/g, '_');
+  const stripped = lower.replace(
+    /^(sakhi-user-|sakhi-host-|sakhi-email-|host_|host-|caller-|caller_|user_|user-|email_|email-)+/,
+    ''
+  );
+
+  // If it contains '@' or letters (e.g. angelbathla05_gmail_com, drishti_a1426_gmail_com), preserve the normalized slug
+  if (
+    stripped.includes('@') ||
+    /[a-z]/.test(stripped)
+  ) {
+    return stripped.replace(/[^a-z0-9_]/g, '_').replace(/^_+|_+$/g, '');
   }
 
   // Otherwise check if it contains a valid 10-digit phone number
-  const digits = raw.replace(/\D/g, '');
+  const digits = stripped.replace(/\D/g, '');
   if (digits.length === 10) {
     return digits;
   }
@@ -50,16 +52,11 @@ export const extractChatParticipantKey = (idOrPhone?: string | null): string => 
     return digits.slice(1);
   }
   // Do NOT slice 13-digit timestamps (like user_1728561234567) into fake 10-digit phone numbers
-  if (digits.length > 10 && !raw.startsWith('user_') && !raw.startsWith('client_') && !raw.startsWith('msg_')) {
+  if (digits.length > 10 && !lower.startsWith('user_') && !lower.startsWith('client_') && !lower.startsWith('msg_')) {
     return digits.slice(-10);
   }
 
-  return lower
-    .replace(/^sakhi-user-/, '')
-    .replace(/^sakhi-host-/, '')
-    .replace(/^host_/, '')
-    .replace(/^caller-/, '')
-    .replace(/^caller_/, '');
+  return stripped.replace(/[^a-z0-9_]/g, '_').replace(/^_+|_+$/g, '');
 };
 
 /**
@@ -81,22 +78,44 @@ export const getChatThreadId = (sakhiId: string, callerId: string): string => {
 
 /**
  * Given a threadId (e.g. `chat_A_B` or `A_B`), returns candidate thread IDs including the reverse pair
- * so messages are always received even if one side initiated with swapped order or legacy format.
+ * so messages are always received even if one side initiated with swapped order or email slugs containing underscores.
  */
 export const getCandidateThreadIds = (threadId: string): string[] => {
   const clean = String(threadId || '').trim();
   if (!clean) return [];
   const candidates = new Set<string>([clean]);
 
-  const withoutPrefix = clean.startsWith('chat_') ? clean.slice(5) : clean;
-  const parts = withoutPrefix.split('_');
-  if (parts.length === 2 && parts[0] && parts[1]) {
-    const [a, b] = parts;
+  const addPairVariants = (a: string, b: string) => {
+    if (!a || !b) return;
     candidates.add(`chat_${a}_${b}`);
     candidates.add(`chat_${b}_${a}`);
     candidates.add(`${a}_${b}`);
     candidates.add(`${b}_${a}`);
+  };
+
+  const withoutPrefix = clean.startsWith('chat_') ? clean.slice(5) : clean;
+  const parts = withoutPrefix.split('_');
+
+  if (parts.length === 2 && parts[0] && parts[1]) {
+    addPairVariants(parts[0], parts[1]);
+  } else if (parts.length > 2) {
+    const firstPart = parts[0];
+    const lastPart = parts[parts.length - 1];
+    // Case 1: trailing numeric phone/ID (e.g. angelbathla05_gmail_com_8290778573)
+    if (/^\d{7,15}$/.test(lastPart)) {
+      addPairVariants(parts.slice(0, -1).join('_'), lastPart);
+    }
+    // Case 2: leading numeric phone/ID (e.g. 8290778573_angelbathla05_gmail_com)
+    if (/^\d{7,15}$/.test(firstPart)) {
+      addPairVariants(firstPart, parts.slice(1).join('_'));
+    }
+    // Case 3: two email slugs joined by underscore (e.g. user1_gmail_com_user2_gmail_com)
+    const emailSplitMatch = withoutPrefix.match(/^(.+?_(?:com|in|org|net|co|io|edu|me))_(.+)$/);
+    if (emailSplitMatch && emailSplitMatch[1] && emailSplitMatch[2]) {
+      addPairVariants(emailSplitMatch[1], emailSplitMatch[2]);
+    }
   }
+
   return Array.from(candidates);
 };
 
@@ -312,7 +331,7 @@ export const sendCloudChatMessage = async (
 };
 
 /**
- * Mark all incoming messages in a thread as read.
+ * Mark all incoming messages in a thread as read without creating empty ghost documents.
  */
 export const markThreadAsRead = async (
   threadId: string,
@@ -322,10 +341,11 @@ export const markThreadAsRead = async (
 
   if (isFirebaseConfigured() && db) {
     try {
-      await setDoc(
-        doc(db, CONVERSATIONS_COLLECTION, threadId),
-        { unreadCount: 0 },
-        { merge: true }
+      const candidateIds = getCandidateThreadIds(threadId);
+      await Promise.all(
+        candidateIds.map((cid) =>
+          updateDoc(doc(db!, CONVERSATIONS_COLLECTION, cid), { unreadCount: 0 }).catch(() => {})
+        )
       );
     } catch (err) {}
   }
@@ -379,15 +399,25 @@ export const showSystemNotification = (title: string, options?: NotificationOpti
 
 /**
  * Subscribe to all incoming caller conversations for a specific Host (Sakhi).
- * Listens directly to Cloud Firestore `conversations` collection.
+ * Listens directly to Cloud Firestore `conversations` collection across all host identifiers.
  */
 export const subscribeToHostConversations = (
-  hostId: string,
+  hostInput: string | string[],
   onUpdate: (conversations: ConversationItem[]) => void
 ): (() => void) => {
-  if (!hostId) return () => {};
+  const rawList = (Array.isArray(hostInput) ? hostInput : [hostInput])
+    .map((s) => String(s || '').trim())
+    .filter(Boolean);
+  if (rawList.length === 0) return () => {};
 
-  const hostKey = extractChatParticipantKey(hostId);
+  const hostRawSet = new Set<string>(rawList);
+  const hostKeySet = new Set<string>();
+  rawList.forEach((item) => {
+    const k = extractChatParticipantKey(item);
+    if (k) hostKeySet.add(k);
+  });
+  const primaryHostKey = Array.from(hostKeySet)[0] || extractChatParticipantKey(rawList[0]);
+  const primaryHostId = rawList[0];
 
   // 1. Direct Cloud Firestore onSnapshot
   if (isFirebaseConfigured() && db) {
@@ -399,34 +429,46 @@ export const subscribeToHostConversations = (
           const dedupByPeer = new Map<string, ConversationItem>();
           snapshot.forEach((docSnap) => {
             const c = docSnap.data() as any;
-            if (!c || !c.lastMessage) return;
+            if (!c || !c.lastMessage) {
+              // Auto-remove empty ghost documents created by old markThreadAsRead
+              if (db && c && !c.lastMessage && Object.keys(c).length <= 2) {
+                deleteDoc(doc(db, CONVERSATIONS_COLLECTION, docSnap.id)).catch(() => {});
+              }
+              return;
+            }
 
             const docId = docSnap.id;
+            const threadStr = String(c.threadId || docId);
             const itemHostKey = extractChatParticipantKey(c.hostPhone || c.sakhiId || '');
             const itemCallerKey = extractChatParticipantKey(c.callerPhone || c.callerId || '');
 
-            const isDirectHostMatch =
-              c.sakhiId === hostId ||
-              (hostKey && itemHostKey === hostKey) ||
-              (hostKey && String(c.threadId || docId).startsWith(`chat_${hostKey}_`)) ||
-              (hostKey && String(c.threadId || docId).startsWith(`${hostKey}_`));
+            let isDirectHostMatch = Boolean(c.sakhiId && hostRawSet.has(c.sakhiId));
+            let isReverseMatch = false;
 
-            const isReverseMatch =
-              hostKey &&
-              (itemCallerKey === hostKey ||
-                String(c.threadId || docId).endsWith(`_${hostKey}`));
+            hostKeySet.forEach((hk) => {
+              if (
+                itemHostKey === hk ||
+                threadStr.startsWith(`chat_${hk}_`) ||
+                threadStr.startsWith(`${hk}_`)
+              ) {
+                isDirectHostMatch = true;
+              }
+              if (itemCallerKey === hk || threadStr.endsWith(`_${hk}`)) {
+                isReverseMatch = true;
+              }
+            });
 
             if (isDirectHostMatch || isReverseMatch) {
               const peerKey = isDirectHostMatch
                 ? (itemCallerKey || c.callerId || docId)
                 : (itemHostKey || c.sakhiId || docId);
 
-              // Ignore self-chats where host and caller are the exact same number
-              if (peerKey === hostKey && itemHostKey === itemCallerKey) return;
+              // Ignore self-chats where host and caller are the exact same key
+              if (hostKeySet.has(peerKey) && itemHostKey === itemCallerKey) return;
 
               const item: ConversationItem = {
                 threadId: c.threadId || docId,
-                sakhiId: isDirectHostMatch ? (c.sakhiId || hostId) : (`sakhi-user-${hostKey}`),
+                sakhiId: isDirectHostMatch ? (c.sakhiId || primaryHostId) : (`sakhi-user-${primaryHostKey}`),
                 sakhiName: isDirectHostMatch ? c.sakhiName : c.callerName,
                 sakhiAvatar: c.sakhiAvatar,
                 callerId: isDirectHostMatch ? (c.callerId || `caller_${peerKey}`) : (c.sakhiId || `caller_${peerKey}`),
@@ -465,7 +507,7 @@ export const subscribeToHostConversations = (
     const baseUrl = getApiBaseUrl();
     const fetchConversations = async () => {
       try {
-        const res = await fetch(`${baseUrl}/api/chat/conversations?hostId=${encodeURIComponent(hostId)}`);
+        const res = await fetch(`${baseUrl}/api/chat/conversations?hostId=${encodeURIComponent(primaryHostId)}`);
         const data = await res.json();
         if (data.success && Array.isArray(data.conversations)) {
           onUpdate(data.conversations);
@@ -483,15 +525,24 @@ export const subscribeToHostConversations = (
 
 /**
  * Subscribe to all incoming conversations for a Caller (User).
- * Listens directly to Cloud Firestore `conversations` collection.
+ * Listens directly to Cloud Firestore `conversations` collection across all caller identifiers.
  */
 export const subscribeToUserConversations = (
-  userPhoneOrId: string,
+  userInput: string | string[],
   onUpdate: (conversations: ConversationItem[]) => void
 ): (() => void) => {
-  if (!userPhoneOrId) return () => {};
+  const rawList = (Array.isArray(userInput) ? userInput : [userInput])
+    .map((s) => String(s || '').trim())
+    .filter(Boolean);
+  if (rawList.length === 0) return () => {};
 
-  const callerKey = extractChatParticipantKey(userPhoneOrId);
+  const callerRawSet = new Set<string>(rawList);
+  const callerKeySet = new Set<string>();
+  rawList.forEach((item) => {
+    const k = extractChatParticipantKey(item);
+    if (k) callerKeySet.add(k);
+  });
+  const primaryCallerKey = Array.from(callerKeySet)[0] || extractChatParticipantKey(rawList[0]);
 
   // 1. Direct Cloud Firestore onSnapshot
   if (isFirebaseConfigured() && db) {
@@ -506,35 +557,41 @@ export const subscribeToUserConversations = (
             if (!c || !c.lastMessage) return;
 
             const docId = docSnap.id;
+            const threadStr = String(c.threadId || docId);
             const itemCallerKey = extractChatParticipantKey(c.callerPhone || c.callerId || '');
             const itemHostKey = extractChatParticipantKey(c.hostPhone || c.sakhiId || '');
 
-            const isDirectCallerMatch =
-              c.callerId === userPhoneOrId ||
-              (callerKey && itemCallerKey === callerKey) ||
-              (callerKey && String(c.threadId || docId).endsWith(`_${callerKey}`));
+            let isDirectCallerMatch = Boolean(c.callerId && callerRawSet.has(c.callerId));
+            let isReverseMatch = false;
 
-            const isReverseMatch =
-              callerKey &&
-              (itemHostKey === callerKey ||
-                String(c.threadId || docId).startsWith(`chat_${callerKey}_`) ||
-                String(c.threadId || docId).startsWith(`${callerKey}_`));
+            callerKeySet.forEach((ck) => {
+              if (itemCallerKey === ck || threadStr.endsWith(`_${ck}`)) {
+                isDirectCallerMatch = true;
+              }
+              if (
+                itemHostKey === ck ||
+                threadStr.startsWith(`chat_${ck}_`) ||
+                threadStr.startsWith(`${ck}_`)
+              ) {
+                isReverseMatch = true;
+              }
+            });
 
             if (isDirectCallerMatch || isReverseMatch) {
               const peerKey = isDirectCallerMatch
                 ? (itemHostKey || c.sakhiId || docId)
                 : (itemCallerKey || c.callerId || docId);
 
-              if (peerKey === callerKey && itemHostKey === itemCallerKey) return;
+              if (callerKeySet.has(peerKey) && itemHostKey === itemCallerKey) return;
 
               const item: ConversationItem = {
                 threadId: c.threadId || docId,
                 sakhiId: isDirectCallerMatch ? (c.sakhiId || `sakhi-user-${peerKey}`) : (c.callerId || `sakhi-user-${peerKey}`),
-                sakhiName: isDirectCallerMatch ? c.sakhiName : c.callerName,
+                sakhiName: isDirectCallerMatch ? (c.sakhiName || 'Sakhi') : (c.callerName || c.sakhiName || 'Sakhi'),
                 sakhiAvatar: c.sakhiAvatar,
-                callerId: isDirectCallerMatch ? (c.callerId || `caller_${callerKey}`) : (`caller_${callerKey}`),
+                callerId: isDirectCallerMatch ? (c.callerId || `caller_${primaryCallerKey}`) : (`caller_${primaryCallerKey}`),
                 callerName: isDirectCallerMatch ? (c.callerName || 'Caller') : (c.sakhiName || 'Caller'),
-                callerPhone: callerKey,
+                callerPhone: primaryCallerKey,
                 lastMessage: c.lastMessage || '',
                 lastSender: c.lastSender || 'sakhi',
                 updatedAt: c.updatedAt || Date.now(),
@@ -563,11 +620,11 @@ export const subscribeToUserConversations = (
   }
 
   // 2. Fallback to custom backend ONLY if configured
-  if (hasExternalApiBackend() && callerKey) {
+  if (hasExternalApiBackend() && primaryCallerKey) {
     const baseUrl = getApiBaseUrl();
     const fetchConversations = async () => {
       try {
-        const res = await fetch(`${baseUrl}/api/chat/conversations?callerPhone=${encodeURIComponent(callerKey)}`);
+        const res = await fetch(`${baseUrl}/api/chat/conversations?callerPhone=${encodeURIComponent(primaryCallerKey)}`);
         const data = await res.json();
         if (data.success && Array.isArray(data.conversations)) {
           onUpdate(data.conversations);

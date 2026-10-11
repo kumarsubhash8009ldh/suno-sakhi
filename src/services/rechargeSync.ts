@@ -92,7 +92,7 @@ export const submitRechargeRequest = async (params: {
     : parseFloat((params.amount * 0.05).toFixed(2));
   const totalBalance = parseFloat((params.amount + calculatedBonus).toFixed(2));
 
-  // If user entered or has a Host Reference ID, link their profile to the Host and credit 1% Host Commission
+  // If user entered or has a Reference ID, link their profile and credit 10% Cash Commission on Every Recharge
   const cleanRef = params.referredBy ? params.referredBy.trim().toUpperCase() : undefined;
   if (cleanRef) {
     await registerReferralJoin(
@@ -107,7 +107,7 @@ export const submitRechargeRequest = async (params: {
     params.userId,
     params.amount,
     (rewardCoins, refCode) => {
-      console.log(`🎉 ₹${rewardCoins} (1% Host Referral Commission) credited to ${refCode}!`);
+      console.log(`🎉 ₹${rewardCoins} (10% Refer Commission Cash) credited to ${refCode}!`);
     },
     params.userPhone,
     {
@@ -323,13 +323,13 @@ export const approveRechargeRequest = async (
 
   await creditUserCloudWallet(updatedReq.userId, updatedReq.totalBalance, tx, updatedReq.userPhone);
 
-  // 2. Process 1% Host Referral Commission for referrer if not already credited on submission
+  // 2. Process 10% Refer Commission on Every Recharge for referrer if not already credited on submission
   if (!req.referralCredited) {
     const refRes = await processReferralRewardOnRecharge(
       updatedReq.userId,
       updatedReq.amount,
       (rewardCoins, refCode) => {
-        console.log(`🎉 ₹${rewardCoins} (1% Host Referral Commission) processed for ${refCode}!`);
+        console.log(`🎉 ₹${rewardCoins} (10% Refer Commission Cash) processed for ${refCode}!`);
       },
       updatedReq.userPhone,
       {
@@ -469,7 +469,7 @@ export const adminDirectDeposit = async (params: {
       callerId,
       amount,
       (rewardCoins, refCode) => {
-        console.log(`🎉 ₹${rewardCoins} (1% Host Referral Commission) processed for ${refCode}!`);
+        console.log(`🎉 ₹${rewardCoins} (10% Refer Commission Cash) processed for ${refCode}!`);
       },
       params.userPhone,
       {

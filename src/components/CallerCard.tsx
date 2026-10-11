@@ -15,7 +15,8 @@ export const CallerCard: React.FC<CallerCardProps> = ({ caller }) => {
   const { openDirectChat } = useHost();
 
   const isOnline = caller.status !== 'offline' && caller.status !== 'blocked' && caller.isOnline !== false;
-  const cleanPhone = String(caller.phone || '').replace(/\D/g, '');
+  const cleanPhone = String(caller.phone || caller.id || '').replace(/\D/g, '').slice(-10);
+  const cleanEmail = caller.email ? caller.email.toLowerCase().trim() : undefined;
   const userDisplayId = formatUserId(caller.id, caller.phone);
   const userLabel = `User ID: ${userDisplayId}`;
   const avatarUrl =
@@ -40,7 +41,8 @@ export const CallerCard: React.FC<CallerCardProps> = ({ caller }) => {
     videoRatePerMin: 10,
     audioSnippet: '',
     tagline: userLabel,
-    phone: cleanPhone
+    phone: cleanPhone,
+    email: cleanEmail
   };
 
   return (

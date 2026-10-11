@@ -505,22 +505,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
             {/* Optional Host Reference ID Input (During Sign Up) */}
             {activeTab === 'signup' && (
-              <div>
-                <label className="text-xs font-semibold text-gray-300 block mb-1.5 flex items-center justify-between">
+              <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/40">
+                <label className="text-xs font-bold text-amber-300 block mb-1.5 flex items-center justify-between">
                   <span className="flex items-center gap-1.5">
-                    <span>🤝 Host Reference ID / Invite Code (Optional)</span>
+                    <span>🤝 Refer ID / Invite Code (Optional)</span>
                   </span>
-                  <span className="text-[10px] text-amber-300 font-bold">
-                    1% Host Bonus
+                  <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 text-black text-[10px] font-black uppercase shadow">
+                    🔥 10% Refer Cash
                   </span>
                 </label>
                 <input
                   type="text"
                   value={referralCode}
                   onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
-                  placeholder="e.g. SAKHI-9876543210 ya Host Phone No."
-                  className="w-full px-4 py-2.5 rounded-2xl bg-black/60 border border-amber-500/30 text-amber-200 font-mono text-xs placeholder-gray-500 focus:outline-none focus:border-amber-400"
+                  placeholder="e.g. SAKHI-9876543210 ya Refer Phone No."
+                  className="w-full px-4 py-2.5 rounded-2xl bg-black/60 border border-amber-500/40 text-amber-200 font-mono text-xs placeholder-gray-500 focus:outline-none focus:border-amber-400"
                 />
+                <p className="text-[10px] text-amber-200/80 mt-1">
+                  Every recharge par Refer ID me <strong>10% Cash Commission</strong> direct add hota hai!
+                </p>
               </div>
             )}
 

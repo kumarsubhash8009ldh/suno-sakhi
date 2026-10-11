@@ -83,9 +83,9 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, onClose })
             </div>
             <div>
               <h3 className="text-base sm:text-lg font-extrabold text-white flex items-center gap-1.5">
-                Share Link & Get ₹{REFERRAL_BONUS_COINS} Coins
+                🔥 10% Refer Commission + ₹{REFERRAL_BONUS_COINS}
               </h3>
-              <p className="text-[11px] text-amber-300">Invite Friends • Daily Free Coins</p>
+              <p className="text-[11px] text-amber-300 font-bold">Every Recharge Par 10% Cash Add on Refer ID!</p>
             </div>
           </div>
           <button
@@ -106,24 +106,34 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, onClose })
 
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto pr-1 py-3 space-y-4">
-          {/* Big Reward Badge */}
-          <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-pink-500/20 border border-amber-500/40 text-center relative overflow-hidden">
+          {/* Highlighted 10% Refer Commission Banner */}
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/25 via-orange-500/25 to-emerald-500/25 border-2 border-amber-400/70 text-center relative overflow-hidden shadow-xl shadow-amber-950/50">
+            <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 text-black text-[10px] font-black uppercase tracking-wider mb-2 shadow">
+              <span>🤝 LIFETIME REFER COMMISSION</span>
+            </div>
             <div className="flex items-center justify-center gap-2 mb-1">
               <Coins className="w-6 h-6 text-amber-400 animate-bounce" />
               <span className="text-3xl font-black text-amber-300 tracking-tight">
-                ₹{REFERRAL_BONUS_COINS}
+                10% CASH
               </span>
-              <span className="text-sm font-bold text-amber-200 uppercase">Coins Free</span>
+              <span className="text-xs font-black px-2 py-0.5 rounded-lg bg-emerald-500/30 text-emerald-300 border border-emerald-400/40 uppercase">
+                Every Recharge
+              </span>
             </div>
-            <p className="text-xs text-amber-100/90 leading-relaxed font-medium">
-              Link share karne par instant <strong>₹50 Free Coins</strong> aur dost ke judne par unlimited <strong>₹50 Coins Bonus</strong> paayein!
+            <p className="text-xs text-amber-100 leading-relaxed font-semibold">
+              Jab bhi koi aapke <strong>Refer ID ({refCode})</strong> se recharge karega, <strong>har recharge par 10% Cash</strong> aapke Refer ID me direct add hoga + Share karne par <strong>₹{REFERRAL_BONUS_COINS} Coins Free</strong>!
             </p>
           </div>
 
           {/* Referral Code Box */}
-          <div>
-            <label className="text-xs font-semibold text-gray-300 block mb-1">Aapka Referral Code</label>
-            <div className="flex items-center justify-between p-3 rounded-2xl bg-black/60 border border-amber-500/30">
+          <div className="p-3.5 rounded-2xl bg-gradient-to-r from-black/70 to-amber-950/30 border border-amber-500/50">
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-extrabold text-amber-300">Aapka Official Refer ID</label>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                +10% Cash / Recharge
+              </span>
+            </div>
+            <div className="flex items-center justify-between p-3 rounded-2xl bg-black/80 border border-amber-500/40">
               <span className="text-base font-extrabold font-mono tracking-widest text-amber-400">
                 {refCode}
               </span>
@@ -133,7 +143,7 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, onClose })
                 className="flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 transition-all active:scale-95"
               >
                 {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copied ? 'Copied!' : 'Copy'}</span>
+                <span>{copied ? 'Copied!' : 'Copy ID & Link'}</span>
               </button>
             </div>
           </div>
@@ -145,7 +155,7 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, onClose })
             className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-pink-600 hover:from-amber-400 hover:to-pink-500 text-white font-black text-xs sm:text-sm shadow-xl shadow-amber-900/50 flex items-center justify-center gap-2 transition-all hover:scale-[1.02] active:scale-95"
           >
             <Share2 className="w-4 h-4 text-white animate-pulse" />
-            <span>📲 Share Link Now (Claim ₹50 Coins)</span>
+            <span>📲 Share Refer Link (10% Cash + ₹50 Coins)</span>
           </button>
 
           {/* 1-Click WhatsApp Share Button */}
@@ -155,7 +165,7 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, onClose })
             className="w-full py-3 px-4 rounded-2xl bg-[#25D366] hover:bg-[#20bd5a] text-black font-extrabold text-xs sm:text-sm shadow-lg shadow-[#25D366]/30 flex items-center justify-center gap-2 transition-all active:scale-95"
           >
             <MessageCircle className="w-4 h-4 fill-black text-[#25D366]" />
-            <span>WhatsApp Par Share Karein (Instant ₹50 Coins)</span>
+            <span>WhatsApp Par Share Karein (10% Refer Commission)</span>
           </button>
 
           {/* Copy Full Link Button */}
@@ -165,33 +175,33 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, onClose })
             className="w-full py-2.5 px-4 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all border border-white/20 active:scale-95"
           >
             <Copy className="w-4 h-4 text-pink-300" />
-            <span>{copied ? '✅ Link Copied! (₹50 Credited)' : '📋 Copy Shareable Link'}</span>
+            <span>{copied ? '✅ Link Copied! (₹50 Credited)' : '📋 Copy Shareable Refer Link'}</span>
           </button>
 
           {/* 3 Step Guide */}
-          <div className="p-3.5 rounded-2xl bg-black/40 border border-white/10 space-y-2.5">
-            <h4 className="text-xs font-bold text-gray-300 flex items-center gap-1.5">
+          <div className="p-3.5 rounded-2xl bg-black/40 border border-amber-500/30 space-y-2.5">
+            <h4 className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>Kaise Kaam Karta Hai?</span>
+              <span>10% Refer Commission Kaise Milta Hai?</span>
             </h4>
-            <div className="space-y-2 text-[11px] text-gray-300">
+            <div className="space-y-2 text-[11px] text-gray-200">
               <div className="flex items-start gap-2">
                 <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-300 font-bold flex items-center justify-center flex-shrink-0 text-[10px]">
                   1
                 </span>
-                <span>Dost ko apna download link WhatsApp ya Social Media par share karein.</span>
+                <span>Apna <strong>Refer ID ({refCode})</strong> ya Share Link dosto aur callers ko WhatsApp par bhejein.</span>
               </div>
               <div className="flex items-start gap-2">
                 <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-300 font-bold flex items-center justify-center flex-shrink-0 text-[10px]">
                   2
                 </span>
-                <span>Dost link se app register karega (Mobile + OTP se).</span>
+                <span>Dost aapke link ya Refer ID se join karega ya recharge karte waqt aapka Refer ID dalega.</span>
               </div>
               <div className="flex items-start gap-2">
                 <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold flex items-center justify-center flex-shrink-0 text-[10px]">
                   3
                 </span>
-                <span>Jaise hi dost pehli baar wallet me cash add karega, aapke account me <strong>₹{REFERRAL_BONUS_COINS} Coins</strong> automatic credit ho jayenge!</span>
+                <span><strong>Every Recharge Par 10% Cash Add:</strong> Dost jab-jab wallet recharge karega, har recharge ka <strong>10% Cash</strong> sidha aapke Refer ID me automatic add ho jayega!</span>
               </div>
             </div>
           </div>

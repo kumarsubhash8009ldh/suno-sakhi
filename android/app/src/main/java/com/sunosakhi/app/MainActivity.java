@@ -27,6 +27,24 @@ public class MainActivity extends BridgeActivity {
                 }
             });
         }
+
+        @JavascriptInterface
+        public void setCallAudioMode(final boolean inCall, final boolean speakerOn) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                        if (audioManager != null) {
+                            audioManager.setMode(inCall ? AudioManager.MODE_IN_COMMUNICATION : AudioManager.MODE_NORMAL);
+                            audioManager.setSpeakerphoneOn(speakerOn);
+                        }
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+            });
+        }
     }
 
     private void applyScreenSecurity(boolean secure) {

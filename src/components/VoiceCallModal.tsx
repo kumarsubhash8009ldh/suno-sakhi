@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PhoneOff, Mic, MicOff, Volume2, Volume1, AlertTriangle, Sparkles, Heart, Gift, MessageCircle } from 'lucide-react';
 import { useCall } from '../context/CallContext';
 import { useWallet } from '../context/WalletContext';
@@ -6,7 +6,7 @@ import { useHost } from '../context/HostContext';
 import { useAdmin } from '../context/AdminContext';
 import { InCallChatDrawer } from './InCallChatDrawer';
 import { useActiveSession } from '../services/userAuthSync';
-import { routeAudioOutput } from '../utils/audioOutput';
+import { routeAudioOutput, streamAudioController } from '../utils/audioOutput';
 import { CallVolumeControls } from './CallVolumeControls';
 import { formatHostId, formatUserId } from '../utils/idFormatter';
 
@@ -42,32 +42,28 @@ export const VoiceCallModal: React.FC = () => {
     Boolean(hostProfile?.phone && String(hostProfile.phone).replace(/\D/g, '').length >= 10);
 
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    const playAudio = () => {
-      if (remoteAudioRef.current) {
-        remoteAudioRef.current.muted = false;
-        if (remoteStream) {
-          remoteStream.getAudioTracks().forEach((t) => {
-            t.enabled = true;
-          });
-          if (remoteAudioRef.current.srcObject !== remoteStream) {
-            remoteAudioRef.current.srcObject = remoteStream;
-          }
-        }
-        routeAudioOutput(remoteAudioRef.current, isSpeakerOn, callVolume);
-        remoteAudioRef.current.play().catch((err) => {
-          console.warn('Audio autoPlay attempt (waiting for user gesture):', err);
+    const syncGlobalAudio = () => {
+      const globalAudio = document.getElementById('sunosakhi-global-call-audio') as HTMLAudioElement | null;
+      if (globalAudio && remoteStream) {
+        remoteStream.getAudioTracks().forEach((t) => {
+          t.enabled = true;
         });
+        if (globalAudio.srcObject !== remoteStream) {
+          globalAudio.srcObject = remoteStream;
+        }
+        globalAudio.muted = false;
+        streamAudioController.attachStream(remoteStream, globalAudio);
+        routeAudioOutput(globalAudio, isSpeakerOn, callVolume);
+        globalAudio.play().catch(() => {});
       }
     };
 
-    playAudio();
+    syncGlobalAudio();
 
-    // Unlock audio on mobile devices or strict autoplay policies
     const handleInteraction = () => {
-      playAudio();
+      syncGlobalAudio();
     };
 
     window.addEventListener('click', handleInteraction, { passive: true });
@@ -88,14 +84,6 @@ export const VoiceCallModal: React.FC = () => {
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-between p-4 sm:p-6 bg-gradient-to-b from-[#140822] via-[#0d0417] to-black text-white">
-      {/* Real-time WebRTC audio playback for remote companion */}
-      <audio
-        ref={remoteAudioRef}
-        autoPlay
-        playsInline
-        style={{ position: 'fixed', left: '-9999px', top: '-9999px', width: '1px', height: '1px', opacity: 0.001 }}
-      />
-
       {/* Background ambient glow */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full bg-pink-600/20 blur-3xl pointer-events-none"></div>
 
@@ -185,7 +173,11 @@ export const VoiceCallModal: React.FC = () => {
         </div>
 
         <div className="text-center mt-6">
-          <h2 className="text-2xl font-bold tracking-tight">{activeSakhi.name}</h2>
+          <h2 className="text-2xl font-bold tracking-tight">
+            {isHostUser
+              ? `User ID: ${formatUserId(activeSakhi.id, activeSakhi.phone)}`
+              : activeSakhi.name}
+          </h2>
           <p className="text-xs text-pink-300/80 mt-1 flex items-center justify-center gap-1">
             <Heart className="w-3.5 h-3.5 text-pink-400 fill-pink-400" />
             <span>{activeSakhi.tagline || 'Live connected on SunoSakhi'}</span>
@@ -198,6 +190,7 @@ export const VoiceCallModal: React.FC = () => {
             <AlertTriangle className="w-4 h-4 text-amber-400" />
             <span>Balance kam hai (&lt;1 min bacha hai). Kripya recharge karein!</span>
             <button
+              type="button"
               onClick={openWalletModal}
               className="ml-1 underline font-bold hover:text-amber-200"
             >
@@ -227,7 +220,11 @@ export const VoiceCallModal: React.FC = () => {
         <div className="flex items-center gap-3 sm:gap-4 p-2 rounded-full bg-black/60 backdrop-blur-md border border-white/10 shadow-2xl">
           {/* Mute Button */}
           <button
-            onClick={toggleMute}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleMute();
+            }}
             className={`p-3 rounded-full transition-all ${
               isMuted
                 ? 'bg-red-500/20 text-red-400 border border-red-500/40'
@@ -238,9 +235,13 @@ export const VoiceCallModal: React.FC = () => {
             {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
           </button>
 
-          {/* In-Call Sakhi Chat Button (₹2 / msg) */}
+          {/* In-Call Sakhi Chat Button */}
           <button
-            onClick={() => setIsChatOpen(!isChatOpen)}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsChatOpen(!isChatOpen);
+            }}
             className={`p-3 px-3.5 rounded-full transition-all flex items-center gap-1.5 ${
               isChatOpen
                 ? 'bg-pink-600 text-white'
@@ -254,7 +255,11 @@ export const VoiceCallModal: React.FC = () => {
 
           {/* Send Gift Button */}
           <button
-            onClick={openGiftTray}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              openGiftTray();
+            }}
             className="p-3 px-3.5 rounded-full bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-400 hover:to-rose-500 text-white shadow-lg shadow-pink-600/40 flex items-center gap-1.5"
             title="Send Gift"
           >
@@ -264,7 +269,11 @@ export const VoiceCallModal: React.FC = () => {
 
           {/* Speaker Button */}
           <button
-            onClick={toggleSpeaker}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleSpeaker();
+            }}
             className={`p-3 rounded-full transition-all flex items-center justify-center ${
               isSpeakerOn
                 ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/50 border border-emerald-400'
@@ -275,11 +284,15 @@ export const VoiceCallModal: React.FC = () => {
             {isSpeakerOn ? <Volume2 className="w-5 h-5" /> : <Volume1 className="w-5 h-5 text-amber-400" />}
           </button>
 
-          {/* End Call Button */}
+          {/* End Call (Cut) Button */}
           <button
-            onClick={() => endCall('user_ended')}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              endCall('user_ended');
+            }}
             className="p-3.5 rounded-full bg-red-600 hover:bg-red-500 text-white shadow-xl shadow-red-600/50 transform active:scale-95 transition-all"
-            title="End Voice Call"
+            title="Cut / End Voice Call"
           >
             <PhoneOff className="w-6 h-6" />
           </button>

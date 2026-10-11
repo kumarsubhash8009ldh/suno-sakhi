@@ -42,9 +42,9 @@ export const HostCommissionSlideModal: React.FC<HostCommissionSlideModalProps> =
       rates: [
         { icon: <Phone className="w-4 h-4 text-pink-400" />, label: 'Audio Call', rate: '₹3.00 / min', sub: 'Flat Rate (All Hosts)' },
         { icon: <Video className="w-4 h-4 text-purple-400" />, label: 'Video Call', rate: '₹7.00 / min', sub: 'Rank 1 (Caller ₹15/min)' },
-        { icon: <Coins className="w-4 h-4 text-amber-400" />, label: 'Chat & Refer', rate: '₹1.50/msg + 1% Refer', sub: 'Direct Cash Commission' }
+        { icon: <Coins className="w-4 h-4 text-amber-400" />, label: 'Chat & Refer', rate: '₹1.50/msg + 10% Refer', sub: 'Every Recharge 10% Cash' }
       ],
-      highlight: '💰 Daily Potential: 2 ghante call = ₹700 - ₹1,800 daily earning!'
+      highlight: '💰 10% Refer Commission on Every Recharge + ₹700 - ₹1,800 Daily Call Earning!'
     },
     {
       id: 2,

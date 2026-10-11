@@ -1673,13 +1673,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
                 <div className="p-4 rounded-2xl bg-gradient-to-br from-purple-950/40 to-[#180928] border border-purple-500/30">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-purple-300">Platform Share Retained</span>
+                    <span className="text-xs font-bold text-purple-300">Platform Net Revenue</span>
                     <TrendingUp className="w-4 h-4 text-purple-400" />
                   </div>
                   <p className="text-2xl sm:text-3xl font-black text-purple-300 mt-2">
-                    ₹{(totalGrossIncome * 0.4).toFixed(2)}
+                    ₹{Math.max(0, totalGrossIncome - totalHostNetPaid - totalPendingPayouts).toFixed(2)}
                   </p>
-                  <p className="text-[11px] text-gray-300 mt-1">Company 40% margin</p>
+                  <p className="text-[11px] text-gray-300 mt-1">Net platform revenue after host earnings</p>
                 </div>
               </div>
 
@@ -2896,34 +2896,32 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-gray-300 block mb-1">
-                    Host Income Commission Share (%)
+                  <label className="text-xs font-semibold text-amber-300 block mb-1">
+                    🤝 Refer ID Commission on Every Recharge (%)
                   </label>
-                  <input
-                    type="number"
-                    min={10}
-                    max={90}
-                    value={hostShare}
-                    onChange={(e) => setHostShare(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-xl bg-black/60 border border-pink-500/30 text-white font-mono text-sm focus:outline-none"
-                  />
+                  <div className="w-full px-3 py-2 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-300 font-mono text-sm font-black flex items-center justify-between">
+                    <span>10% Cash on Every Recharge</span>
+                    <span className="px-2 py-0.5 rounded bg-amber-400 text-black text-[10px] font-black uppercase">
+                      ACTIVE 10%
+                    </span>
+                  </div>
                 </div>
 
                 {/* Active Weekly Promotion Card */}
                 <div className="sm:col-span-2 p-3.5 rounded-2xl bg-amber-950/40 border border-amber-500/40 flex items-center justify-between gap-3">
                   <div className="space-y-0.5">
                     <span className="text-[10px] uppercase font-black text-amber-400 tracking-wider">
-                      Active Host Promotion Policy
+                      Active Host & Refer Promotion Policy
                     </span>
                     <h5 className="text-xs font-bold text-white">
-                      🎁 Weekly Long Call Incentive: 20hr+ Call Time = ₹200 Flat Cash Bonus
+                      🎁 10% Refer Cash on Every Recharge + Weekly 20hr Call = ₹200 Bonus
                     </h5>
                     <p className="text-[10px] text-gray-300">
-                      Hosts who complete 20 hours (1,200 min) weekly call time earn ₹200 extra bonus credited directly to their pending payout wallet.
+                      Every recharge adds 10% cash directly to the linked Refer ID, and Hosts who complete 20 hours (1,200 min) weekly call time earn ₹200 extra bonus.
                     </p>
                   </div>
                   <span className="px-2.5 py-1 rounded-full bg-amber-400 text-black text-[10px] font-black uppercase whitespace-nowrap shadow">
-                    Active ₹200
+                    10% Refer + ₹200
                   </span>
                 </div>
 

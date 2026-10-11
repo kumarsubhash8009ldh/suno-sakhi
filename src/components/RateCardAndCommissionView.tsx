@@ -24,11 +24,11 @@ export const RateCardAndCommissionView: React.FC<RateCardAndCommissionViewProps>
   const chatRate = settings?.sakhiChatRate || 3;
 
   const GIFTS_LIST = [
-    { name: 'Red Rose 🌹', price: 10, hostEarns: 6 },
-    { name: 'Sweet Heart 💖', price: 50, hostEarns: 30 },
-    { name: 'Teddy Bear 🧸', price: 100, hostEarns: 60 },
-    { name: 'Diamond Ring 💎', price: 200, hostEarns: 120 },
-    { name: 'Golden Crown 👑', price: 500, hostEarns: 300 }
+    { name: 'Red Rose 🌹', price: 10, hostEarns: 5 },
+    { name: 'Sweet Heart 💖', price: 50, hostEarns: 25 },
+    { name: 'Teddy Bear 🧸', price: 100, hostEarns: 50 },
+    { name: 'Diamond Ring 💎', price: 200, hostEarns: 100 },
+    { name: 'Golden Crown 👑', price: 500, hostEarns: 250 }
   ];
 
   return (
@@ -192,16 +192,30 @@ export const RateCardAndCommissionView: React.FC<RateCardAndCommissionViewProps>
               </div>
             </div>
 
-            <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="text-base">🎁</span>
-                <p className="text-xs text-amber-200">
-                  <strong className="text-amber-300">Flat 5% Extra Bonus:</strong> Har wallet recharge par 5% free bonus coins automatic credit hote hain!
-                </p>
+            <div className="space-y-2.5">
+              <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">🎁</span>
+                  <p className="text-xs text-amber-200">
+                    <strong className="text-amber-300">Flat 5% Extra Bonus:</strong> Har wallet recharge par 5% free bonus coins automatic credit hote hain!
+                  </p>
+                </div>
+                <span className="px-2 py-0.5 rounded-full bg-amber-400 text-black text-[10px] font-black uppercase flex-shrink-0">
+                  +5% Bonus
+                </span>
               </div>
-              <span className="px-2 py-0.5 rounded-full bg-amber-400 text-black text-[10px] font-black uppercase flex-shrink-0">
-                +5% Bonus
-              </span>
+
+              <div className="p-3 rounded-2xl bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-emerald-500/20 border-2 border-amber-400/60 flex items-center justify-between gap-2 shadow-lg">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">🤝</span>
+                  <p className="text-xs text-amber-100">
+                    <strong className="text-amber-300">🔥 10% Refer Commission:</strong> Har recharge par Refer ID me <strong>10% Cash</strong> direct add hota hai!
+                  </p>
+                </div>
+                <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 text-black text-[10px] font-black uppercase flex-shrink-0 shadow">
+                  10% Cash
+                </span>
+              </div>
             </div>
 
             <div className="pt-2">
@@ -279,6 +293,23 @@ export const RateCardAndCommissionView: React.FC<RateCardAndCommissionViewProps>
                   <div className="text-right">
                     <span className="text-base font-black text-cyan-300">₹1.50</span>
                     <span className="text-[10px] text-gray-400 block">/ message</span>
+                  </div>
+                </div>
+
+                {/* 4. 10% Refer Commission on Every Recharge (Highlighted) */}
+                <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/20 via-orange-500/15 to-emerald-500/20 border-2 border-amber-400/60 flex items-center justify-between shadow-lg shadow-amber-950/40">
+                  <div>
+                    <h4 className="text-sm font-black text-amber-300 flex items-center gap-1.5">
+                      <Gift className="w-4 h-4 text-amber-400" />
+                      <span>🔥 10% Refer Commission (Every Recharge)</span>
+                    </h4>
+                    <p className="text-[11px] text-amber-100/90">
+                      Caller jab bhi recharge karega ➔ Refer ID me <strong>10% Cash</strong> direct add hoga!
+                    </p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <span className="text-base font-black text-amber-300">+10%</span>
+                    <span className="text-[10px] text-emerald-300 font-bold block">/ recharge</span>
                   </div>
                 </div>
 

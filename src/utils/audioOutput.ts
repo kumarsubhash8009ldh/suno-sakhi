@@ -57,6 +57,16 @@ class StreamVolumeController {
   public setSpeaker(isSpeaker: boolean) {
     this.isSpeaker = isSpeaker;
     this.updateVolume();
+    try {
+      const w = window as unknown as {
+        AndroidSecurity?: { setCallAudioMode?: (inCall: boolean, speakerOn: boolean) => void };
+      };
+      if (w.AndroidSecurity && typeof w.AndroidSecurity.setCallAudioMode === 'function') {
+        w.AndroidSecurity.setCallAudioMode(true, isSpeaker);
+      }
+    } catch {
+      // Ignore bridge error
+    }
   }
 
   public getIsSpeaker(): boolean {
@@ -83,6 +93,16 @@ class StreamVolumeController {
   public detach() {
     this.currentStream = null;
     this.currentElement = null;
+    try {
+      const w = window as unknown as {
+        AndroidSecurity?: { setCallAudioMode?: (inCall: boolean, speakerOn: boolean) => void };
+      };
+      if (w.AndroidSecurity && typeof w.AndroidSecurity.setCallAudioMode === 'function') {
+        w.AndroidSecurity.setCallAudioMode(false, true);
+      }
+    } catch {
+      // Ignore
+    }
   }
 
   public resume() {
@@ -103,6 +123,18 @@ export const routeAudioOutput = async (
   if (!element) return;
 
   try {
+    // Native Android speakerphone / earpiece switch if running inside Capacitor APK
+    try {
+      const w = window as unknown as {
+        AndroidSecurity?: { setCallAudioMode?: (inCall: boolean, speakerOn: boolean) => void };
+      };
+      if (w.AndroidSecurity && typeof w.AndroidSecurity.setCallAudioMode === 'function') {
+        w.AndroidSecurity.setCallAudioMode(true, isSpeaker);
+      }
+    } catch {
+      // Ignore
+    }
+
     // Unmute immediately
     element.muted = false;
 

@@ -204,18 +204,18 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Caller Wallet OR Host Income & Login */}
           {userRole === 'caller' ? (
             <div className="flex items-center gap-1.5">
-              {/* Share Link & Earn ₹50 Coins */}
+              {/* Share Link & Earn 10% Refer Commission */}
               {onOpenReferral && (
                 <button
                   type="button"
                   onClick={onOpenReferral}
-                  className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-pink-500/20 hover:from-amber-500/30 hover:to-pink-500/30 border border-amber-500/50 text-amber-300 font-extrabold text-[11px] sm:text-xs shadow-md active:scale-95 transition-all"
-                  title="Share Link & Earn ₹50 Coins"
+                  className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-gradient-to-r from-amber-500/25 via-orange-500/25 to-emerald-500/25 hover:from-amber-500/35 hover:to-emerald-500/35 border border-amber-400/70 text-amber-300 font-extrabold text-[11px] sm:text-xs shadow-md shadow-amber-900/30 active:scale-95 transition-all"
+                  title="Refer & Earn 10% Cash on Every Recharge"
                 >
                   <Gift className="w-3.5 h-3.5 text-amber-400 animate-bounce" />
-                  <span className="hidden xs:inline">Share</span>
+                  <span className="hidden xs:inline">Refer</span>
                   <span className="bg-gradient-to-r from-amber-400 to-orange-500 text-black px-1.5 py-0.2 rounded-full text-[10px] font-black shadow">
-                    ₹50
+                    10% Cash
                   </span>
                 </button>
               )}

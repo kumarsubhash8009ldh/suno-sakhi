@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Send, MessageCircle, AlertCircle, Heart, Sparkles, Check, CheckCheck, Lock, LogIn } from 'lucide-react';
-import { Sakhi } from '../types';
+import { Sakhi, ChatMessage } from '../types';
 import { useHost, MESSAGE_RATE, MAX_MESSAGE_WORDS } from '../context/HostContext';
 import { useWallet } from '../context/WalletContext';
-import { markThreadAsRead, getChatClientId } from '../services/chatSync';
+import { markThreadAsRead, getChatClientId, subscribeToCloudChat, getChatThreadId, extractChatParticipantKey } from '../services/chatSync';
 import { getCurrentUser, useActiveSession } from '../services/userAuthSync';
 
 interface InCallChatDrawerProps {
@@ -39,21 +39,55 @@ export const InCallChatDrawer: React.FC<InCallChatDrawerProps> = ({ sakhi, isOpe
   const { balance, openWalletModal } = useWallet();
   const [inputText, setInputText] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [liveMessages, setLiveMessages] = useState<ChatMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const myClientId = getChatClientId();
   const session = useActiveSession();
-  const isHostViewer = Boolean(
-    session.role === 'host' ||
-    userRole === 'host' ||
-    isHostLoggedIn ||
-    localStorage.getItem('sunosakhi_host_logged_in') === 'true' ||
-    localStorage.getItem('sunosakhi_active_role') === 'host' ||
-    (hostProfile?.phone && String(hostProfile.phone).replace(/\D/g, '').length >= 10)
-  );
+  const currentUser = getCurrentUser();
+  const isTargetCaller = Boolean(sakhi?.id?.startsWith('caller-') || sakhi?.id?.startsWith('caller_'));
+  const isHostViewer =
+    isTargetCaller ||
+    Boolean(
+      userRole === 'host' &&
+      (isHostLoggedIn || session.role === 'host' || localStorage.getItem('sunosakhi_host_logged_in') === 'true')
+    );
   const isLoggedIn = session.isLoggedIn;
 
-  const thread = messages[sakhi.id] || [];
+  const myKey = isHostViewer
+    ? extractChatParticipantKey(hostProfile?.phone || session.phone || (hostProfile as any)?.email || session.email || hostProfile?.id || session.id)
+    : extractChatParticipantKey(session.phone || currentUser?.phone || session.email || currentUser?.email || session.id || currentUser?.id);
+
+  const peerKey = extractChatParticipantKey(sakhi?.phone || (sakhi as any)?.email || sakhi?.id || '');
+  const hostPhone = isHostViewer ? myKey : peerKey;
+  const callerPhone = isHostViewer ? peerKey : myKey;
+
+  const canonicalThreadId = (hostPhone && callerPhone)
+    ? getChatThreadId(hostPhone, callerPhone)
+    : sakhi.id;
+
+  useEffect(() => {
+    if (!isOpen || !canonicalThreadId) return;
+    const initial = messages[canonicalThreadId] || messages[sakhi.id] || [];
+    setLiveMessages(initial);
+
+    const mySenderRole = isHostViewer ? 'sakhi' : 'user';
+    const unsub = subscribeToCloudChat(canonicalThreadId, (cloudMsgs) => {
+      setLiveMessages(cloudMsgs);
+      const hasUnreadFromPeer = cloudMsgs.some((m) => m.sender !== mySenderRole && m.status !== 'read');
+      if (hasUnreadFromPeer) {
+        markThreadAsRead(canonicalThreadId, mySenderRole);
+      }
+    });
+
+    return () => {
+      if (unsub) unsub();
+    };
+  }, [isOpen, sakhi.id, canonicalThreadId, isHostViewer]);
+
+  const thread = liveMessages.length > 0
+    ? liveMessages
+    : (messages[canonicalThreadId] || messages[sakhi.id] || []);
 
   // Calculate word count
   const currentWords = inputText.trim().split(/\s+/).filter(Boolean);
@@ -71,9 +105,13 @@ export const InCallChatDrawer: React.FC<InCallChatDrawerProps> = ({ sakhi, isOpe
   useEffect(() => {
     if (isOpen) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      markThreadAsRead(sakhi.id, 'user');
+      const mySenderRole = isHostViewer ? 'sakhi' : 'user';
+      const lastMsg = thread[thread.length - 1];
+      if (lastMsg && lastMsg.sender !== mySenderRole && lastMsg.status !== 'read') {
+        markThreadAsRead(canonicalThreadId, mySenderRole);
+      }
     }
-  }, [thread, isOpen, sakhi.id]);
+  }, [thread, isOpen, canonicalThreadId, isHostViewer]);
 
   if (!isOpen) return null;
 
@@ -88,8 +126,22 @@ export const InCallChatDrawer: React.FC<InCallChatDrawerProps> = ({ sakhi, isOpe
       return;
     }
 
-    const res = sendMessage(sakhi.id, sakhi.name, inputText);
+    const res = sendMessage(sakhi.id, sakhi.name, inputText, sakhi.phone);
     if (res.success) {
+      const optimisticMsg: ChatMessage = {
+        id: 'msg-' + Date.now(),
+        sakhiId: isHostViewer ? (hostProfile?.id || `sakhi-user-${hostPhone}`) : sakhi.id,
+        callerId: isHostViewer ? sakhi.id : `caller_${callerPhone}`,
+        callerName: isHostViewer ? sakhi.name : (session.name || 'You'),
+        sender: isHostViewer ? 'sakhi' : 'user',
+        senderId: myClientId,
+        text: inputText.trim(),
+        wordCount,
+        cost: isHostViewer ? 0 : MESSAGE_RATE,
+        timestamp: Date.now(),
+        status: 'sent'
+      };
+      setLiveMessages((prev) => [...prev, optimisticMsg]);
       setInputText('');
     } else if (res.error) {
       setErrorMsg(res.error);

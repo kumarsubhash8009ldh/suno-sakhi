@@ -30,9 +30,16 @@ const CallSwipeSlider: React.FC<CallSwipeSliderProps> = ({ onAccept, onDecline, 
   const [isDragging, setIsDragging] = useState(false);
   const startXRef = useRef<number>(0);
   const currentXRef = useRef<number>(0);
+  const onAcceptRef = useRef(onAccept);
+  const onDeclineRef = useRef(onDecline);
 
-  const THRESHOLD = 70; // px threshold to trigger
-  const MAX_DRAG = 110; // clamp limit
+  useEffect(() => {
+    onAcceptRef.current = onAccept;
+    onDeclineRef.current = onDecline;
+  }, [onAccept, onDecline]);
+
+  const THRESHOLD = 55; // px threshold to trigger easily on mobile
+  const MAX_DRAG = 105; // clamp limit
 
   const handleStart = (clientX: number) => {
     setIsDragging(true);
@@ -41,43 +48,38 @@ const CallSwipeSlider: React.FC<CallSwipeSliderProps> = ({ onAccept, onDecline, 
     setDragX(0);
   };
 
-  const handleMove = (clientX: number) => {
-    if (!isDragging) return;
-    const delta = clientX - startXRef.current;
-    const clamped = Math.max(-MAX_DRAG, Math.min(MAX_DRAG, delta));
-    currentXRef.current = clamped;
-    setDragX(clamped);
-
-    if (Math.abs(clamped) >= THRESHOLD && typeof navigator !== 'undefined' && navigator.vibrate) {
-      navigator.vibrate(20);
-    }
-  };
-
-  const handleEnd = () => {
-    if (!isDragging) return;
-    setIsDragging(false);
-    const finalX = currentXRef.current;
-
-    if (finalX >= THRESHOLD) {
-      // Swiped Right -> Accept / Receive
-      if (typeof navigator !== 'undefined' && navigator.vibrate) {
-        navigator.vibrate([40, 30, 40]);
-      }
-      onAccept();
-    } else if (finalX <= -THRESHOLD) {
-      // Swiped Left -> Decline / Reject
-      if (typeof navigator !== 'undefined' && navigator.vibrate) {
-        navigator.vibrate([40, 30, 40]);
-      }
-      onDecline();
-    }
-
-    setDragX(0);
-    currentXRef.current = 0;
-  };
-
   useEffect(() => {
     if (!isDragging) return;
+
+    const handleMove = (clientX: number) => {
+      const delta = clientX - startXRef.current;
+      const clamped = Math.max(-MAX_DRAG, Math.min(MAX_DRAG, delta));
+      currentXRef.current = clamped;
+      setDragX(clamped);
+
+      if (Math.abs(clamped) >= THRESHOLD && typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate(15);
+      }
+    };
+
+    const handleEnd = () => {
+      setIsDragging(false);
+      const finalX = currentXRef.current;
+      setDragX(0);
+      currentXRef.current = 0;
+
+      if (finalX >= THRESHOLD) {
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          navigator.vibrate(40);
+        }
+        onAcceptRef.current();
+      } else if (finalX <= -THRESHOLD) {
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          navigator.vibrate(40);
+        }
+        onDeclineRef.current();
+      }
+    };
 
     const onTouchMove = (e: TouchEvent) => {
       if (e.touches && e.touches[0]) {
@@ -112,7 +114,7 @@ const CallSwipeSlider: React.FC<CallSwipeSliderProps> = ({ onAccept, onDecline, 
   return (
     <div className="w-full flex flex-col items-center select-none">
       {/* Interactive Slider Track */}
-      <div className="relative w-full max-w-[310px] h-[66px] rounded-full bg-black/60 border-2 border-white/20 p-1 flex items-center justify-between overflow-hidden shadow-2xl backdrop-blur-xl touch-none">
+      <div className="relative w-full max-w-[310px] h-[64px] rounded-full bg-black/60 border-2 border-white/20 p-1 flex items-center justify-between overflow-hidden shadow-2xl backdrop-blur-xl touch-none">
         {/* Dynamic color fill overlays */}
         <div
           className="absolute inset-y-0 left-0 right-1/2 bg-gradient-to-r from-red-600/50 to-transparent pointer-events-none transition-opacity duration-150"
@@ -124,26 +126,27 @@ const CallSwipeSlider: React.FC<CallSwipeSliderProps> = ({ onAccept, onDecline, 
         />
 
         {/* Left: Decline Zone */}
-        <div
+        <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation();
             onDecline();
           }}
-          className={`relative z-10 flex items-center gap-1 pl-3 text-red-400 font-bold text-xs transition-transform duration-200 cursor-pointer ${
-            isDeclineReady ? 'scale-110 text-red-300 font-black' : 'opacity-85'
+          className={`relative z-10 flex items-center gap-1 pl-3 py-2 text-red-400 font-bold text-xs transition-transform duration-200 cursor-pointer ${
+            isDeclineReady ? 'scale-110 text-red-300 font-black' : 'opacity-90'
           }`}
         >
           <div className="w-8 h-8 rounded-full bg-red-600/30 flex items-center justify-center border border-red-500/40 shadow">
             <PhoneOff className="w-4 h-4 text-red-400" />
           </div>
           <div className="flex flex-col items-start leading-tight">
-            <span className="text-[11px] uppercase tracking-wider font-extrabold">Decline</span>
+            <span className="text-[11px] uppercase tracking-wider font-extrabold">Cut</span>
             <div className="flex items-center text-[9px] text-red-300/80">
               <ChevronsLeft className="w-3 h-3 animate-pulse" />
               <span>Swipe</span>
             </div>
           </div>
-        </div>
+        </button>
 
         {/* Center Draggable Knob */}
         <div
@@ -159,9 +162,9 @@ const CallSwipeSlider: React.FC<CallSwipeSliderProps> = ({ onAccept, onDecline, 
           }}
           style={{
             transform: `translateX(${dragX}px)`,
-            transition: isDragging ? 'none' : 'transform 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28)'
+            transition: isDragging ? 'none' : 'transform 0.25s cubic-bezier(0.18, 0.89, 0.32, 1.28)'
           }}
-          className={`absolute left-1/2 -ml-[28px] z-20 w-14 h-14 rounded-full flex items-center justify-center cursor-grab active:cursor-grabbing shadow-2xl transition-all duration-200 ${
+          className={`absolute left-1/2 -ml-[28px] z-20 w-14 h-14 rounded-full flex items-center justify-center cursor-grab active:cursor-grabbing shadow-2xl transition-colors duration-150 ${
             isAcceptReady
               ? 'bg-gradient-to-tr from-emerald-500 to-green-400 ring-4 ring-emerald-400/60 scale-110 shadow-emerald-500/80'
               : isDeclineReady
@@ -170,12 +173,12 @@ const CallSwipeSlider: React.FC<CallSwipeSliderProps> = ({ onAccept, onDecline, 
           }`}
         >
           {isDeclineReady ? (
-            <PhoneOff className="w-6 h-6 text-white animate-pulse" />
+            <PhoneOff className="w-6 h-6 text-white" />
           ) : isAcceptReady ? (
             isVideo ? (
-              <Video className="w-6 h-6 text-white animate-pulse" />
+              <Video className="w-6 h-6 text-white" />
             ) : (
-              <Phone className="w-6 h-6 text-white animate-pulse" />
+              <Phone className="w-6 h-6 text-white" />
             )
           ) : (
             <div className="flex items-center justify-center gap-1 text-white">
@@ -187,17 +190,18 @@ const CallSwipeSlider: React.FC<CallSwipeSliderProps> = ({ onAccept, onDecline, 
         </div>
 
         {/* Right: Accept Zone */}
-        <div
+        <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation();
             onAccept();
           }}
-          className={`relative z-10 flex items-center gap-1 pr-3 text-emerald-400 font-bold text-xs transition-transform duration-200 cursor-pointer ${
-            isAcceptReady ? 'scale-110 text-emerald-300 font-black' : 'opacity-85'
+          className={`relative z-10 flex items-center gap-1 pr-3 py-2 text-emerald-400 font-bold text-xs transition-transform duration-200 cursor-pointer ${
+            isAcceptReady ? 'scale-110 text-emerald-300 font-black' : 'opacity-90'
           }`}
         >
           <div className="flex flex-col items-end leading-tight">
-            <span className="text-[11px] uppercase tracking-wider font-extrabold">Answer</span>
+            <span className="text-[11px] uppercase tracking-wider font-extrabold">Pick</span>
             <div className="flex items-center text-[9px] text-emerald-300/80">
               <span>Swipe</span>
               <ChevronsRight className="w-3 h-3 animate-pulse" />
@@ -210,44 +214,46 @@ const CallSwipeSlider: React.FC<CallSwipeSliderProps> = ({ onAccept, onDecline, 
               <Phone className="w-4 h-4 text-emerald-400" />
             )}
           </div>
-        </div>
+        </button>
       </div>
 
       {/* Swipe Status Label */}
-      <div className="mt-2.5 h-4 flex items-center justify-center text-[11px] font-semibold text-gray-300">
+      <div className="mt-2 h-4 flex items-center justify-center text-[11px] font-semibold text-gray-300">
         {isAcceptReady ? (
-          <span className="text-emerald-300 font-bold animate-pulse">Release to Receive Call! 🟢</span>
+          <span className="text-emerald-300 font-bold animate-pulse">Release to Pick Call! 🟢</span>
         ) : isDeclineReady ? (
-          <span className="text-red-300 font-bold animate-pulse">Release to Decline Call! 🔴</span>
+          <span className="text-red-300 font-bold animate-pulse">Release to Cut Call! 🔴</span>
         ) : (
-          <span className="text-pink-300/90 font-medium">⟵ Swipe Left: Decline • Swipe Right: Receive ⟶</span>
+          <span className="text-pink-300/90 font-medium">⟵ Swipe Left: Cut • Swipe Right: Pick ⟶</span>
         )}
       </div>
 
-      {/* Direct Tap Fallback Buttons */}
-      <div className="mt-4 flex items-center justify-center gap-3 w-full px-1">
+      {/* Prominent 1-Tap Call Cut & Call Pick Buttons */}
+      <div className="mt-4 flex items-center justify-center gap-4 w-full px-1">
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation();
             onDecline();
           }}
-          className="flex-1 py-2 px-3 rounded-2xl bg-red-600/25 hover:bg-red-600/40 active:scale-95 border border-red-500/40 text-red-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm"
-          title="Decline Call"
+          className="flex-1 py-3.5 px-4 rounded-2xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 active:scale-95 border border-red-400/50 text-white text-sm font-extrabold flex items-center justify-center gap-2 transition-all shadow-lg shadow-red-900/50"
+          title="Decline / Cut Call"
         >
-          <PhoneOff className="w-3.5 h-3.5" />
-          <span>Decline</span>
+          <PhoneOff className="w-4 h-4" />
+          <span>Cut Call</span>
         </button>
 
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation();
             onAccept();
           }}
-          className="flex-1 py-2 px-3 rounded-2xl bg-emerald-600/30 hover:bg-emerald-600/50 active:scale-95 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm"
-          title="Accept Call"
+          className="flex-1 py-3.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-green-500 hover:from-emerald-500 hover:to-green-400 active:scale-95 border border-emerald-400/50 text-white text-sm font-extrabold flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-900/50"
+          title="Accept / Pick Call"
         >
-          {isVideo ? <Video className="w-3.5 h-3.5" /> : <Phone className="w-3.5 h-3.5" />}
-          <span>{role === 'host' ? 'Accept & Earn' : 'Accept Call'}</span>
+          {isVideo ? <Video className="w-4 h-4" /> : <Phone className="w-4 h-4" />}
+          <span>{role === 'host' ? 'Pick & Earn' : 'Pick Call'}</span>
         </button>
       </div>
     </div>
@@ -259,37 +265,24 @@ export const IncomingCallModal: React.FC = () => {
   const { incomingCall, acceptIncomingCall, rejectIncomingCall } = useCall();
   const { settings } = useAdmin();
   const { hostProfile } = useHost();
-  const [audioUnlocked, setAudioUnlocked] = useState(false);
+  const actionHandledRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (incomingCall) {
-      // Force audio unlock and start Suno Sakhi Incoming Ringtone
+    if (incomingCall?.id) {
+      actionHandledRef.current = null;
       sounds.unlockAudio();
       sounds.startIncomingRingtone(incomingCall.callerName);
 
-      // Mobile vibration alert
       if (typeof navigator !== 'undefined' && navigator.vibrate) {
         navigator.vibrate([1000, 400, 1000, 400, 1500]);
       }
 
-      // Flashing tab title alert
       const originalTitle = document.title;
       let toggle = false;
       const titleInterval = window.setInterval(() => {
         document.title = toggle ? '📞 INCOMING CALL! 📞' : '🔔 Ringing... SunoSakhi';
         toggle = !toggle;
       }, 700);
-
-      // Touch / click unlock listener in case browser blocked autoplay
-      const handleUserTouch = () => {
-        sounds.unlockAudio();
-        sounds.startIncomingRingtone(incomingCall.callerName);
-        setAudioUnlocked(true);
-      };
-
-      window.addEventListener('click', handleUserTouch, { passive: true });
-      window.addEventListener('touchstart', handleUserTouch, { passive: true });
-      window.addEventListener('pointerdown', handleUserTouch, { passive: true });
 
       return () => {
         sounds.stopRingtone();
@@ -298,9 +291,6 @@ export const IncomingCallModal: React.FC = () => {
         }
         clearInterval(titleInterval);
         document.title = originalTitle;
-        window.removeEventListener('click', handleUserTouch);
-        window.removeEventListener('touchstart', handleUserTouch);
-        window.removeEventListener('pointerdown', handleUserTouch);
       };
     } else {
       sounds.stopRingtone();
@@ -308,7 +298,7 @@ export const IncomingCallModal: React.FC = () => {
         navigator.vibrate(0);
       }
     }
-  }, [incomingCall]);
+  }, [incomingCall?.id]);
 
   if (!incomingCall) return null;
 
@@ -317,35 +307,30 @@ export const IncomingCallModal: React.FC = () => {
   const earnRate = (isVideo ? tier.videoEarningPerMin : tier.voiceEarningPerMin).toFixed(2);
   const grossRate = isVideo ? String(settings.videoRatePerMin || 15) : String(settings.voiceRatePerMin || 7);
 
-  const handleModalTouch = () => {
+  const handleUnmuteRingtone = (e: React.MouseEvent) => {
+    e.stopPropagation();
     sounds.unlockAudio();
     sounds.startIncomingRingtone(incomingCall.callerName);
-    setAudioUnlocked(true);
   };
 
   const handleAccept = () => {
+    if (actionHandledRef.current === incomingCall.id) return;
+    actionHandledRef.current = incomingCall.id;
     sounds.stopRingtone();
     sounds.unlockAudio();
     acceptIncomingCall();
   };
 
   const handleDecline = () => {
+    if (actionHandledRef.current === incomingCall.id) return;
+    actionHandledRef.current = incomingCall.id;
     sounds.stopRingtone();
     rejectIncomingCall();
   };
 
   return (
-    <div
-      onClick={handleModalTouch}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-lg animate-in fade-in duration-200 cursor-pointer"
-    >
-      <div
-        onClick={(e) => {
-          e.stopPropagation();
-          handleModalTouch();
-        }}
-        className="relative w-full max-w-sm rounded-[36px] bg-gradient-to-b from-[#200d36] via-[#140824] to-[#0a0312] border-2 border-pink-500/50 p-6 text-center text-white shadow-2xl shadow-pink-600/40 flex flex-col items-center cursor-default"
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-lg animate-in fade-in duration-200">
+      <div className="relative w-full max-w-sm rounded-[36px] bg-gradient-to-b from-[#200d36] via-[#140824] to-[#0a0312] border-2 border-pink-500/50 p-6 text-center text-white shadow-2xl shadow-pink-600/40 flex flex-col items-center">
         {/* Glow effect */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 rounded-full bg-pink-600/20 blur-3xl pointer-events-none"></div>
 
@@ -377,21 +362,19 @@ export const IncomingCallModal: React.FC = () => {
 
         {/* Ringtone Alert / Tap to Unmute Banner */}
         <button
-          onClick={(e) => {
-            e.stopPropagation();
-            handleModalTouch();
-          }}
+          type="button"
+          onClick={handleUnmuteRingtone}
           className="relative z-10 flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-pink-600/40 to-purple-600/40 border-2 border-pink-400 text-white text-xs font-black mb-4 animate-pulse shadow-lg shadow-pink-900/50 hover:scale-105 active:scale-95 transition-transform"
         >
           <BellRing className="w-4 h-4 text-pink-300 animate-bounce" />
-          <span>🔔 Suno Sakhi Ringtone Ringing • Tap for Loud Ring!</span>
+          <span>🔔 Ringing • Tap for Loud Sound</span>
           <Volume2 className="w-4 h-4 text-emerald-300 animate-pulse" />
         </button>
 
         {/* Caller Avatar & Pulsing Rings */}
         <div className="relative z-10 flex items-center justify-center my-3">
-          <div className="absolute w-44 h-44 rounded-full border border-pink-500/40 animate-ping-slow"></div>
-          <div className="absolute w-36 h-36 rounded-full border border-purple-500/40 animate-pulse"></div>
+          <div className="absolute w-44 h-44 rounded-full border border-pink-500/40 animate-ping-slow pointer-events-none"></div>
+          <div className="absolute w-36 h-36 rounded-full border border-purple-500/40 animate-pulse pointer-events-none"></div>
 
           <div className="relative w-24 h-24 rounded-full p-1 bg-gradient-to-tr from-pink-500 via-rose-500 to-purple-600 shadow-xl shadow-pink-600/50 flex items-center justify-center">
             <div className="w-full h-full rounded-full bg-[#180928] flex items-center justify-center text-3xl font-black text-pink-300">
@@ -418,7 +401,7 @@ export const IncomingCallModal: React.FC = () => {
           </p>
         </div>
 
-        {/* Swipe Right to Accept / Left to Decline Component */}
+        {/* Swipe Right to Accept / Left to Decline + Direct Buttons */}
         <div className="relative z-10 w-full">
           <CallSwipeSlider
             onAccept={handleAccept}

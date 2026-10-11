@@ -84,6 +84,34 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onQuickCall, onOpenRefer
             </div>
           </div>
 
+          {/* Highlighted 10% Refer Commission Banner */}
+          <div
+            onClick={onOpenReferral}
+            className="cursor-pointer max-w-lg p-3 rounded-2xl bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-emerald-500/20 border-2 border-amber-400/60 shadow-lg shadow-amber-950/40 flex items-center justify-between gap-3 hover:scale-[1.01] transition-all"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-gradient-to-tr from-amber-400 to-orange-500 text-black font-black shadow">
+                <Gift className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-xs sm:text-sm font-black text-amber-300">
+                    🔥 10% REFER COMMISSION
+                  </span>
+                  <span className="px-2 py-0.2 rounded-full bg-emerald-500 text-black text-[9px] font-black uppercase">
+                    Every Recharge
+                  </span>
+                </div>
+                <p className="text-[11px] text-gray-200 font-medium">
+                  Har Recharge par <strong className="text-emerald-300">10% Cash</strong> Refer ID me direct add hota hai!
+                </p>
+              </div>
+            </div>
+            <span className="px-2.5 py-1 rounded-xl bg-amber-400 text-black font-black text-xs whitespace-nowrap shadow">
+              +10% Cash
+            </span>
+          </div>
+
           {/* Action CTAs: Quick Connect & Download Android App */}
           <div className="flex flex-wrap items-center gap-3 my-1">
             <button
@@ -108,10 +136,10 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onQuickCall, onOpenRefer
               <button
                 type="button"
                 onClick={onOpenReferral}
-                className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-extrabold text-xs sm:text-sm shadow-lg shadow-amber-900/40 flex items-center gap-1.5 transition-all animate-pulse"
+                className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 text-black font-black text-xs sm:text-sm shadow-lg shadow-amber-900/40 flex items-center gap-1.5 transition-all animate-pulse border border-amber-300"
               >
-                <Gift className="w-4 h-4 text-amber-200" />
-                <span>🎁 Share Link & Earn ₹50 Coins</span>
+                <Gift className="w-4 h-4 text-black" />
+                <span>🤝 Refer & Earn 10% Cash (Every Recharge)</span>
               </button>
             )}
             {onOpenHostSlide && (

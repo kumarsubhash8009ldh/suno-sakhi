@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db, isFirebaseConfigured } from '../services/firebase';
 import { Sakhi, CallType, CallStatus, CallSession } from '../types';
 import { useWallet } from './WalletContext';
 import { useHost } from './HostContext';
@@ -10,7 +12,8 @@ import { isUserBlocked } from '../services/safetyService';
 import {
   webrtcService,
   CallSessionDoc,
-  subscribeToIncomingCallsForHost
+  subscribeToIncomingCallsForHost,
+  markCallAsHandled
 } from '../services/webrtcService';
 import { recordHostIncomeToCloud, getLocalRegisteredHosts } from '../services/hostSync';
 import { getHostRankTier } from '../utils/hostRankTiers';
@@ -58,7 +61,7 @@ interface CallContextType {
   forwardingNotice: string | null;
   startCall: (sakhi: Sakhi, type: CallType) => Promise<void>;
   forwardToNextHost: () => Promise<boolean>;
-  cancelCalling: () => void;
+  cancelCalling: (isRemoteRejected?: boolean) => void;
   acceptIncomingCall: () => Promise<void>;
   rejectIncomingCall: () => Promise<void>;
   endCall: (reason?: string) => void;
@@ -80,10 +83,10 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const { isHostLoggedIn, hostProfile, recordCallIncome, userRole } = useHost();
   const { settings } = useAdmin();
 
-  const [activeSakhi, setActiveSakhi] = useState<Sakhi | null>(null);
-  const [callType, setCallType] = useState<CallType>('voice');
-  const [callStatus, setCallStatus] = useState<CallStatus>('idle');
-  const [isCallReceiver, setIsCallReceiver] = useState<boolean>(false);
+  const [activeSakhi, setActiveSakhiState] = useState<Sakhi | null>(null);
+  const [callType, setCallTypeState] = useState<CallType>('voice');
+  const [callStatus, setCallStatusState] = useState<CallStatus>('idle');
+  const [isCallReceiver, setIsCallReceiverState] = useState<boolean>(false);
   const [durationSeconds, setDurationSeconds] = useState<number>(0);
   const [currentCost, setCurrentCost] = useState<number>(0);
   const [isMuted, setIsMuted] = useState<boolean>(false);
@@ -91,51 +94,85 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isSpeakerOn, setIsSpeakerOn] = useState<boolean>(true);
   const [callVolume, setCallVolumeState] = useState<number>(1.0);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-
-  const setCallVolume = (vol: number) => {
-    const clamped = Math.max(0.1, Math.min(1.5, parseFloat(vol.toFixed(2))));
-    setCallVolumeState(clamped);
-    streamAudioController.setVolume(clamped);
-    sounds.setRingtoneVolume(isSpeakerOn ? clamped : clamped * 0.25);
-    const globalAudio = getGlobalCallAudio();
-    if (globalAudio) {
-      routeAudioOutput(globalAudio, isSpeakerOn, clamped);
-    }
-  };
-
-  const volumeUp = () => {
-    setCallVolume(callVolume + 0.15);
-  };
-
-  const volumeDown = () => {
-    setCallVolume(callVolume - 0.15);
-  };
-
-  const setSpeaker = (on: boolean) => {
-    setIsSpeakerOn(on);
-    streamAudioController.setSpeaker(on);
-    sounds.setRingtoneVolume(on ? callVolume : callVolume * 0.25);
-    const globalAudio = getGlobalCallAudio();
-    if (globalAudio) {
-      routeAudioOutput(globalAudio, on, callVolume);
-    }
-  };
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
-  const [incomingCall, setIncomingCall] = useState<CallSessionDoc | null>(null);
+  const [incomingCall, setIncomingCallState] = useState<CallSessionDoc | null>(null);
   const [lastSummary, setLastSummary] = useState<CallSession | null>(null);
   const [isSummaryOpen, setIsSummaryOpen] = useState<boolean>(false);
   const [lowBalanceWarning, setLowBalanceWarning] = useState<boolean>(false);
   const [endReason, setEndReason] = useState<string | null>(null);
   const [forwardingNotice, setForwardingNotice] = useState<string | null>(null);
 
+  // Synchronous Refs to avoid stale closures in WebRTC / Firestore callbacks
+  const activeSakhiRef = useRef<Sakhi | null>(null);
+  const callTypeRef = useRef<CallType>('voice');
+  const callStatusRef = useRef<CallStatus>('idle');
+  const isCallReceiverRef = useRef<boolean>(false);
+  const incomingCallRef = useRef<CallSessionDoc | null>(null);
+  const isSpeakerOnRef = useRef<boolean>(true);
+  const callVolumeRef = useRef<number>(1.0);
   const callingTimerRef = useRef<number | null>(null);
   const activeCallIntervalRef = useRef<number | null>(null);
   const durationRef = useRef<number>(0);
   const costRef = useRef<number>(0);
   const isStartingCallRef = useRef<boolean>(false);
+  const isEndingCallRef = useRef<boolean>(false);
   const triedHostIdsRef = useRef<Set<string>>(new Set());
-  const currentSakhiRef = useRef<Sakhi | null>(null);
-  const currentCallTypeRef = useRef<CallType>('voice');
+
+  const setActiveSakhi = (sakhi: Sakhi | null) => {
+    activeSakhiRef.current = sakhi;
+    setActiveSakhiState(sakhi);
+  };
+
+  const setCallType = (type: CallType) => {
+    callTypeRef.current = type;
+    setCallTypeState(type);
+  };
+
+  const setCallStatus = (status: CallStatus) => {
+    callStatusRef.current = status;
+    setCallStatusState(status);
+  };
+
+  const setIsCallReceiver = (isRec: boolean) => {
+    isCallReceiverRef.current = isRec;
+    setIsCallReceiverState(isRec);
+  };
+
+  const setIncomingCall = (call: CallSessionDoc | null) => {
+    incomingCallRef.current = call;
+    setIncomingCallState(call);
+  };
+
+  const setCallVolume = (vol: number) => {
+    const clamped = Math.max(0.1, Math.min(1.5, parseFloat(vol.toFixed(2))));
+    callVolumeRef.current = clamped;
+    setCallVolumeState(clamped);
+    streamAudioController.setVolume(clamped);
+    sounds.setRingtoneVolume(isSpeakerOnRef.current ? clamped : clamped * 0.25);
+    const globalAudio = getGlobalCallAudio();
+    if (globalAudio) {
+      routeAudioOutput(globalAudio, isSpeakerOnRef.current, clamped);
+    }
+  };
+
+  const volumeUp = () => {
+    setCallVolume(callVolumeRef.current + 0.15);
+  };
+
+  const volumeDown = () => {
+    setCallVolume(callVolumeRef.current - 0.15);
+  };
+
+  const setSpeaker = (on: boolean) => {
+    isSpeakerOnRef.current = on;
+    setIsSpeakerOn(on);
+    streamAudioController.setSpeaker(on);
+    sounds.setRingtoneVolume(on ? callVolumeRef.current : callVolumeRef.current * 0.25);
+    const globalAudio = getGlobalCallAudio();
+    if (globalAudio) {
+      routeAudioOutput(globalAudio, on, callVolumeRef.current);
+    }
+  };
 
   // Helper to find the next available online Host for automatic call bypass / forwarding
   const findNextAvailableOnlineHost = (excludeSakhi?: Sakhi | null): Sakhi | null => {
@@ -189,22 +226,25 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return sakhiOverride?.videoRatePerMin || settings?.videoRatePerMin || 15;
   };
 
-  // Helper to reliably detect if current user is a Host
-  const checkIsHost = (sessionObj?: any) => {
+  // Helper to reliably detect if current user is acting as a Host
+  const checkIsHost = (sessionObj?: any, targetOverride?: Sakhi | null) => {
+    const target = targetOverride || activeSakhiRef.current;
+    if (target?.id?.startsWith('caller-') || target?.id?.startsWith('caller_')) {
+      return true;
+    }
     const sess = sessionObj || getActiveSession();
     return Boolean(
-      userRole === 'host' ||
-      isHostLoggedIn ||
-      sess?.role === 'host' ||
-      localStorage.getItem('sunosakhi_host_logged_in') === 'true' ||
-      localStorage.getItem('sunosakhi_active_role') === 'host' ||
-      (hostProfile?.phone && String(hostProfile.phone).replace(/\D/g, '').length >= 10)
+      userRole === 'host' &&
+      (isHostLoggedIn ||
+        sess?.role === 'host' ||
+        localStorage.getItem('sunosakhi_host_logged_in') === 'true' ||
+        localStorage.getItem('sunosakhi_active_role') === 'host')
     );
   };
 
   const activeSession = useActiveSession();
 
-  // Subscribe Receiver (Host or Caller) to real-time incoming calls with ringtone alert
+  // Subscribe Receiver (Host or Caller) to real-time incoming calls
   useEffect(() => {
     const session = getActiveSession();
     const currentUser = getCurrentUser();
@@ -224,7 +264,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const unsub = subscribeToIncomingCallsForHost(receiverTargets, (call) => {
       if (call) {
-        if (callStatus === 'idle') {
+        if (callStatusRef.current === 'idle' && !isStartingCallRef.current) {
           setIncomingCall(call);
         }
       } else {
@@ -242,9 +282,58 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     activeSession.id,
     activeSession.phone,
     activeSession.email,
-    activeSession.isLoggedIn,
-    callStatus
+    activeSession.isLoggedIn
   ]);
+
+  // Direct watcher on the active incomingCall document so if Caller cuts while ringing, IncomingCallModal closes immediately
+  useEffect(() => {
+    if (!incomingCall?.id || !isFirebaseConfigured() || !db) return;
+    const callId = incomingCall.id;
+
+    const unsub = onSnapshot(
+      doc(db, 'calls', callId),
+      (docSnap) => {
+        if (!docSnap.exists()) {
+          if (incomingCallRef.current?.id === callId) {
+            sounds.stopRingtone();
+            setIncomingCall(null);
+          }
+          return;
+        }
+        const data = docSnap.data() as CallSessionDoc;
+        if (data.status !== 'ringing') {
+          if (incomingCallRef.current?.id === callId) {
+            sounds.stopRingtone();
+            setIncomingCall(null);
+          }
+        }
+      },
+      () => {}
+    );
+
+    return () => {
+      unsub();
+    };
+  }, [incomingCall?.id]);
+
+  const attachRemoteAudioStream = (stream: MediaStream) => {
+    setRemoteStream(stream);
+    stream.getAudioTracks().forEach((t) => {
+      t.enabled = true;
+    });
+    const globalAudio = getGlobalCallAudio();
+    if (globalAudio) {
+      if (globalAudio.srcObject !== stream) {
+        globalAudio.srcObject = stream;
+      }
+      globalAudio.muted = false;
+      streamAudioController.attachStream(stream, globalAudio);
+      streamAudioController.setSpeaker(isSpeakerOnRef.current);
+      streamAudioController.setVolume(callVolumeRef.current);
+      routeAudioOutput(globalAudio, isSpeakerOnRef.current, callVolumeRef.current);
+      globalAudio.play().catch(() => {});
+    }
+  };
 
   /**
    * Dial a specific Host/Caller target and arm ring timer & rejection handler
@@ -255,8 +344,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       callingTimerRef.current = null;
     }
 
-    currentSakhiRef.current = targetSakhi;
-    currentCallTypeRef.current = type;
+    isEndingCallRef.current = false;
     triedHostIdsRef.current.add(targetSakhi.id);
     if (targetSakhi.phone) {
       triedHostIdsRef.current.add(targetSakhi.phone.replace(/\D/g, '').slice(-10));
@@ -271,42 +359,37 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const session = getActiveSession();
     const currentUser = getCurrentUser();
-    const isHost = checkIsHost(session);
+    const isHost = checkIsHost(session, targetSakhi);
     const callerData = {
       id: isHost
-        ? (hostProfile?.phone || hostProfile?.id || session.id || 'host_' + Date.now())
+        ? (hostProfile?.id || hostProfile?.phone || session.id || 'host_' + Date.now())
         : (session.phone || currentUser?.phone || session.id || currentUser?.id || 'caller_' + Date.now()),
       name: isHost
         ? (hostProfile?.name || session.name || 'Sakhi Host')
         : (session.name || currentUser?.name || 'Friendly Caller'),
       phone: isHost
         ? (hostProfile?.phone || session.phone || '')
-        : (session.phone || currentUser?.phone || '')
+        : (session.phone || currentUser?.phone || ''),
+      email: isHost
+        ? ((hostProfile as any)?.email || session.email || '')
+        : (session.email || currentUser?.email || '')
     };
 
     // Setup WebRTC Callbacks
+    webrtcService.onLocalStreamUpdated = (stream) => {
+      setLocalStream(stream);
+    };
+
     webrtcService.onRemoteStreamAvailable = (stream) => {
-      setRemoteStream(stream);
-      stream.getAudioTracks().forEach((t) => {
-        t.enabled = true;
-      });
-      streamAudioController.attachStream(stream);
-      streamAudioController.setSpeaker(isSpeakerOn);
-      streamAudioController.setVolume(callVolume);
-      const globalAudio = getGlobalCallAudio();
-      if (globalAudio) {
-        if (globalAudio.srcObject !== stream) {
-          globalAudio.srcObject = stream;
-        }
-        globalAudio.muted = false;
-        routeAudioOutput(globalAudio, isSpeakerOn, callVolume);
-        globalAudio.play().catch(() => {});
-      }
+      attachRemoteAudioStream(stream);
     };
 
     webrtcService.onCallConnected = () => {
+      if (callStatusRef.current === 'idle') return;
       sounds.stopRingtone();
-      sounds.playCallConnected();
+      if (callStatusRef.current !== 'connected') {
+        sounds.playCallConnected();
+      }
       setForwardingNotice(null);
       setCallStatus('connected');
       if (callingTimerRef.current) {
@@ -315,27 +398,39 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     };
 
-    webrtcService.onCallRejected = async () => {
+    webrtcService.onCallRejected = () => {
+      const rejectedName = activeSakhiRef.current?.name || 'User';
       sounds.stopRingtone();
       sounds.playCallEnded();
       setForwardingNotice(null);
-      alert(`${currentSakhiRef.current?.name || 'User'} abhi call receive nahi kar pa rahe hain.`);
-      cancelCalling();
+      // Cut call UI immediately FIRST so CallingScreen never hangs
+      cancelCalling(true);
+      setTimeout(() => {
+        alert(`${rejectedName} abhi call receive nahi kar pa rahe hain.`);
+      }, 80);
     };
 
     webrtcService.onCallEnded = () => {
-      endCall('remote_ended');
+      if (callStatusRef.current === 'calling') {
+        cancelCalling(true);
+      } else if (callStatusRef.current === 'connected') {
+        endCall('remote_ended');
+      }
     };
 
     try {
       await webrtcService.startOutboundCall(callerData, targetSakhi, type);
-      setLocalStream(webrtcService.getLocalStream());
+      if (callStatusRef.current !== 'idle') {
+        setLocalStream(webrtcService.getLocalStream());
+      }
 
       // Ring for 45 seconds before timing out if unanswered
-      callingTimerRef.current = window.setTimeout(async () => {
-        sounds.stopRingtone();
-        setForwardingNotice(null);
-        cancelCalling();
+      callingTimerRef.current = window.setTimeout(() => {
+        if (callStatusRef.current === 'calling') {
+          sounds.stopRingtone();
+          setForwardingNotice(null);
+          cancelCalling(false);
+        }
       }, 45000);
     } catch (err) {
       console.warn('WebRTC Call initialization error:', err);
@@ -346,16 +441,14 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
    * Manually bypass current ringing host and forward to next available online host
    */
   const forwardToNextHost = async (): Promise<boolean> => {
-    const nextHost = findNextAvailableOnlineHost(currentSakhiRef.current);
+    const nextHost = findNextAvailableOnlineHost(activeSakhiRef.current);
     if (!nextHost) {
       setForwardingNotice('⚠️ Is samay koi doosri Online Host uplabdh nahi hai.');
       return false;
     }
-    setForwardingNotice(
-      `🔄 Call ${nextHost.name} ko forward ki ja rahi hai...`
-    );
+    setForwardingNotice(`🔄 Call ${nextHost.name} ko forward ki ja rahi hai...`);
     await webrtcService.endActiveCall();
-    await dialTargetSakhi(nextHost, currentCallTypeRef.current);
+    await dialTargetSakhi(nextHost, callTypeRef.current);
     return true;
   };
 
@@ -364,7 +457,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
    */
   const startCall = async (sakhi: Sakhi, type: CallType) => {
     // Prevent duplicate simultaneous call requests
-    if (callStatus !== 'idle' || isStartingCallRef.current) {
+    if (callStatusRef.current !== 'idle' || isStartingCallRef.current) {
       return;
     }
 
@@ -375,7 +468,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const session = getActiveSession();
     const requiredMin = getRate(type, sakhi);
-    const isHost = checkIsHost(session);
+    const isHost = checkIsHost(session, sakhi);
 
     // Caller requires login before initiating a call
     if (!isHost && !session.isLoggedIn) {
@@ -391,7 +484,16 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
+    // Unlock audio element synchronously inside user click gesture
+    sounds.unlockAudio();
+    const globalAudio = getGlobalCallAudio();
+    if (globalAudio) {
+      globalAudio.muted = false;
+      globalAudio.play().catch(() => {});
+    }
+
     isStartingCallRef.current = true;
+    isEndingCallRef.current = false;
     triedHostIdsRef.current.clear();
     setForwardingNotice(null);
 
@@ -416,18 +518,22 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
   /**
    * Cancel Outbound Call while ringing
    */
-  const cancelCalling = () => {
+  const cancelCalling = (isRemoteRejected: boolean = false) => {
     isStartingCallRef.current = false;
     setForwardingNotice(null);
     triedHostIdsRef.current.clear();
-    if (activeSakhi) {
+
+    const currentSakhi = activeSakhiRef.current;
+    const currentType = callTypeRef.current;
+
+    if (currentSakhi) {
       saveCallLog({
-        sakhiId: activeSakhi.id,
-        sakhiName: activeSakhi.name,
-        sakhiAvatar: activeSakhi.avatar,
-        type: callType,
+        sakhiId: currentSakhi.id,
+        sakhiName: currentSakhi.name,
+        sakhiAvatar: currentSakhi.avatar,
+        type: currentType,
         direction: 'outgoing',
-        status: 'missed',
+        status: isRemoteRejected ? 'rejected' : 'missed',
         durationSeconds: 0,
         cost: 0,
         timestamp: Date.now()
@@ -447,7 +553,9 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch {}
     }
     streamAudioController.detach();
-    webrtcService.endActiveCall();
+    webrtcService.endActiveCall(undefined, {
+      skipStatusUpdate: isRemoteRejected
+    });
     setCallStatus('idle');
     setIsCallReceiver(false);
     setActiveSakhi(null);
@@ -459,15 +567,17 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
    * Accept Incoming Call as Host or Caller
    */
   const acceptIncomingCall = async () => {
-    if (!incomingCall) return;
-    const callToAnswer = incomingCall;
+    const callToAnswer = incomingCallRef.current || incomingCall;
+    if (!callToAnswer) return;
 
-    // Immediately transition UI state so Answer button responds with zero delay
+    // Immediately mark call handled & transition UI state so Answer button responds with 0ms delay
+    markCallAsHandled(callToAnswer.id);
     setIncomingCall(null);
+    isEndingCallRef.current = false;
     setIsCallReceiver(true);
     setIsMuted(false);
     setIsVideoOff(false);
-    setIsSpeakerOn(true);
+    setSpeaker(true);
     setDurationSeconds(0);
     setCurrentCost(0);
     durationRef.current = 0;
@@ -477,7 +587,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     sounds.playCallConnected();
     sounds.unlockAudio();
 
-    setActiveSakhi({
+    const receiverCompanion: Sakhi = {
       id: callToAnswer.callerId,
       name: callToAnswer.callerName || 'Caller',
       phone: callToAnswer.callerPhone || '',
@@ -495,7 +605,9 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       videoRatePerMin: getRate('video'),
       audioSnippet: '',
       tagline: 'SunoSakhi Caller'
-    });
+    };
+
+    setActiveSakhi(receiverCompanion);
     setCallType(callToAnswer.callType);
     setCallStatus('connected');
 
@@ -505,54 +617,53 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       globalAudio.play().catch(() => {});
     }
 
-    webrtcService.onRemoteStreamAvailable = (stream) => {
-      setRemoteStream(stream);
-      stream.getAudioTracks().forEach((t) => {
-        t.enabled = true;
-      });
-      streamAudioController.attachStream(stream);
-      streamAudioController.setSpeaker(true);
-      streamAudioController.setVolume(callVolume);
-      if (globalAudio) {
-        if (globalAudio.srcObject !== stream) {
-          globalAudio.srcObject = stream;
-        }
-        globalAudio.muted = false;
-        routeAudioOutput(globalAudio, true, callVolume);
-        globalAudio.play().catch(() => {});
-      }
+    webrtcService.onLocalStreamUpdated = (stream) => {
+      setLocalStream(stream);
     };
+
+    webrtcService.onRemoteStreamAvailable = (stream) => {
+      attachRemoteAudioStream(stream);
+    };
+
     webrtcService.onCallEnded = () => {
       endCall('remote_ended');
     };
 
     try {
-      await webrtcService.answerIncomingCall(callToAnswer);
-      setLocalStream(webrtcService.getLocalStream());
+      const answered = await webrtcService.answerIncomingCall(callToAnswer);
+      if (answered && callStatusRef.current === 'connected') {
+        setLocalStream(webrtcService.getLocalStream());
+      }
     } catch (err) {
       console.warn('Error accepting incoming call:', err);
     }
   };
 
   /**
-   * Reject Incoming Call as Host
+   * Reject Incoming Call as Host or Caller
    */
   const rejectIncomingCall = async () => {
-    if (!incomingCall) return;
+    const callToReject = incomingCallRef.current || incomingCall;
+    if (!callToReject) return;
+
+    // Immediately stop ringtone and close modal BEFORE awaiting network
+    markCallAsHandled(callToReject.id);
     sounds.stopRingtone();
+    setIncomingCall(null);
+
     saveCallLog({
       sakhiId: hostProfile?.id || 'host',
-      sakhiName: incomingCall.callerName || 'Caller',
+      sakhiName: callToReject.callerName || 'Caller',
       sakhiAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&auto=format&fit=crop&q=80',
-      type: incomingCall.callType,
+      type: callToReject.callType,
       direction: 'incoming',
       status: 'rejected',
       durationSeconds: 0,
       cost: 0,
       timestamp: Date.now()
     });
-    await webrtcService.rejectIncomingCall(incomingCall.id);
-    setIncomingCall(null);
+
+    await webrtcService.rejectIncomingCall(callToReject.id);
   };
 
   // Timer & real-time deduction effect when connected
@@ -568,10 +679,10 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // STRICT RULE: ZERO DEDUCTIONS FOR HOST!
         // Girl Host ID is 100% Free for calls. Only deduct from Caller.
         const liveSession = getActiveSession();
-        const isHostSession = isCallReceiver || checkIsHost(liveSession);
+        const isHostSession = isCallReceiverRef.current || checkIsHost(liveSession);
 
         if (isHostSession) {
-          if (!isCallReceiver) {
+          if (!isCallReceiverRef.current) {
             // Host initiated outgoing call: 100% FREE!
             costRef.current = 0;
             setCurrentCost(0);
@@ -624,10 +735,22 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
    * End Active Call
    */
   const endCall = (reason?: string) => {
+    if (isEndingCallRef.current && callStatusRef.current === 'idle') {
+      return;
+    }
+    isEndingCallRef.current = true;
     isStartingCallRef.current = false;
+
+    const currentSakhi = activeSakhiRef.current;
+    const currentStatus = callStatusRef.current;
+    const currentType = callTypeRef.current;
+    const wasReceiver = isCallReceiverRef.current;
+    const finalDuration = durationRef.current;
+    const finalRawCost = costRef.current;
+
     const session = getActiveSession();
     sounds.stopRingtone();
-    if (callStatus === 'connected') {
+    if (currentStatus === 'connected') {
       sounds.playCallEnded();
     }
 
@@ -640,22 +763,17 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       activeCallIntervalRef.current = null;
     }
 
-    const finalDuration = durationRef.current;
-    const wasReceiver = isCallReceiver;
     const isHostSession = wasReceiver || checkIsHost(session);
-    const finalCost = isHostSession && !wasReceiver ? 0 : costRef.current;
+    const finalCost = isHostSession && !wasReceiver ? 0 : finalRawCost;
 
-    webrtcService.endActiveCall(undefined, {
-      durationSeconds: finalDuration,
-      cost: finalCost,
-      hostId: activeSakhi?.id,
-      hostPhone: activeSakhi?.phone,
-      callerName: session.name,
-      callType
-    });
-
+    // Immediately transition UI state to idle so Call Screen closes with 0ms lag
+    setForwardingNotice(null);
+    setCallStatus('idle');
+    setIsCallReceiver(false);
+    setActiveSakhi(null);
     setLocalStream(null);
     setRemoteStream(null);
+
     streamAudioController.detach();
     const globalAudio = getGlobalCallAudio();
     if (globalAudio) {
@@ -665,25 +783,35 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch {}
     }
 
-    if (activeSakhi && finalDuration > 0) {
+    webrtcService.endActiveCall(undefined, {
+      durationSeconds: finalDuration,
+      cost: parseFloat(finalCost.toFixed(2)),
+      hostId: currentSakhi?.id || '',
+      hostPhone: currentSakhi?.phone || '',
+      callerName: session.name || 'Caller',
+      callType: currentType,
+      skipStatusUpdate: reason === 'remote_ended'
+    });
+
+    if (currentSakhi && finalDuration > 0) {
       if (!isHostSession) {
         // Record caller expense (Caller pays)
-        recordCallExpense(activeSakhi, callType, finalDuration, finalCost);
+        recordCallExpense(currentSakhi, currentType, finalDuration, finalCost);
 
         // Instantly credit host commission to cloud server based on host rank tier
         const mins = Math.max(1, Math.ceil(finalDuration / 60));
-        const tier = getHostRankTier(activeSakhi.rating || 5.0);
-        const hostEarned = callType === 'voice'
+        const tier = getHostRankTier(currentSakhi.rating || 5.0);
+        const hostEarned = currentType === 'voice'
           ? parseFloat((mins * tier.voiceEarningPerMin).toFixed(2))
           : parseFloat((mins * tier.videoEarningPerMin).toFixed(2));
         const effectiveShare = finalCost > 0 ? Math.round((hostEarned / finalCost) * 100) : 50;
 
         recordHostIncomeToCloud(
-          activeSakhi.id,
+          currentSakhi.id,
           {
             id: `call-inc-${Date.now()}`,
             type: 'call',
-            description: `📞 ${callType === 'voice' ? 'Voice' : 'Video'} Call (${mins} min) from ${session.name || 'Caller'} [${tier.badge}]`,
+            description: `📞 ${currentType === 'voice' ? 'Voice' : 'Video'} Call (${mins} min) from ${session.name || 'Caller'} [${tier.badge}]`,
             grossAmount: parseFloat(finalCost.toFixed(2)),
             hostSharePercent: effectiveShare,
             hostEarned,
@@ -691,14 +819,14 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
           },
           undefined,
           {
-            hostPhone: activeSakhi.phone,
+            hostPhone: currentSakhi.phone,
             durationSec: finalDuration,
-            callType
+            callType: currentType
           }
         );
       } else if (wasReceiver) {
         // Record host earning when host answered incoming call
-        recordCallIncome(callType, finalDuration, finalCost);
+        recordCallIncome(currentType, finalDuration, finalCost);
       } else {
         // Host made an OUTGOING call: 100% FREE!
         console.log('🌸 [HOST OUTGOING CALL ENDED] 100% Free - zero deductions for Host ID.');
@@ -706,10 +834,10 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // Save to recent calls log
       saveCallLog({
-        sakhiId: activeSakhi.id,
-        sakhiName: activeSakhi.name,
-        sakhiAvatar: activeSakhi.avatar,
-        type: callType,
+        sakhiId: currentSakhi.id,
+        sakhiName: currentSakhi.name,
+        sakhiAvatar: currentSakhi.avatar,
+        type: currentType,
         direction: wasReceiver ? 'incoming' : 'outgoing',
         status: 'completed',
         durationSeconds: finalDuration,
@@ -718,11 +846,11 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       setLastSummary({
-        sakhi: activeSakhi,
-        type: callType,
+        sakhi: currentSakhi,
+        type: currentType,
         startTime: Date.now() - finalDuration * 1000,
         durationSeconds: finalDuration,
-        ratePerMin: isHostSession && !wasReceiver ? 0 : getRate(callType, activeSakhi),
+        ratePerMin: isHostSession && !wasReceiver ? 0 : getRate(currentType, currentSakhi),
         totalCost: isHostSession && !wasReceiver ? 0 : parseFloat(finalCost.toFixed(2))
       });
       setIsSummaryOpen(true);
@@ -731,11 +859,6 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (reason === 'insufficient_balance') {
       setEndReason('insufficient_balance');
     }
-
-    setForwardingNotice(null);
-    setCallStatus('idle');
-    setIsCallReceiver(false);
-    setActiveSakhi(null);
   };
 
   const toggleMute = () => {
@@ -749,12 +872,8 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const toggleSpeaker = () => {
-    setIsSpeakerOn((prev) => {
-      const next = !prev;
-      streamAudioController.setSpeaker(next);
-      sounds.setRingtoneVolume(next ? callVolume : callVolume * 0.25);
-      return next;
-    });
+    const next = !isSpeakerOnRef.current;
+    setSpeaker(next);
   };
 
   const switchCamera = async () => {

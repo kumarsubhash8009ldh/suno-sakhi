@@ -110,7 +110,8 @@ const MainContent: React.FC = () => {
     dismissMessageNotification,
     setActiveMessageThreadId,
     openDirectChat,
-    hostConversations
+    hostConversations,
+    userConversations
   } = useHost();
 
   const [isHostSlideOpen, setIsHostSlideOpen] = useState<boolean>(false);
@@ -550,23 +551,159 @@ const MainContent: React.FC = () => {
                 </div>
               </div>
             ) : (
-              filteredSakhis.length === 0 ? (
-                <div className="p-8 text-center rounded-3xl bg-black/40 border border-pink-500/30">
-                  <p className="text-sm text-gray-300">Abhi koi Sakhi online nahi hai. Kripya thodi der baad dekhein.</p>
+              <div className="space-y-6 max-w-2xl mx-auto">
+                {/* 1. Active Sakhi Conversations Inbox for Caller */}
+                {userConversations.length > 0 && (
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-base sm:text-lg font-extrabold text-white flex items-center gap-2">
+                        <MessageCircle className="w-5 h-5 text-pink-400" />
+                        <span>My Active Sakhi Chats ({userConversations.length})</span>
+                        {userConversations.some((c) => (c.unreadCount || 0) > 0 && c.lastSender === 'sakhi') && (
+                          <span className="px-2 py-0.5 rounded-full bg-pink-500 text-white text-[10px] font-black animate-pulse">
+                            New Reply
+                          </span>
+                        )}
+                      </h3>
+                      <span className="text-[11px] text-pink-300 font-semibold">
+                        Tap to open chat
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col gap-2.5 mb-6">
+                      {userConversations.map((conv) => {
+                        const matchedSakhi = realSakhis.find(
+                          (s) =>
+                            s.id === conv.sakhiId ||
+                            (s.phone && conv.sakhiId.includes(s.phone)) ||
+                            (s.name && s.name === conv.sakhiName)
+                        );
+                        const rawDigits = String(conv.sakhiId || '').replace(/\D/g, '');
+                        const cleanSakhiPhone = matchedSakhi?.phone || (rawDigits.length === 10 ? rawDigits : '');
+                        const sakhiCompanion: Sakhi = matchedSakhi || {
+                          id: conv.sakhiId,
+                          name: conv.sakhiName || 'Sakhi',
+                          phone: cleanSakhiPhone,
+                          avatar:
+                            conv.sakhiAvatar ||
+                            'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80',
+                          videoPoster:
+                            conv.sakhiAvatar ||
+                            'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80',
+                          age: 22,
+                          city: 'India',
+                          status: 'online',
+                          rating: 5.0,
+                          totalCalls: 1,
+                          languages: ['Hindi'],
+                          bio: 'Verified Sakhi Companion',
+                          interests: ['Friendly Chat'],
+                          voiceRatePerMin: 7,
+                          videoRatePerMin: 15,
+                          audioSnippet: '',
+                          tagline: 'Verified Sakhi Host',
+                          isVerified: true
+                        };
+
+                        return (
+                          <div
+                            key={conv.threadId}
+                            className="p-3.5 sm:p-4 rounded-3xl bg-gradient-to-r from-[#1f0b33]/95 via-[#2a1045]/90 to-[#140624]/95 border-2 border-pink-500/40 shadow-xl flex items-center justify-between gap-3 hover:border-pink-500/70 transition-all"
+                          >
+                            <div
+                              className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer"
+                              onClick={() => openDirectChat(sakhiCompanion)}
+                            >
+                              <div className="relative flex-shrink-0">
+                                <div className="w-12 h-12 rounded-2xl overflow-hidden border-2 border-pink-500/60 p-0.5 bg-black">
+                                  <img
+                                    src={sakhiCompanion.avatar}
+                                    alt={sakhiCompanion.name}
+                                    className="w-full h-full object-cover rounded-[12px]"
+                                  />
+                                </div>
+                                <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-[#140624] animate-pulse"></span>
+                              </div>
+
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center justify-between gap-2">
+                                  <h4 className="text-xs sm:text-sm font-extrabold text-white truncate">
+                                    {sakhiCompanion.name}
+                                  </h4>
+                                  <span className="text-[10px] text-gray-400 flex-shrink-0">
+                                    {new Date(conv.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-gray-300 truncate mt-0.5">
+                                  {conv.lastSender === 'user' ? <span className="text-pink-400 font-bold">You: </span> : ''}
+                                  {conv.lastMessage}
+                                </p>
+                                {(conv.unreadCount || 0) > 0 && conv.lastSender === 'sakhi' && (
+                                  <span className="inline-block mt-1 px-2 py-0.5 rounded-full bg-pink-600 text-white text-[9px] font-black animate-pulse">
+                                    New Reply
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              <button
+                                onClick={() => openDirectChat(sakhiCompanion)}
+                                className="px-3 py-2 rounded-xl bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 text-white font-extrabold text-xs shadow-md shadow-pink-950/40 flex items-center gap-1 active:scale-95 transition-all"
+                              >
+                                <MessageCircle className="w-3.5 h-3.5" />
+                                <span>Chat</span>
+                              </button>
+                              <button
+                                onClick={() => startCall(sakhiCompanion, 'voice')}
+                                className="p-2 rounded-xl bg-pink-600 hover:bg-pink-500 text-white shadow-md shadow-pink-950/40 active:scale-95 transition-all"
+                                title="Voice Call"
+                              >
+                                <Phone className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => startCall(sakhiCompanion, 'video')}
+                                className="p-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white shadow-md shadow-purple-950/40 active:scale-95 transition-all"
+                                title="Video Call"
+                              >
+                                <Video className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. All Online Sakhis List */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-base sm:text-lg font-extrabold text-white flex items-center gap-2">
+                      <Sparkles className="w-5 h-5 text-pink-400" />
+                      <span>Online Sakhis ({filteredSakhis.length})</span>
+                    </h3>
+                    <span className="text-[11px] text-gray-400">1-Tap Call / Chat</span>
+                  </div>
+                  {filteredSakhis.length === 0 ? (
+                    <div className="p-8 text-center rounded-3xl bg-black/40 border border-pink-500/30">
+                      <p className="text-sm text-gray-300">Abhi koi Sakhi online nahi hai. Kripya thodi der baad dekhein.</p>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-3.5">
+                      {filteredSakhis.map((sakhi) => (
+                        <SakhiCard
+                          key={sakhi.id}
+                          sakhi={sakhi}
+                          isFavorite={favoriteIds.includes(sakhi.id)}
+                          onToggleFavorite={handleToggleFavorite}
+                          onOpenProfile={(s) => setSelectedSakhiProfile(s)}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="max-w-2xl mx-auto flex flex-col gap-3.5">
-                  {filteredSakhis.map((sakhi) => (
-                    <SakhiCard
-                      key={sakhi.id}
-                      sakhi={sakhi}
-                      isFavorite={favoriteIds.includes(sakhi.id)}
-                      onToggleFavorite={handleToggleFavorite}
-                      onOpenProfile={(s) => setSelectedSakhiProfile(s)}
-                    />
-                  ))}
-                </div>
-              )
+              </div>
             )}
           </div>
         ) : currentTab === 'host' ? (

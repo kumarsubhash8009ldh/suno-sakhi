@@ -50,17 +50,22 @@ export const DirectChatModal: React.FC = () => {
   const myClientId = getChatClientId();
   const session = useActiveSession();
   const currentUser = getCurrentUser();
-  const isHostViewer = Boolean(
-    userRole === 'host' &&
-    (isHostLoggedIn || session.role === 'host' || localStorage.getItem('sunosakhi_host_logged_in') === 'true')
+  const isTargetCaller = Boolean(
+    directChatSakhi?.id?.startsWith('caller-') || directChatSakhi?.id?.startsWith('caller_')
   );
+  const isHostViewer =
+    isTargetCaller ||
+    Boolean(
+      userRole === 'host' &&
+      (isHostLoggedIn || session.role === 'host' || localStorage.getItem('sunosakhi_host_logged_in') === 'true')
+    );
   const isLoggedIn = session.isLoggedIn;
 
   const myKey = isHostViewer
     ? extractChatParticipantKey(hostProfile?.phone || session.phone || (hostProfile as any)?.email || session.email || hostProfile?.id || session.id)
     : extractChatParticipantKey(session.phone || currentUser?.phone || session.email || currentUser?.email || session.id || currentUser?.id);
 
-  const peerKey = extractChatParticipantKey(directChatSakhi?.phone || directChatSakhi?.id || '');
+  const peerKey = extractChatParticipantKey(directChatSakhi?.phone || (directChatSakhi as any)?.email || directChatSakhi?.id || '');
 
   const hostPhone = isHostViewer ? myKey : peerKey;
   const callerPhone = isHostViewer ? peerKey : myKey;

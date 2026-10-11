@@ -1,7 +1,8 @@
 import { doc, getDoc, getDocs, setDoc, collection } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase';
-import { HostIncomeRecord } from '../types';
+import { HostIncomeRecord, WalletTransaction } from '../types';
 import { recordHostIncomeToCloud } from './hostSync';
+import { creditUserCloudWallet } from './walletSync';
 
 const REF_STORAGE_KEY = 'sunosakhi_my_referral_code';
 const REFERRED_BY_KEY = 'sunosakhi_referred_by_code';
@@ -10,7 +11,7 @@ const USER_ACCOUNTS_COLLECTION = 'user_accounts';
 const HOSTS_COLLECTION = 'hosts';
 
 export const REFERRAL_BONUS_COINS = 50;
-export const HOST_REFERRAL_COMMISSION_PERCENT = 1; // 1% Host Invite / Recharge Bonus
+export const HOST_REFERRAL_COMMISSION_PERCENT = 10; // 10% Refer Commission on Every Recharge!
 
 /**
  * Generate or get user's persistent referral code
@@ -359,9 +360,9 @@ export const resolveUserReferrer = async (
 };
 
 /**
- * Process 1% Host Referral / Invite Commission whenever a referred caller adds payment (recharges)!
- * Credits 1% of `rechargeAmount` directly to the referring Host's `referralIncome`, `netIncome`,
- * `pendingPayout`, `referredCallers`, and `incomeHistory` passbook (with Caller's Name & Profile Photo).
+ * Process 10% Referral / Invite Cash Commission whenever a referred caller adds payment (on EVERY recharge)!
+ * Credits 10% of `rechargeAmount` directly to the Refer ID (both Host `referralIncome`/`netIncome`/`pendingPayout`
+ * and Refer ID's Wallet balance via `creditUserCloudWallet`).
  */
 export const processReferralRewardOnRecharge = async (
   newUserPhoneOrId: string,
@@ -379,12 +380,16 @@ export const processReferralRewardOnRecharge = async (
     return { success: false, bonusAmount: 0 };
   }
 
-  // Deduplicate by UTR / Transaction ID if provided so the same payment is never credited twice
+  // Deduplicate by UTR / Transaction ID if provided so the exact same transaction ID is never credited twice
   if (callerMeta?.utrOrTxId && typeof window !== 'undefined') {
     const dedupKey = `sunosakhi_ref_comm_paid_${callerMeta.utrOrTxId}`;
     if (localStorage.getItem(dedupKey) === 'true') {
       return { success: false, bonusAmount: 0 };
     }
+  }
+
+  if (callerMeta?.explicitReferrer && callerMeta.explicitReferrer.trim()) {
+    saveReferredBy(callerMeta.explicitReferrer.trim());
   }
 
   const referrer =
@@ -394,7 +399,7 @@ export const processReferralRewardOnRecharge = async (
     return { success: false, bonusAmount: 0 };
   }
 
-  // Calculate 1% Host Invite / Recharge Bonus
+  // Calculate 10% Cash Commission on Every Recharge
   const hostCommission = parseFloat(((rechargeAmount * HOST_REFERRAL_COMMISSION_PERCENT) / 100).toFixed(2));
   if (hostCommission <= 0) {
     return { success: false, bonusAmount: 0 };
@@ -424,12 +429,12 @@ export const processReferralRewardOnRecharge = async (
   const incomeRecord: HostIncomeRecord = {
     id: `inc_ref_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
     type: 'referral',
-    description: `🤝 1% Refer Bonus: ${callerInfo.callerName} added ₹${rechargeAmount}`,
+    description: `🤝 10% Refer Cash Bonus: ${callerInfo.callerName} recharged ₹${rechargeAmount}`,
     grossAmount: rechargeAmount,
     hostSharePercent: HOST_REFERRAL_COMMISSION_PERCENT,
     hostEarned: hostCommission,
     timestamp: Date.now(),
-    details: `Caller: ${callerInfo.callerName} • Ref ID: ${referrer} • 1% Commission on ₹${rechargeAmount}`,
+    details: `Caller: ${callerInfo.callerName} • Refer ID: ${referrer} • 10% Cash Commission on ₹${rechargeAmount}`,
     callerId: callerInfo.callerId,
     callerName: callerInfo.callerName,
     callerAvatar: callerInfo.callerAvatar,
@@ -437,7 +442,7 @@ export const processReferralRewardOnRecharge = async (
   };
 
   console.log(
-    `🎁 Crediting 1% Host Referral Commission (₹${hostCommission}) to Host ${targetHostId} (Ref: ${referrer}) from Caller ${callerInfo.callerName} recharge of ₹${rechargeAmount}`
+    `🎁 Crediting 10% Refer Commission (+₹${hostCommission} Cash) to Refer ID ${referrer} (${targetHostId}) from Caller ${callerInfo.callerName} recharge of ₹${rechargeAmount}`
   );
 
   // Mark UTR / Transaction ID as credited locally
@@ -451,7 +456,27 @@ export const processReferralRewardOnRecharge = async (
     callType: 'referral'
   });
 
-  // 2. Save audit record in Firestore 'referrals' collection
+  // 2. Also credit 10% Cash directly to the Refer ID's Wallet balance (so every recharge adds 10% cash on Refer ID!)
+  try {
+    const referWalletUserId = refPhone.length === 10 ? `caller_${refPhone}` : referrer;
+    const referWalletTx: WalletTransaction = {
+      id: `tx_ref_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      type: 'credit',
+      amount: hostCommission,
+      description: `🤝 10% Refer Cash Bonus (₹${hostCommission}) from ${callerInfo.callerName}'s ₹${rechargeAmount} Recharge (Refer ID: ${referrer})`,
+      timestamp: Date.now()
+    };
+    await creditUserCloudWallet(
+      referWalletUserId,
+      hostCommission,
+      referWalletTx,
+      refPhone.length === 10 ? refPhone : undefined
+    );
+  } catch (walletErr) {
+    console.warn('Could not credit Refer ID user wallet:', walletErr);
+  }
+
+  // 3. Save audit record in Firestore 'referrals' collection
   if (isFirebaseConfigured() && db) {
     try {
       const refLogId = `ref_comm_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;

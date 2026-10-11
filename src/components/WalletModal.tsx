@@ -457,26 +457,33 @@ export const WalletModal: React.FC = () => {
                     </p>
                   </div>
 
-                  {/* Host Reference ID (Optional - 1% Commission to Host) */}
-                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30">
-                    <label className="text-[11px] font-bold text-amber-300 block mb-1 flex items-center justify-between">
-                      <span>🤝 Host Reference ID (Optional — 1% Host Bonus)</span>
-                      {hostRefInput.trim() && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                          Linked ✅
-                        </span>
-                      )}
+                  {/* Refer ID (10% Cash Commission on Every Recharge) */}
+                  <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/20 via-orange-500/15 to-emerald-500/20 border-2 border-amber-400/60 shadow-lg shadow-amber-950/40">
+                    <label className="text-xs font-black text-amber-300 block mb-1.5 flex items-center justify-between gap-1">
+                      <span className="flex items-center gap-1.5">
+                        <span>🤝 Refer ID (Every Recharge 10% Cash Add)</span>
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 text-black font-black uppercase shadow animate-pulse">
+                        🔥 10% Commission
+                      </span>
                     </label>
                     <input
                       type="text"
                       value={hostRefInput}
                       onChange={(e) => setHostRefInput(e.target.value.toUpperCase())}
-                      placeholder="e.g. SAKHI-9876543210 (Optional)"
-                      className="w-full px-3 py-2 rounded-lg bg-black/60 border border-amber-500/40 text-amber-200 text-xs font-mono tracking-wider focus:outline-none focus:border-amber-400"
+                      placeholder="e.g. SAKHI-9876543210 (Refer ID)"
+                      className="w-full px-3 py-2.5 rounded-xl bg-black/70 border border-amber-400/60 text-amber-200 text-xs font-mono font-bold tracking-wider focus:outline-none focus:border-amber-300"
                     />
-                    <p className="text-[10px] text-amber-200/70 mt-1">
-                      Payment add karne par Host ko 1% Refer Commission (+₹{Math.max(0.01, Number((selectedPack.amount * 0.01).toFixed(2))).toFixed(2)}) milega aur Host ke Refer ID me aapka Name & Profile show hoga.
-                    </p>
+                    <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px]">
+                      <p className="text-amber-100/90 font-medium leading-snug">
+                        Har recharge par Refer ID me <strong className="text-emerald-300">10% Cash (+₹{(selectedPack.amount * 0.10).toFixed(2)})</strong> direct add hoga!
+                      </p>
+                      {hostRefInput.trim() && (
+                        <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 font-bold flex-shrink-0">
+                          Linked ✅
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   {submitError && (

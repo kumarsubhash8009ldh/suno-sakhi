@@ -301,12 +301,12 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // Cloud sync
     syncTransactionToCloud(userId, newBal, newTx);
 
-    // Process 1% Host Referral Commission for referrer when user adds cash
+    // Process 10% Refer Commission on Every Recharge for referrer when user adds cash
     processReferralRewardOnRecharge(
       userId,
       amount,
       (rewardCoins, refCode) => {
-        console.log(`🎉 ₹${rewardCoins} (1% Host Referral Commission) processed for ${refCode}!`);
+        console.log(`🎉 ₹${rewardCoins} (10% Refer Commission Cash) processed for ${refCode}!`);
       },
       session.phone,
       {

@@ -24,7 +24,7 @@ const defaultSettings: PlatformSettings = {
   voiceRatePerMin: 7,
   videoRatePerMin: 15,
   sakhiChatRate: 3,
-  hostIncomePercent: 60,
+  hostIncomePercent: 10,
   supportPhone: '+91 7009600157',
   supportWhatsApp: '+91 7009600157',
   adminUpiId: 'sunosakhi@okaxis',

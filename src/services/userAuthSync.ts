@@ -1208,12 +1208,7 @@ export const subscribeToAllRealCallers = (
       const hasPhone = p.length >= 10;
       const hasEmail = Boolean(em && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em));
       if (!hasPhone && !hasEmail) return false;
-      if (
-        u.id?.startsWith('sakhi-user-') ||
-        u.id?.startsWith('sakhi-host-') ||
-        u.id?.startsWith('host_') ||
-        (u as any).role === 'host'
-      ) {
+      if ((u as any).role === 'host') {
         return false;
       }
       return true;
@@ -1230,8 +1225,13 @@ export const subscribeToAllRealCallers = (
       if (cleanPhone.length === 10 || (cleanEmail && cleanEmail.includes('@'))) {
         const key = cleanPhone || cleanEmail || u.id;
         const isUserOnline = u.status !== 'blocked' && u.status !== 'offline' && u.isOnline !== false;
+        const callerId =
+          u.id && !u.id.startsWith('sakhi-') && !u.id.startsWith('host_')
+            ? u.id
+            : 'caller-' + (cleanPhone || cleanEmail.replace(/[^a-z0-9]/g, '_'));
         callersMap.set(key, {
           ...u,
+          id: callerId,
           phone: cleanPhone,
           email: cleanEmail,
           status: u.status === 'blocked' ? 'blocked' : (isUserOnline ? 'online' : 'offline'),
@@ -1273,9 +1273,13 @@ export const subscribeToAllRealCallers = (
                 const lastActive = Number(data.lastActiveAt || data.lastLoginAt || 0);
                 // Rule: Any logged-in ID shows as Online; only explicitly logged-out ID ('offline') shows as Offline.
                 const isUserOnline = data.status !== 'blocked' && data.status !== 'offline' && data.isOnline !== false;
+                const normalizedCallerId =
+                  data.id && !String(data.id).startsWith('sakhi-') && !String(data.id).startsWith('host_')
+                    ? data.id
+                    : 'caller-' + (cleanPhone || cleanEmail.replace(/[^a-z0-9]/g, '_'));
 
                 const user: UserAccount = {
-                  id: data.id || ('caller-' + (cleanPhone || cleanEmail.replace(/[^a-z0-9]/g, '_'))),
+                  id: normalizedCallerId,
                   phone: cleanPhone,
                   email: cleanEmail,
                   name: data.name && data.name.trim() ? data.name.trim() : 'Caller',
@@ -1305,7 +1309,7 @@ export const subscribeToAllRealCallers = (
                   const cp = String(c.callerPhone || c.callerId || '').replace(/\D/g, '').slice(-10);
                   if (cp.length === 10 && !currentSnapshotMap.has(cp)) {
                     currentSnapshotMap.set(cp, {
-                      id: c.callerId || `caller-${cp}`,
+                      id: `caller-${cp}`,
                       phone: cp,
                       name: c.callerName && c.callerName !== 'Caller' ? c.callerName : 'Caller',
                       avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
@@ -1330,12 +1334,7 @@ export const subscribeToAllRealCallers = (
             const hasPhone = p.length >= 10;
             const hasEmail = Boolean(em && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em));
             if (!hasPhone && !hasEmail) return false;
-            if (
-              u.id?.startsWith('sakhi-user-') ||
-              u.id?.startsWith('sakhi-host-') ||
-              u.id?.startsWith('host_') ||
-              (u as any).role === 'host'
-            ) {
+            if ((u as any).role === 'host') {
               return false;
             }
             return true;

@@ -40,7 +40,7 @@ const handleKeyUp = (e: KeyboardEvent) => {
 };
 
 const handleWindowBlur = () => {
-  if (activeGuards > 0) {
+  if (activeGuards > 0 && typeof document !== 'undefined' && document.visibilityState === 'hidden') {
     notifyBlur(true);
   }
 };

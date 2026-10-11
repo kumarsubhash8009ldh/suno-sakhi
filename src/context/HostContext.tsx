@@ -55,7 +55,7 @@ const HOST_STORAGE_KEY = 'sunosakhi_host_profile';
 const CHAT_STORAGE_KEY = 'sunosakhi_chat_messages';
 const PAYOUT_STORAGE_KEY = 'sunosakhi_host_payouts';
 const HOST_PAYOUTS_COLLECTION = 'host_payouts';
-const HOST_INCOME_PERCENT = 60; // 60% Host Share!
+const HOST_GIFT_SHARE_PERCENT = 50; // Direct Gift Share
 export const MESSAGE_RATE = 3.0; // ₹3 per message for Caller (Host is ₹0 Free)
 export const MAX_MESSAGE_WORDS = 120; // 120 words limit per message
 export const HOST_CHAT_EARNING = 1.5; // ₹1.50 per message direct host income
@@ -99,6 +99,7 @@ interface HostContextType {
     text: string
   ) => Promise<{ success: boolean; error?: string }>;
   hostConversations: ConversationItem[];
+  userConversations: ConversationItem[];
   incomingMessageNotification: IncomingMessageNotification | null;
   dismissMessageNotification: () => void;
   activeMessageThreadId: string | null;
@@ -230,6 +231,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
 
   const [hostConversations, setHostConversations] = useState<ConversationItem[]>([]);
+  const [userConversations, setUserConversations] = useState<ConversationItem[]>([]);
   const [incomingMessageNotification, setIncomingMessageNotification] = useState<IncomingMessageNotification | null>(null);
   const [activeMessageThreadId, setActiveMessageThreadId] = useState<string | null>(null);
   const dismissMessageNotification = () => setIncomingMessageNotification(null);
@@ -615,16 +617,29 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
       (isHostLoggedIn || session.role === 'host' || localStorage.getItem('sunosakhi_host_logged_in') === 'true')
     );
 
-    const hostTargetId = extractChatParticipantKey(
-      hostProfile?.phone || hostProfile?.id || (isHost ? (session.phone || session.email || session.id) : '')
-    );
-    const callerTargetPhone = extractChatParticipantKey(
-      session.phone || currentUser?.phone || (!isHost ? (session.email || currentUser?.email || session.id || currentUser?.id) : '')
-    );
+    const hostTargetInputs = [
+      hostProfile?.phone,
+      (hostProfile as any)?.email,
+      hostProfile?.id,
+      isHost ? session.phone : '',
+      isHost ? session.email : '',
+      isHost ? session.id : ''
+    ].filter(Boolean) as string[];
+
+    const callerTargetInputs = [
+      session.phone,
+      currentUser?.phone,
+      session.email,
+      currentUser?.email,
+      !isHost ? session.id : '',
+      currentUser?.id
+    ].filter(Boolean) as string[];
 
     const handleNewConversations = (convs: ConversationItem[], role: 'host' | 'caller') => {
       if (role === 'host') {
         setHostConversations(convs);
+      } else {
+        setUserConversations(convs);
       }
 
       if (isInitialConvLoad.current[role]) {
@@ -633,10 +648,10 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
         isInitialConvLoad.current[role] = false;
 
-        // Check if there are active unread incoming messages from the last 30 minutes
+        // Check if there are active unread incoming messages
         for (const c of convs) {
           const isIncomingToMe = (role === 'host' && c.lastSender === 'user') || (role === 'caller' && c.lastSender === 'sakhi');
-          const isRecent = Date.now() - (c.updatedAt || 0) < 30 * 60 * 1000;
+          const isRecent = Math.abs(Date.now() - (c.updatedAt || 0)) < 30 * 60 * 1000;
           if (isIncomingToMe && ((c.unreadCount && c.unreadCount > 0) || isRecent)) {
             setIncomingMessageNotification({
               id: 'notif-' + Date.now(),
@@ -723,16 +738,17 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     const unsubs: (() => void)[] = [];
-    if (isHost && hostTargetId) {
-      unsubs.push(subscribeToHostConversations(hostTargetId, (convs) => handleNewConversations(convs, 'host')));
-    } else if (!isHost && callerTargetPhone) {
-      unsubs.push(subscribeToUserConversations(callerTargetPhone, (convs) => handleNewConversations(convs, 'caller')));
+    if (hostTargetInputs.length > 0) {
+      unsubs.push(subscribeToHostConversations(hostTargetInputs, (convs) => handleNewConversations(convs, 'host')));
+    }
+    if (callerTargetInputs.length > 0) {
+      unsubs.push(subscribeToUserConversations(callerTargetInputs, (convs) => handleNewConversations(convs, 'caller')));
     }
 
     return () => {
       unsubs.forEach((u) => u());
     };
-  }, [isHostLoggedIn, hostProfile.id, hostProfile.phone, userRole, session.phone, session.email, session.id, session.isLoggedIn]);
+  }, [isHostLoggedIn, hostProfile.id, hostProfile.phone, (hostProfile as any).email, userRole, session.phone, session.email, session.id, session.isLoggedIn]);
 
   // Keep Host status 'online' in real-time as long as host ID is logged in.
   // Rule: Only explicit Logout sets status to 'offline'.
@@ -773,14 +789,19 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!directChatSakhi) return;
     const session = getActiveSession();
     const currentUser = getCurrentUser();
-    const isHost = Boolean(
-      userRole === 'host' &&
-      (isHostLoggedIn || session.role === 'host' || localStorage.getItem('sunosakhi_host_logged_in') === 'true')
+    const isTargetCaller = Boolean(
+      directChatSakhi.id?.startsWith('caller-') || directChatSakhi.id?.startsWith('caller_')
     );
+    const isHost =
+      isTargetCaller ||
+      Boolean(
+        userRole === 'host' &&
+        (isHostLoggedIn || session.role === 'host' || localStorage.getItem('sunosakhi_host_logged_in') === 'true')
+      );
     const myKey = isHost
       ? extractChatParticipantKey(hostProfile?.phone || session.phone || (hostProfile as any)?.email || session.email || hostProfile?.id || session.id)
       : extractChatParticipantKey(session.phone || currentUser?.phone || session.email || currentUser?.email || session.id || currentUser?.id);
-    const peerKey = extractChatParticipantKey(directChatSakhi.phone || directChatSakhi.id);
+    const peerKey = extractChatParticipantKey(directChatSakhi.phone || (directChatSakhi as any).email || directChatSakhi.id);
 
     // STRICT AUTH GATE: Unauthenticated users cannot receive or read chat messages
     if (!session.isLoggedIn && !isHost && !myKey) {
@@ -829,15 +850,15 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const deducted = deductLiveAmount(gift.price);
     if (!deducted) return false;
 
-    // Calculate Host's 60% income
-    const hostEarned = parseFloat(((gift.price * HOST_INCOME_PERCENT) / 100).toFixed(2));
+    // Calculate Host's direct gift income
+    const hostEarned = parseFloat(((gift.price * HOST_GIFT_SHARE_PERCENT) / 100).toFixed(2));
 
     const newRecord: HostIncomeRecord = {
       id: 'gift-inc-' + Date.now(),
       type: 'gift',
       description: `${gift.icon} ${gift.name} Gift from Caller`,
       grossAmount: gift.price,
-      hostSharePercent: HOST_INCOME_PERCENT,
+      hostSharePercent: HOST_GIFT_SHARE_PERCENT,
       hostEarned,
       timestamp: Date.now()
     };
@@ -922,10 +943,13 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // STRICT RULE: Host is NEVER charged for messages! 100% FREE for Female/Girl Hosts.
     // Callers are charged MESSAGE_RATE (₹3.00/msg up to 120 words) deducted from wallet.
-    const isHost = Boolean(
-      userRole === 'host' &&
-      (isHostLoggedIn || session.role === 'host' || localStorage.getItem('sunosakhi_host_logged_in') === 'true')
-    );
+    const isTargetCaller = Boolean(sakhiId?.startsWith('caller-') || sakhiId?.startsWith('caller_'));
+    const isHost =
+      isTargetCaller ||
+      Boolean(
+        userRole === 'host' &&
+        (isHostLoggedIn || session.role === 'host' || localStorage.getItem('sunosakhi_host_logged_in') === 'true')
+      );
     let messageCost = 0;
 
     if (!isHost) {
@@ -945,7 +969,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const myKey = isHost
       ? extractChatParticipantKey(hostProfile?.phone || session.phone || (hostProfile as any)?.email || session.email || hostProfile?.id || session.id)
       : extractChatParticipantKey(session.phone || currentUser?.phone || session.email || currentUser?.email || session.id || currentUser?.id);
-    const peerKey = extractChatParticipantKey(companionPhoneArg || directChatSakhi?.phone || sakhiId);
+    const peerKey = extractChatParticipantKey(companionPhoneArg || directChatSakhi?.phone || (directChatSakhi as any)?.email || sakhiId);
 
     // Canonical IDs and Thread
     const hostPhone = isHost ? myKey : peerKey;
@@ -958,6 +982,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const effectiveSakhiId = isHost ? (hostProfile.id || `sakhi-user-${hostPhone}`) : sakhiId;
     const effectiveCallerId = isHost ? sakhiId : `caller_${callerPhone}`;
     const effectiveCallerName = isHost ? sakhiName : (session.name || currentUser?.name || 'Caller');
+    const effectiveSakhiAvatar = isHost ? hostProfile.avatar : (directChatSakhi?.avatar || '');
 
     const newCallerMsg: ChatMessage = {
       id: 'msg-' + Date.now(),
@@ -985,6 +1010,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
       threadId,
       sakhiId: effectiveSakhiId,
       sakhiName: isHost ? hostProfile.name : sakhiName,
+      sakhiAvatar: effectiveSakhiAvatar,
       callerId: effectiveCallerId,
       callerName: effectiveCallerName,
       callerPhone,
@@ -1343,6 +1369,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
         sendMessage,
         sendHostManualReply,
         hostConversations,
+        userConversations,
         incomingMessageNotification,
         dismissMessageNotification,
         activeMessageThreadId,

@@ -77,7 +77,7 @@ export interface HostIncomeRecord {
   type: 'call' | 'gift' | 'message' | 'incentive' | 'referral';
   description: string;
   grossAmount: number;
-  hostSharePercent: number; // 60% or 1% for referral
+  hostSharePercent: number; // e.g. 10% for referral
   hostEarned: number;
   timestamp: number;
   durationMinutes?: number;
@@ -203,7 +203,7 @@ export interface PlatformSettings {
   voiceRatePerMin: number; // ₹7
   videoRatePerMin: number; // ₹15
   sakhiChatRate: number; // ₹3
-  hostIncomePercent: number; // 60%
+  hostIncomePercent: number; // 10% Refer Commission
   supportPhone: string;
   supportWhatsApp: string;
   adminUpiId?: string;

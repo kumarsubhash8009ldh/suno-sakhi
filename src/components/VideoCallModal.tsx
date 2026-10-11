@@ -108,24 +108,50 @@ export const VideoCallModal: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (localVideoRef.current && localStream) {
-      localVideoRef.current.srcObject = localStream;
+    const localEl = localVideoRef.current;
+    if (localEl && localStream && !isVideoOff) {
+      if (localEl.srcObject !== localStream) {
+        localEl.srcObject = localStream;
+      }
+      localEl.muted = true;
+      localEl.play().catch(() => {});
     }
-  }, [localStream, callStatus]);
+  }, [localStream, callStatus, isVideoOff]);
 
   useEffect(() => {
-    if (remoteVideoRef.current && remoteStream) {
-      remoteVideoRef.current.muted = false;
-      remoteStream.getAudioTracks().forEach((t) => {
-        t.enabled = true;
-      });
-      if (remoteVideoRef.current.srcObject !== remoteStream) {
-        remoteVideoRef.current.srcObject = remoteStream;
+    if (!remoteStream) return;
+
+    remoteStream.getAudioTracks().forEach((t) => {
+      t.enabled = true;
+    });
+    remoteStream.getVideoTracks().forEach((t) => {
+      t.enabled = true;
+    });
+
+    // Attach video stream to remote video element (muted on video tag so mobile autoplay never blocks video, while global audio element plays the audio)
+    const videoEl = remoteVideoRef.current;
+    if (videoEl) {
+      videoEl.muted = true;
+      if (videoEl.srcObject !== remoteStream) {
+        videoEl.srcObject = remoteStream;
       }
-      routeAudioOutput(remoteVideoRef.current, isSpeakerOn, callVolume);
-      remoteVideoRef.current.play().catch((err) => {
+      videoEl.play().catch((err) => {
         console.warn('Remote video playback warning:', err);
       });
+    }
+
+    // Route audio through the gesture-unlocked global audio element
+    const globalAudio = document.getElementById('sunosakhi-global-call-audio') as HTMLAudioElement | null;
+    if (globalAudio) {
+      if (globalAudio.srcObject !== remoteStream) {
+        globalAudio.srcObject = remoteStream;
+      }
+      globalAudio.muted = false;
+      routeAudioOutput(globalAudio, isSpeakerOn, callVolume);
+    } else if (videoEl) {
+      // Fallback if global audio element is not present
+      videoEl.muted = false;
+      routeAudioOutput(videoEl, isSpeakerOn, callVolume);
     }
   }, [remoteStream, isSpeakerOn, callVolume, callStatus]);
 
@@ -178,7 +204,11 @@ export const VideoCallModal: React.FC = () => {
     >
       {/* Anti-Screen Recording & Window Inactive Blackout Veil */}
       {isWindowBlurred && (
-        <div className="absolute inset-0 z-40 bg-black/95 backdrop-blur-3xl flex flex-col items-center justify-center p-6 text-center space-y-3 animate-in fade-in duration-100">
+        <div
+          onClick={() => setIsWindowBlurred(false)}
+          onTouchStart={() => setIsWindowBlurred(false)}
+          className="absolute inset-0 z-40 bg-black/95 backdrop-blur-3xl flex flex-col items-center justify-center p-6 text-center space-y-3 animate-in fade-in duration-100 cursor-pointer"
+        >
           <div className="w-16 h-16 rounded-full bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400">
             <ShieldAlert className="w-8 h-8 animate-pulse" />
           </div>
@@ -202,18 +232,12 @@ export const VideoCallModal: React.FC = () => {
 
       {/* Companion Main Video Stream (Full Screen Real-Time WebRTC) */}
       <div className="absolute inset-0 z-0 bg-[#0c0414] flex items-center justify-center">
-        {remoteStream ? (
+        {remoteStream && remoteStream.getVideoTracks().length > 0 ? (
           <video
-            ref={(el) => {
-              remoteVideoRef.current = el;
-              if (el && remoteStream && el.srcObject !== remoteStream) {
-                el.srcObject = remoteStream;
-                routeAudioOutput(el, isSpeakerOn, callVolume);
-                el.play().catch(() => {});
-              }
-            }}
+            ref={remoteVideoRef}
             autoPlay
             playsInline
+            muted
             className={`w-full h-full object-cover transition-all duration-300 ${
               isPrivacyBlurred
                 ? 'filter blur-3xl scale-110 brightness-50'
@@ -222,7 +246,7 @@ export const VideoCallModal: React.FC = () => {
           />
         ) : (
           <img
-            src={activeSakhi.videoPoster}
+            src={activeSakhi.videoPoster || activeSakhi.avatar}
             alt={activeSakhi.name}
             className={`w-full h-full object-cover filter brightness-95 transition-all duration-300 ${
               isPrivacyBlurred ? 'filter blur-3xl scale-110 brightness-50' : ''

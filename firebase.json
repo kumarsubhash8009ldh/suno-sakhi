@@ -7,23 +7,41 @@
     "ignore": [
       "firebase.json",
       "**/.*",
-      "**/node_modules/**",
-      "**/*.apk"
+      "**/node_modules/**"
+    ],
+    "headers": [
+      {
+        "source": "/index.html",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "**/*.apk",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/vnd.android.package-archive"
+          },
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      }
     ],
     "redirects": [
       {
         "source": "/download",
-        "destination": "https://raw.githubusercontent.com/kumarsubhash8009ldh/suno-sakhi/main/Suno-Sakhi.apk",
-        "type": 302
-      },
-      {
-        "source": "/Suno-Sakhi.apk",
-        "destination": "https://raw.githubusercontent.com/kumarsubhash8009ldh/suno-sakhi/main/Suno-Sakhi.apk",
+        "destination": "/Suno-Sakhi.apk",
         "type": 302
       },
       {
         "source": "/suno-sakhi.apk",
-        "destination": "https://raw.githubusercontent.com/kumarsubhash8009ldh/suno-sakhi/main/Suno-Sakhi.apk",
+        "destination": "/Suno-Sakhi.apk",
         "type": 302
       }
     ],

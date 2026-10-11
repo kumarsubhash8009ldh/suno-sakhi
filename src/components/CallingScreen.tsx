@@ -58,10 +58,6 @@ export const CallingScreen: React.FC = () => {
 
   return (
     <div
-      onClick={() => {
-        sounds.unlockAudio();
-        sounds.startCallerTune(activeSakhi?.name);
-      }}
       className="fixed inset-0 z-50 flex flex-col items-center justify-between p-6 bg-gradient-to-b from-[#180928] via-[#0e0517] to-black text-white select-none"
     >
       {/* Background glowing aura */}
@@ -180,21 +176,22 @@ export const CallingScreen: React.FC = () => {
             </span>
           </div>
 
-          {/* Cancel Call Button */}
+          {/* Cancel / Cut Call Button */}
           <div className="flex flex-col items-center gap-1.5">
             <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 sounds.stopRingtone();
                 cancelCalling();
               }}
-              className="flex items-center justify-center w-16 h-16 rounded-full bg-red-600 hover:bg-red-500 text-white shadow-xl shadow-red-600/50 transition-transform transform active:scale-95"
-              title="Cancel Call"
+              className="flex items-center justify-center w-16 h-16 rounded-full bg-red-600 hover:bg-red-500 text-white shadow-xl shadow-red-600/50 border-2 border-red-400 transition-transform transform active:scale-95 cursor-pointer"
+              title="Cut / Cancel Call"
             >
               <PhoneOff className="w-7 h-7" />
             </button>
-            <span className="text-[11px] font-bold text-gray-300 uppercase tracking-wider">
-              Cancel
+            <span className="text-[11px] font-extrabold text-red-400 uppercase tracking-wider">
+              Cut Call
             </span>
           </div>
 

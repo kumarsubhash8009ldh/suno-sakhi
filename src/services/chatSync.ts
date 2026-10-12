@@ -1,12 +1,28 @@
 import { collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, increment } from 'firebase/firestore';
-import { db, isFirebaseConfigured } from './firebase';
+import {
+  ref as rtdbRef,
+  set as rtdbSet,
+  update as rtdbUpdate,
+  get as rtdbGet,
+  onValue as rtdbOnValue,
+  increment as rtdbIncrement
+} from 'firebase/database';
+import { db, rtdb, isFirebaseConfigured } from './firebase';
 import { ChatMessage, ConversationItem } from '../types';
 import { getApiBaseUrl, hasExternalApiBackend } from './apiConfig';
 
 const CONVERSATIONS_COLLECTION = 'conversations';
+const RTDB_CONVERSATIONS_META = 'conversations_meta';
+const RTDB_CONVERSATIONS_MESSAGES = 'conversations_messages';
+
+// Instant cross-tab & same-device real-time chat channel (<1ms latency)
+const chatBroadcastChannel =
+  typeof window !== 'undefined' && 'BroadcastChannel' in window
+    ? new BroadcastChannel('sunosakhi_realtime_chat_v2')
+    : null;
 
 /**
- * Helper to strip undefined fields before writing to Firestore (prevents FirebaseError: Unsupported field value: undefined)
+ * Helper to strip undefined fields before writing to Firebase (prevents FirebaseError: Unsupported field value: undefined)
  */
 const stripUndefined = <T extends Record<string, any>>(obj: T): Record<string, any> => {
   const clean: Record<string, any> = {};
@@ -133,7 +149,7 @@ export const getChatClientId = (): string => {
 
 /**
  * Subscribe to real-time chat messages for a specific conversation thread or Sakhi.
- * Listens across primary and reverse/legacy thread IDs so no message is ever missed.
+ * Listens across Firebase Realtime Database (<25ms), BroadcastChannel (<1ms), and Cloud Firestore across candidate thread IDs.
  */
 export const subscribeToCloudChat = (
   threadOrSakhiId: string,
@@ -142,10 +158,30 @@ export const subscribeToCloudChat = (
   if (!threadOrSakhiId) return () => {};
 
   const candidateIds = getCandidateThreadIds(threadOrSakhiId);
+  const candidateSet = new Set(candidateIds);
+  const threadMsgsMap: Record<string, ChatMessage[]> = {};
+  const unsubs: (() => void)[] = [];
+
+  const publishMerged = () => {
+    const dedup = new Map<string, ChatMessage>();
+    Object.values(threadMsgsMap).forEach((list) => {
+      list.forEach((m) => {
+        if (m && m.text) {
+          const key = m.id || `${m.timestamp}_${m.text}`;
+          dedup.set(key, m);
+        }
+      });
+    });
+    const merged = Array.from(dedup.values()).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    try {
+      localStorage.setItem(`chat_${threadOrSakhiId}`, JSON.stringify(merged));
+    } catch {}
+    onUpdate(merged);
+  };
 
   // 1. Deliver cached messages immediately
   try {
-    const mergedLocal = new Map<string, ChatMessage>();
+    const cachedMsgs: ChatMessage[] = [];
     candidateIds.forEach((cid) => {
       const stored = localStorage.getItem(`chat_${cid}`);
       if (stored) {
@@ -153,44 +189,72 @@ export const subscribeToCloudChat = (
         if (Array.isArray(parsed)) {
           parsed.forEach((m: ChatMessage) => {
             if (m && m.text) {
-              mergedLocal.set(m.id || `${m.timestamp}_${m.text}`, m);
+              cachedMsgs.push(m);
             }
           });
         }
       }
     });
-    if (mergedLocal.size > 0) {
-      const sorted = Array.from(mergedLocal.values()).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-      onUpdate(sorted);
+    if (cachedMsgs.length > 0) {
+      threadMsgsMap['local_cache'] = cachedMsgs;
+      publishMerged();
     }
   } catch {}
 
-  // 2. Direct Cloud Firestore onSnapshot Listeners across candidate thread IDs
+  // 2. BroadcastChannel listener for instant <1ms cross-tab updates
+  if (chatBroadcastChannel) {
+    const bcHandler = (ev: MessageEvent) => {
+      const payload = ev.data;
+      if (payload?.type === 'NEW_MESSAGE' && payload.message && candidateSet.has(payload.threadId)) {
+        const currentList = threadMsgsMap[`bc_${payload.threadId}`] || [];
+        threadMsgsMap[`bc_${payload.threadId}`] = [...currentList, payload.message];
+        publishMerged();
+      }
+    };
+    chatBroadcastChannel.addEventListener('message', bcHandler);
+    unsubs.push(() => chatBroadcastChannel.removeEventListener('message', bcHandler));
+  }
+
+  // 3. Firebase Realtime Database (RTDB) low-latency listeners (<25ms)
+  if (rtdb) {
+    candidateIds.forEach((cid) => {
+      try {
+        const msgRef = rtdbRef(rtdb!, `${RTDB_CONVERSATIONS_MESSAGES}/${cid}`);
+        const unsubRtdb = rtdbOnValue(
+          msgRef,
+          (snapshot) => {
+            const val = snapshot.val();
+            const rtdbMsgs: ChatMessage[] = [];
+            if (val && typeof val === 'object') {
+              Object.entries(val).forEach(([msgKey, rawMsg]: [string, any]) => {
+                if (rawMsg && rawMsg.text) {
+                  rtdbMsgs.push({
+                    ...rawMsg,
+                    id: rawMsg.id || msgKey
+                  });
+                }
+              });
+            }
+            threadMsgsMap[`rtdb_${cid}`] = rtdbMsgs;
+            publishMerged();
+          },
+          (err) => {
+            console.warn('RTDB chat listener note:', err);
+          }
+        );
+        unsubs.push(unsubRtdb);
+      } catch (e) {
+        console.warn('Error attaching RTDB chat listener:', e);
+      }
+    });
+  }
+
+  // 4. Direct Cloud Firestore onSnapshot Listeners across candidate thread IDs
   if (isFirebaseConfigured() && db) {
     try {
-      const threadMsgsMap: Record<string, ChatMessage[]> = {};
-      const unsubs: (() => void)[] = [];
-
-      const publishMerged = () => {
-        const dedup = new Map<string, ChatMessage>();
-        Object.values(threadMsgsMap).forEach((list) => {
-          list.forEach((m) => {
-            if (m && m.text) {
-              const key = m.id || `${m.timestamp}_${m.text}`;
-              dedup.set(key, m);
-            }
-          });
-        });
-        const merged = Array.from(dedup.values()).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-        try {
-          localStorage.setItem(`chat_${threadOrSakhiId}`, JSON.stringify(merged));
-        } catch {}
-        onUpdate(merged);
-      };
-
       candidateIds.forEach((cid) => {
         const messagesRef = collection(db!, CONVERSATIONS_COLLECTION, cid, 'messages');
-        const unsub = onSnapshot(
+        const unsubFs = onSnapshot(
           messagesRef,
           (snapshot) => {
             const cloudMsgs: ChatMessage[] = [];
@@ -203,25 +267,19 @@ export const subscribeToCloudChat = (
                 });
               }
             });
-            threadMsgsMap[cid] = cloudMsgs;
+            threadMsgsMap[`fs_${cid}`] = cloudMsgs;
             publishMerged();
           },
-          (err) => {
-            console.warn('Firestore chat onSnapshot note:', err);
-          }
+          () => {}
         );
-        unsubs.push(unsub);
+        unsubs.push(unsubFs);
       });
-
-      return () => {
-        unsubs.forEach((u) => u());
-      };
     } catch (err) {
       console.warn('Error initiating Firestore chat listener:', err);
     }
   }
 
-  // 3. Fallback: Optional Polling ONLY if a custom external backend URL is configured
+  // 5. Fallback: Optional Polling ONLY if a custom external backend URL is configured
   if (hasExternalApiBackend()) {
     const baseUrl = getApiBaseUrl();
     let lastMessagesJson = '';
@@ -233,21 +291,27 @@ export const subscribeToCloudChat = (
           const json = JSON.stringify(data.messages);
           if (json !== lastMessagesJson) {
             lastMessagesJson = json;
-            localStorage.setItem(`chat_${threadOrSakhiId}`, json);
-            onUpdate(data.messages);
+            threadMsgsMap['api_poll'] = data.messages;
+            publishMerged();
           }
         }
       } catch (err) {}
     }, 1500);
 
-    return () => clearInterval(intervalId);
+    unsubs.push(() => clearInterval(intervalId));
   }
 
-  return () => {};
+  return () => {
+    unsubs.forEach((u) => {
+      try {
+        u();
+      } catch {}
+    });
+  };
 };
 
 /**
- * Send a chat message to Cloud Firestore and update conversation summary.
+ * Send a chat message to Firebase Realtime Database, BroadcastChannel, and Cloud Firestore simultaneously.
  */
 export const sendCloudChatMessage = async (
   threadId: string,
@@ -263,53 +327,83 @@ export const sendCloudChatMessage = async (
     status: message.status || 'sent'
   };
 
+  const hostKey = extractChatParticipantKey((_conversationMeta as any)?.hostPhone || _conversationMeta?.sakhiId || '');
+  const callerKey = extractChatParticipantKey((_conversationMeta as any)?.callerPhone || _conversationMeta?.callerId || '');
+  const cleanMsgData = stripUndefined(enrichedMessage as Record<string, any>);
+  const cleanMeta = stripUndefined((_conversationMeta || {}) as Record<string, any>);
+
+  const metaPayload = {
+    ...cleanMeta,
+    threadId,
+    hostPhone: hostKey || cleanMeta.hostPhone || '',
+    callerPhone: callerKey || cleanMeta.callerPhone || '',
+    lastMessage: enrichedMessage.text,
+    lastSender: enrichedMessage.sender,
+    updatedAt: enrichedMessage.timestamp || Date.now()
+  };
+
   // 1. Update local cache immediately
   try {
-    const existing = JSON.parse(localStorage.getItem(`chat_${threadId}`) || '[]');
-    existing.push(enrichedMessage);
-    localStorage.setItem(`chat_${threadId}`, JSON.stringify(existing));
+    const existing: ChatMessage[] = JSON.parse(localStorage.getItem(`chat_${threadId}`) || '[]');
+    const filtered = existing.filter((m) => m.id !== msgId);
+    filtered.push(enrichedMessage);
+    localStorage.setItem(`chat_${threadId}`, JSON.stringify(filtered));
   } catch {}
 
-  // 2. Direct Cloud Firestore Storage (Syncs to all devices in <100ms)
+  // 2. Broadcast across local tabs/windows in <1ms
+  try {
+    chatBroadcastChannel?.postMessage({
+      type: 'NEW_MESSAGE',
+      threadId,
+      message: enrichedMessage,
+      meta: metaPayload
+    });
+  } catch {}
+
+  const writePromises: Promise<any>[] = [];
+
+  // 3. Primary Real-Time Sync: Firebase Realtime Database (<25ms)
+  if (rtdb) {
+    const rtdbMsgPromise = rtdbSet(
+      rtdbRef(rtdb, `${RTDB_CONVERSATIONS_MESSAGES}/${threadId}/${msgId}`),
+      cleanMsgData
+    );
+    const rtdbMetaPromise = rtdbUpdate(
+      rtdbRef(rtdb, `${RTDB_CONVERSATIONS_META}/${threadId}`),
+      {
+        ...metaPayload,
+        unreadCount: rtdbIncrement(1)
+      }
+    );
+    writePromises.push(rtdbMsgPromise, rtdbMetaPromise);
+  }
+
+  // 4. Secondary Cloud Sync: Cloud Firestore
   if (isFirebaseConfigured() && db) {
-    try {
-      const hostKey = extractChatParticipantKey((_conversationMeta as any)?.hostPhone || _conversationMeta?.sakhiId || '');
-      const callerKey = extractChatParticipantKey((_conversationMeta as any)?.callerPhone || _conversationMeta?.callerId || '');
+    const fsMsgPromise = setDoc(
+      doc(db, CONVERSATIONS_COLLECTION, threadId, 'messages', msgId),
+      cleanMsgData
+    );
+    const fsMetaPromise = setDoc(
+      doc(db, CONVERSATIONS_COLLECTION, threadId),
+      {
+        ...metaPayload,
+        unreadCount: increment(1)
+      },
+      { merge: true }
+    );
+    writePromises.push(fsMsgPromise, fsMetaPromise);
+  }
 
-      const cleanMsgData = stripUndefined(enrichedMessage as Record<string, any>);
-
-      // Save individual message to subcollection
-      await setDoc(
-        doc(db, CONVERSATIONS_COLLECTION, threadId, 'messages', msgId),
-        cleanMsgData
-      );
-
-      const cleanMeta = stripUndefined((_conversationMeta || {}) as Record<string, any>);
-
-      // Update conversation overview document with atomic unread count increment
-      await setDoc(
-        doc(db, CONVERSATIONS_COLLECTION, threadId),
-        {
-          ...cleanMeta,
-          threadId,
-          hostPhone: hostKey || cleanMeta.hostPhone || '',
-          callerPhone: callerKey || cleanMeta.callerPhone || '',
-          lastMessage: enrichedMessage.text,
-          lastSender: enrichedMessage.sender,
-          updatedAt: enrichedMessage.timestamp || Date.now(),
-          unreadCount: increment(1)
-        },
-        { merge: true }
-      );
-
-      console.log('✅ [ChatSync] Message saved to Cloud Firestore:', threadId, msgId);
+  if (writePromises.length > 0) {
+    const results = await Promise.allSettled(writePromises);
+    const anySucceeded = results.some((r) => r.status === 'fulfilled');
+    if (anySucceeded) {
       return true;
-    } catch (firestoreErr) {
-      console.error('❌ Firestore send message error:', firestoreErr);
     }
   }
 
-  // 3. Fallback: Post to local/custom backend if configured
+  // 5. Fallback: Post to local/custom backend if configured
   if (hasExternalApiBackend()) {
     const baseUrl = getApiBaseUrl();
     try {
@@ -339,10 +433,32 @@ export const markThreadAsRead = async (
 ): Promise<void> => {
   if (!threadId) return;
 
+  const candidateIds = getCandidateThreadIds(threadId);
+
+  try {
+    chatBroadcastChannel?.postMessage({
+      type: 'MARK_READ',
+      threadId
+    });
+  } catch {}
+
+  if (rtdb) {
+    try {
+      await Promise.allSettled(
+        candidateIds.map(async (cid) => {
+          const metaRef = rtdbRef(rtdb!, `${RTDB_CONVERSATIONS_META}/${cid}`);
+          const snap = await rtdbGet(metaRef);
+          if (snap.exists()) {
+            await rtdbUpdate(metaRef, { unreadCount: 0 });
+          }
+        })
+      );
+    } catch {}
+  }
+
   if (isFirebaseConfigured() && db) {
     try {
-      const candidateIds = getCandidateThreadIds(threadId);
-      await Promise.all(
+      await Promise.allSettled(
         candidateIds.map((cid) =>
           updateDoc(doc(db!, CONVERSATIONS_COLLECTION, cid), { unreadCount: 0 }).catch(() => {})
         )
@@ -399,7 +515,7 @@ export const showSystemNotification = (title: string, options?: NotificationOpti
 
 /**
  * Subscribe to all incoming caller conversations for a specific Host (Sakhi).
- * Listens directly to Cloud Firestore `conversations` collection across all host identifiers.
+ * Listens across Firebase Realtime Database (`conversations_meta`), BroadcastChannel, and Cloud Firestore `conversations`.
  */
 export const subscribeToHostConversations = (
   hostInput: string | string[],
@@ -419,90 +535,171 @@ export const subscribeToHostConversations = (
   const primaryHostKey = Array.from(hostKeySet)[0] || extractChatParticipantKey(rawList[0]);
   const primaryHostId = rawList[0];
 
-  // 1. Direct Cloud Firestore onSnapshot
+  const sourceDocs: Record<string, Record<string, any>> = {
+    rtdb: {},
+    fs: {},
+    bc: {}
+  };
+  const unsubs: (() => void)[] = [];
+
+  const recomputeAndPublish = () => {
+    const combinedDocs = new Map<string, any>();
+    ['fs', 'rtdb', 'bc'].forEach((sourceKey) => {
+      const mapObj = sourceDocs[sourceKey] || {};
+      Object.entries(mapObj).forEach(([docId, c]) => {
+        if (!c || !c.lastMessage) return;
+        const existing = combinedDocs.get(docId);
+        if (!existing || (c.updatedAt || 0) >= (existing.updatedAt || 0)) {
+          combinedDocs.set(docId, c);
+        }
+      });
+    });
+
+    const dedupByPeer = new Map<string, ConversationItem>();
+    combinedDocs.forEach((c, docId) => {
+      const threadStr = String(c.threadId || docId);
+      const itemHostKey = extractChatParticipantKey(c.hostPhone || c.sakhiId || '');
+      const itemCallerKey = extractChatParticipantKey(c.callerPhone || c.callerId || '');
+
+      let isDirectHostMatch = Boolean(c.sakhiId && hostRawSet.has(c.sakhiId));
+      let isReverseMatch = false;
+
+      hostKeySet.forEach((hk) => {
+        if (
+          itemHostKey === hk ||
+          threadStr.startsWith(`chat_${hk}_`) ||
+          threadStr.startsWith(`${hk}_`)
+        ) {
+          isDirectHostMatch = true;
+        }
+        if (itemCallerKey === hk || threadStr.endsWith(`_${hk}`)) {
+          isReverseMatch = true;
+        }
+      });
+
+      if (isDirectHostMatch || isReverseMatch) {
+        const peerKey = isDirectHostMatch
+          ? (itemCallerKey || c.callerId || docId)
+          : (itemHostKey || c.sakhiId || docId);
+
+        // Ignore self-chats where host and caller are the exact same key
+        if (hostKeySet.has(peerKey) && itemHostKey === itemCallerKey) return;
+
+        const item: ConversationItem = {
+          threadId: c.threadId || docId,
+          sakhiId: isDirectHostMatch ? (c.sakhiId || primaryHostId) : (`sakhi-user-${primaryHostKey}`),
+          sakhiName: isDirectHostMatch ? c.sakhiName : c.callerName,
+          sakhiAvatar: c.sakhiAvatar,
+          hostPhone: primaryHostKey,
+          callerId: isDirectHostMatch ? (c.callerId || `caller_${peerKey}`) : (c.sakhiId || `caller_${peerKey}`),
+          callerName: isDirectHostMatch ? (c.callerName || 'Caller') : (c.sakhiName || 'Caller'),
+          callerPhone: isDirectHostMatch ? (c.callerPhone || peerKey) : (c.hostPhone || peerKey),
+          callerAvatar: c.callerAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
+          lastMessage: c.lastMessage || '',
+          lastSender: c.lastSender || 'user',
+          updatedAt: c.updatedAt || Date.now(),
+          unreadCount: c.unreadCount || 0
+        };
+
+        const existing = dedupByPeer.get(peerKey);
+        if (!existing || (item.updatedAt || 0) > (existing.updatedAt || 0)) {
+          dedupByPeer.set(peerKey, item);
+        }
+      }
+    });
+
+    const list = Array.from(dedupByPeer.values()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    onUpdate(list);
+  };
+
+  // 1. BroadcastChannel listener
+  if (chatBroadcastChannel) {
+    const bcHandler = (ev: MessageEvent) => {
+      const payload = ev.data;
+      if (payload?.type === 'NEW_MESSAGE' && payload.meta && payload.threadId) {
+        const prev = sourceDocs.bc[payload.threadId] || {};
+        sourceDocs.bc[payload.threadId] = {
+          ...prev,
+          ...payload.meta,
+          unreadCount: (prev.unreadCount || 0) + 1
+        };
+        recomputeAndPublish();
+      } else if (payload?.type === 'MARK_READ' && payload.threadId) {
+        if (sourceDocs.bc[payload.threadId]) {
+          sourceDocs.bc[payload.threadId].unreadCount = 0;
+        }
+        if (sourceDocs.rtdb[payload.threadId]) {
+          sourceDocs.rtdb[payload.threadId].unreadCount = 0;
+        }
+        if (sourceDocs.fs[payload.threadId]) {
+          sourceDocs.fs[payload.threadId].unreadCount = 0;
+        }
+        recomputeAndPublish();
+      }
+    };
+    chatBroadcastChannel.addEventListener('message', bcHandler);
+    unsubs.push(() => chatBroadcastChannel.removeEventListener('message', bcHandler));
+  }
+
+  // 2. Firebase Realtime Database (RTDB) listener
+  if (rtdb) {
+    try {
+      const metaRef = rtdbRef(rtdb, RTDB_CONVERSATIONS_META);
+      const unsubRtdb = rtdbOnValue(
+        metaRef,
+        (snapshot) => {
+          const val = snapshot.val();
+          const nextMap: Record<string, any> = {};
+          if (val && typeof val === 'object') {
+            Object.entries(val).forEach(([docId, c]: [string, any]) => {
+              if (c && c.lastMessage) {
+                nextMap[docId] = c;
+              }
+            });
+          }
+          sourceDocs.rtdb = nextMap;
+          recomputeAndPublish();
+        },
+        (err) => {
+          console.warn('RTDB host conversations listener note:', err);
+        }
+      );
+      unsubs.push(unsubRtdb);
+    } catch (e) {
+      console.warn('Error subscribing to RTDB host conversations:', e);
+    }
+  }
+
+  // 3. Direct Cloud Firestore onSnapshot
   if (isFirebaseConfigured() && db) {
     try {
       const convCol = collection(db, CONVERSATIONS_COLLECTION);
-      const unsub = onSnapshot(
+      const unsubFs = onSnapshot(
         convCol,
         (snapshot) => {
-          const dedupByPeer = new Map<string, ConversationItem>();
+          const nextMap: Record<string, any> = {};
           snapshot.forEach((docSnap) => {
             const c = docSnap.data() as any;
             if (!c || !c.lastMessage) {
-              // Auto-remove empty ghost documents created by old markThreadAsRead
               if (db && c && !c.lastMessage && Object.keys(c).length <= 2) {
                 deleteDoc(doc(db, CONVERSATIONS_COLLECTION, docSnap.id)).catch(() => {});
               }
               return;
             }
-
-            const docId = docSnap.id;
-            const threadStr = String(c.threadId || docId);
-            const itemHostKey = extractChatParticipantKey(c.hostPhone || c.sakhiId || '');
-            const itemCallerKey = extractChatParticipantKey(c.callerPhone || c.callerId || '');
-
-            let isDirectHostMatch = Boolean(c.sakhiId && hostRawSet.has(c.sakhiId));
-            let isReverseMatch = false;
-
-            hostKeySet.forEach((hk) => {
-              if (
-                itemHostKey === hk ||
-                threadStr.startsWith(`chat_${hk}_`) ||
-                threadStr.startsWith(`${hk}_`)
-              ) {
-                isDirectHostMatch = true;
-              }
-              if (itemCallerKey === hk || threadStr.endsWith(`_${hk}`)) {
-                isReverseMatch = true;
-              }
-            });
-
-            if (isDirectHostMatch || isReverseMatch) {
-              const peerKey = isDirectHostMatch
-                ? (itemCallerKey || c.callerId || docId)
-                : (itemHostKey || c.sakhiId || docId);
-
-              // Ignore self-chats where host and caller are the exact same key
-              if (hostKeySet.has(peerKey) && itemHostKey === itemCallerKey) return;
-
-              const item: ConversationItem = {
-                threadId: c.threadId || docId,
-                sakhiId: isDirectHostMatch ? (c.sakhiId || primaryHostId) : (`sakhi-user-${primaryHostKey}`),
-                sakhiName: isDirectHostMatch ? c.sakhiName : c.callerName,
-                sakhiAvatar: c.sakhiAvatar,
-                callerId: isDirectHostMatch ? (c.callerId || `caller_${peerKey}`) : (c.sakhiId || `caller_${peerKey}`),
-                callerName: isDirectHostMatch ? (c.callerName || 'Caller') : (c.sakhiName || 'Caller'),
-                callerPhone: isDirectHostMatch ? (c.callerPhone || peerKey) : (c.hostPhone || peerKey),
-                callerAvatar: c.callerAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
-                lastMessage: c.lastMessage || '',
-                lastSender: c.lastSender || 'user',
-                updatedAt: c.updatedAt || Date.now(),
-                unreadCount: c.unreadCount || 0
-              };
-
-              const existing = dedupByPeer.get(peerKey);
-              if (!existing || (item.updatedAt || 0) > (existing.updatedAt || 0)) {
-                dedupByPeer.set(peerKey, item);
-              }
-            }
+            nextMap[docSnap.id] = c;
           });
-
-          const list = Array.from(dedupByPeer.values()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-          onUpdate(list);
+          sourceDocs.fs = nextMap;
+          recomputeAndPublish();
         },
-        (err) => {
-          console.warn('Firestore host conversations listener notice:', err);
-        }
+        () => {}
       );
-
-      return unsub;
+      unsubs.push(unsubFs);
     } catch (err) {
       console.warn('Error subscribing to host conversations:', err);
     }
   }
 
-  // 2. Fallback to custom backend ONLY if configured
+  // 4. Fallback to custom backend ONLY if configured
   if (hasExternalApiBackend()) {
     const baseUrl = getApiBaseUrl();
     const fetchConversations = async () => {
@@ -517,15 +714,21 @@ export const subscribeToHostConversations = (
 
     fetchConversations();
     const intervalId = window.setInterval(fetchConversations, 1500);
-    return () => clearInterval(intervalId);
+    unsubs.push(() => clearInterval(intervalId));
   }
 
-  return () => {};
+  return () => {
+    unsubs.forEach((u) => {
+      try {
+        u();
+      } catch {}
+    });
+  };
 };
 
 /**
  * Subscribe to all incoming conversations for a Caller (User).
- * Listens directly to Cloud Firestore `conversations` collection across all caller identifiers.
+ * Listens across Firebase Realtime Database (`conversations_meta`), BroadcastChannel, and Cloud Firestore `conversations`.
  */
 export const subscribeToUserConversations = (
   userInput: string | string[],
@@ -544,82 +747,164 @@ export const subscribeToUserConversations = (
   });
   const primaryCallerKey = Array.from(callerKeySet)[0] || extractChatParticipantKey(rawList[0]);
 
-  // 1. Direct Cloud Firestore onSnapshot
+  const sourceDocs: Record<string, Record<string, any>> = {
+    rtdb: {},
+    fs: {},
+    bc: {}
+  };
+  const unsubs: (() => void)[] = [];
+
+  const recomputeAndPublish = () => {
+    const combinedDocs = new Map<string, any>();
+    ['fs', 'rtdb', 'bc'].forEach((sourceKey) => {
+      const mapObj = sourceDocs[sourceKey] || {};
+      Object.entries(mapObj).forEach(([docId, c]) => {
+        if (!c || !c.lastMessage) return;
+        const existing = combinedDocs.get(docId);
+        if (!existing || (c.updatedAt || 0) >= (existing.updatedAt || 0)) {
+          combinedDocs.set(docId, c);
+        }
+      });
+    });
+
+    const dedupByPeer = new Map<string, ConversationItem>();
+    combinedDocs.forEach((c, docId) => {
+      const threadStr = String(c.threadId || docId);
+      const itemCallerKey = extractChatParticipantKey(c.callerPhone || c.callerId || '');
+      const itemHostKey = extractChatParticipantKey(c.hostPhone || c.sakhiId || '');
+
+      let isDirectCallerMatch = Boolean(c.callerId && callerRawSet.has(c.callerId));
+      let isReverseMatch = false;
+
+      callerKeySet.forEach((ck) => {
+        if (itemCallerKey === ck || threadStr.endsWith(`_${ck}`)) {
+          isDirectCallerMatch = true;
+        }
+        if (
+          itemHostKey === ck ||
+          threadStr.startsWith(`chat_${ck}_`) ||
+          threadStr.startsWith(`${ck}_`)
+        ) {
+          isReverseMatch = true;
+        }
+      });
+
+      if (isDirectCallerMatch || isReverseMatch) {
+        const peerKey = isDirectCallerMatch
+          ? (itemHostKey || c.sakhiId || docId)
+          : (itemCallerKey || c.callerId || docId);
+
+        if (callerKeySet.has(peerKey) && itemHostKey === itemCallerKey) return;
+
+        const item: ConversationItem = {
+          threadId: c.threadId || docId,
+          sakhiId: isDirectCallerMatch ? (c.sakhiId || `sakhi-user-${peerKey}`) : (c.callerId || `sakhi-user-${peerKey}`),
+          sakhiName: isDirectCallerMatch ? (c.sakhiName || 'Sakhi') : (c.callerName || c.sakhiName || 'Sakhi'),
+          sakhiAvatar: c.sakhiAvatar,
+          hostPhone: isDirectCallerMatch ? (c.hostPhone || peerKey) : (c.callerPhone || peerKey),
+          callerId: isDirectCallerMatch ? (c.callerId || `caller_${primaryCallerKey}`) : (`caller_${primaryCallerKey}`),
+          callerName: isDirectCallerMatch ? (c.callerName || 'Caller') : (c.sakhiName || 'Caller'),
+          callerPhone: primaryCallerKey,
+          lastMessage: c.lastMessage || '',
+          lastSender: c.lastSender || 'sakhi',
+          updatedAt: c.updatedAt || Date.now(),
+          unreadCount: c.unreadCount || 0
+        };
+
+        const existing = dedupByPeer.get(peerKey);
+        if (!existing || (item.updatedAt || 0) > (existing.updatedAt || 0)) {
+          dedupByPeer.set(peerKey, item);
+        }
+      }
+    });
+
+    const list = Array.from(dedupByPeer.values()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    onUpdate(list);
+  };
+
+  // 1. BroadcastChannel listener
+  if (chatBroadcastChannel) {
+    const bcHandler = (ev: MessageEvent) => {
+      const payload = ev.data;
+      if (payload?.type === 'NEW_MESSAGE' && payload.meta && payload.threadId) {
+        const prev = sourceDocs.bc[payload.threadId] || {};
+        sourceDocs.bc[payload.threadId] = {
+          ...prev,
+          ...payload.meta,
+          unreadCount: (prev.unreadCount || 0) + 1
+        };
+        recomputeAndPublish();
+      } else if (payload?.type === 'MARK_READ' && payload.threadId) {
+        if (sourceDocs.bc[payload.threadId]) {
+          sourceDocs.bc[payload.threadId].unreadCount = 0;
+        }
+        if (sourceDocs.rtdb[payload.threadId]) {
+          sourceDocs.rtdb[payload.threadId].unreadCount = 0;
+        }
+        if (sourceDocs.fs[payload.threadId]) {
+          sourceDocs.fs[payload.threadId].unreadCount = 0;
+        }
+        recomputeAndPublish();
+      }
+    };
+    chatBroadcastChannel.addEventListener('message', bcHandler);
+    unsubs.push(() => chatBroadcastChannel.removeEventListener('message', bcHandler));
+  }
+
+  // 2. Firebase Realtime Database (RTDB) listener
+  if (rtdb) {
+    try {
+      const metaRef = rtdbRef(rtdb, RTDB_CONVERSATIONS_META);
+      const unsubRtdb = rtdbOnValue(
+        metaRef,
+        (snapshot) => {
+          const val = snapshot.val();
+          const nextMap: Record<string, any> = {};
+          if (val && typeof val === 'object') {
+            Object.entries(val).forEach(([docId, c]: [string, any]) => {
+              if (c && c.lastMessage) {
+                nextMap[docId] = c;
+              }
+            });
+          }
+          sourceDocs.rtdb = nextMap;
+          recomputeAndPublish();
+        },
+        (err) => {
+          console.warn('RTDB user conversations listener note:', err);
+        }
+      );
+      unsubs.push(unsubRtdb);
+    } catch (e) {
+      console.warn('Error subscribing to RTDB user conversations:', e);
+    }
+  }
+
+  // 3. Direct Cloud Firestore onSnapshot
   if (isFirebaseConfigured() && db) {
     try {
       const convCol = collection(db, CONVERSATIONS_COLLECTION);
-      const unsub = onSnapshot(
+      const unsubFs = onSnapshot(
         convCol,
         (snapshot) => {
-          const dedupByPeer = new Map<string, ConversationItem>();
+          const nextMap: Record<string, any> = {};
           snapshot.forEach((docSnap) => {
             const c = docSnap.data() as any;
             if (!c || !c.lastMessage) return;
-
-            const docId = docSnap.id;
-            const threadStr = String(c.threadId || docId);
-            const itemCallerKey = extractChatParticipantKey(c.callerPhone || c.callerId || '');
-            const itemHostKey = extractChatParticipantKey(c.hostPhone || c.sakhiId || '');
-
-            let isDirectCallerMatch = Boolean(c.callerId && callerRawSet.has(c.callerId));
-            let isReverseMatch = false;
-
-            callerKeySet.forEach((ck) => {
-              if (itemCallerKey === ck || threadStr.endsWith(`_${ck}`)) {
-                isDirectCallerMatch = true;
-              }
-              if (
-                itemHostKey === ck ||
-                threadStr.startsWith(`chat_${ck}_`) ||
-                threadStr.startsWith(`${ck}_`)
-              ) {
-                isReverseMatch = true;
-              }
-            });
-
-            if (isDirectCallerMatch || isReverseMatch) {
-              const peerKey = isDirectCallerMatch
-                ? (itemHostKey || c.sakhiId || docId)
-                : (itemCallerKey || c.callerId || docId);
-
-              if (callerKeySet.has(peerKey) && itemHostKey === itemCallerKey) return;
-
-              const item: ConversationItem = {
-                threadId: c.threadId || docId,
-                sakhiId: isDirectCallerMatch ? (c.sakhiId || `sakhi-user-${peerKey}`) : (c.callerId || `sakhi-user-${peerKey}`),
-                sakhiName: isDirectCallerMatch ? (c.sakhiName || 'Sakhi') : (c.callerName || c.sakhiName || 'Sakhi'),
-                sakhiAvatar: c.sakhiAvatar,
-                callerId: isDirectCallerMatch ? (c.callerId || `caller_${primaryCallerKey}`) : (`caller_${primaryCallerKey}`),
-                callerName: isDirectCallerMatch ? (c.callerName || 'Caller') : (c.sakhiName || 'Caller'),
-                callerPhone: primaryCallerKey,
-                lastMessage: c.lastMessage || '',
-                lastSender: c.lastSender || 'sakhi',
-                updatedAt: c.updatedAt || Date.now(),
-                unreadCount: c.unreadCount || 0
-              };
-
-              const existing = dedupByPeer.get(peerKey);
-              if (!existing || (item.updatedAt || 0) > (existing.updatedAt || 0)) {
-                dedupByPeer.set(peerKey, item);
-              }
-            }
+            nextMap[docSnap.id] = c;
           });
-
-          const list = Array.from(dedupByPeer.values()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-          onUpdate(list);
+          sourceDocs.fs = nextMap;
+          recomputeAndPublish();
         },
-        (err) => {
-          console.warn('Firestore user conversations listener notice:', err);
-        }
+        () => {}
       );
-
-      return unsub;
+      unsubs.push(unsubFs);
     } catch (err) {
       console.warn('Error subscribing to user conversations:', err);
     }
   }
 
-  // 2. Fallback to custom backend ONLY if configured
+  // 4. Fallback to custom backend ONLY if configured
   if (hasExternalApiBackend() && primaryCallerKey) {
     const baseUrl = getApiBaseUrl();
     const fetchConversations = async () => {
@@ -634,8 +919,14 @@ export const subscribeToUserConversations = (
 
     fetchConversations();
     const intervalId = window.setInterval(fetchConversations, 1500);
-    return () => clearInterval(intervalId);
+    unsubs.push(() => clearInterval(intervalId));
   }
 
-  return () => {};
+  return () => {
+    unsubs.forEach((u) => {
+      try {
+        u();
+      } catch {}
+    });
+  };
 };

@@ -1,5 +1,6 @@
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
-import { db, isFirebaseConfigured } from './firebase';
+import { ref as rtdbRef, get as rtdbGet, set as rtdbSet, update as rtdbUpdate } from 'firebase/database';
+import { db, rtdb, isFirebaseConfigured } from './firebase';
 import { HostProfile, HostAccountRecord } from '../types';
 import { getApiBaseUrl, hasExternalApiBackend } from './apiConfig';
 import { isProfileNameUnique } from './userAuthSync';
@@ -69,6 +70,16 @@ export const checkHostPhoneExists = async (phoneOrEmail: string): Promise<boolea
   if (isEmail && !normalized) return false;
 
   const docId = isEmail ? normalized.replace(/[^a-z0-9]/g, '_') : normalized;
+
+  // 0. Check Firebase Realtime Database (RTDB) first
+  if (rtdb) {
+    try {
+      const rtdbSnap = await rtdbGet(rtdbRef(rtdb, `${HOST_ACCOUNTS_COLLECTION}/${docId}`));
+      if (rtdbSnap.exists()) {
+        return true;
+      }
+    } catch {}
+  }
 
   // 1. Check Cloud Firestore if configured
   if (isFirebaseConfigured() && db) {
@@ -246,10 +257,26 @@ export const registerHostWithPhone = async (params: {
     incomeHistory: []
   };
 
+  const accountDocId = isEmail ? normalized.replace(/[^a-z0-9]/g, '_') : normalized;
+
+  // Save to Firebase Realtime Database (RTDB)
+  if (rtdb) {
+    try {
+      await rtdbSet(rtdbRef(rtdb, `${HOST_ACCOUNTS_COLLECTION}/${accountDocId}`), newAccount);
+      await rtdbSet(rtdbRef(rtdb, `${HOSTS_COLLECTION}/${hostId}`), {
+        ...newProfile,
+        status: 'online',
+        isVerified: true,
+        lastActiveAt: Date.now()
+      });
+    } catch (e) {
+      console.warn('Error saving host to RTDB:', e);
+    }
+  }
+
   // Save to Firestore
   if (isFirebaseConfigured() && db) {
     try {
-      const accountDocId = isEmail ? normalized.replace(/[^a-z0-9]/g, '_') : normalized;
       await setDoc(doc(db, HOST_ACCOUNTS_COLLECTION, accountDocId), newAccount, { merge: true });
       await setDoc(
         doc(db, HOSTS_COLLECTION, hostId),
@@ -374,8 +401,18 @@ export const loginHostWithCredentials = async (
 
   const accountDocId = isEmail ? normalized.replace(/[^a-z0-9]/g, '_') : normalized;
 
-  // 2. Check Cloud Firestore if configured
-  if (isFirebaseConfigured() && db) {
+  // 2a. Check Firebase Realtime Database (RTDB) first
+  if (rtdb) {
+    try {
+      const rtdbSnap = await rtdbGet(rtdbRef(rtdb, `${HOST_ACCOUNTS_COLLECTION}/${accountDocId}`));
+      if (rtdbSnap.exists()) {
+        account = rtdbSnap.val() as HostAccountRecord;
+      }
+    } catch {}
+  }
+
+  // 2b. Check Cloud Firestore if configured
+  if (!account && isFirebaseConfigured() && db) {
     try {
       const snap = await getDoc(doc(db, HOST_ACCOUNTS_COLLECTION, accountDocId));
       if (snap.exists()) {
@@ -408,7 +445,20 @@ export const loginHostWithCredentials = async (
 
   // Fetch host profile and mark online
   let profile: HostProfile | null = null;
-  if (isFirebaseConfigured() && db && account.hostId) {
+  if (rtdb && account.hostId) {
+    try {
+      const rtdbHostSnap = await rtdbGet(rtdbRef(rtdb, `${HOSTS_COLLECTION}/${account.hostId}`));
+      if (rtdbHostSnap.exists()) {
+        profile = { ...(rtdbHostSnap.val() as HostProfile), status: 'online', isVerified: true };
+        await rtdbUpdate(rtdbRef(rtdb, `${HOSTS_COLLECTION}/${account.hostId}`), {
+          status: 'online',
+          lastActiveAt: Date.now()
+        });
+      }
+    } catch {}
+  }
+
+  if (!profile && isFirebaseConfigured() && db && account.hostId) {
     try {
       const hostRef = doc(db, HOSTS_COLLECTION, account.hostId);
       const hostSnap = await getDoc(hostRef);
@@ -448,7 +498,20 @@ export const recoverHostPassword = async (
     } catch (err) {}
   }
 
-  // 2. Cloud Firestore update
+  // 2a. Firebase Realtime Database update
+  if (rtdb) {
+    try {
+      const rtdbSnap = await rtdbGet(rtdbRef(rtdb, `${HOST_ACCOUNTS_COLLECTION}/${normalized}`));
+      if (rtdbSnap.exists()) {
+        await rtdbUpdate(rtdbRef(rtdb, `${HOST_ACCOUNTS_COLLECTION}/${normalized}`), {
+          password: newPassword,
+          updatedAt: Date.now()
+        });
+      }
+    } catch {}
+  }
+
+  // 2b. Cloud Firestore update
   if (isFirebaseConfigured() && db) {
     try {
       const docRef = doc(db, HOST_ACCOUNTS_COLLECTION, normalized);
@@ -507,7 +570,17 @@ export const getHostAccountByPhone = async (
     } catch (err) {}
   }
 
-  // 2. Check Cloud Firestore
+  // 2a. Check Firebase Realtime Database (RTDB)
+  if (rtdb) {
+    try {
+      const rtdbSnap = await rtdbGet(rtdbRef(rtdb, `${HOST_ACCOUNTS_COLLECTION}/${normalized}`));
+      if (rtdbSnap.exists()) {
+        return rtdbSnap.val() as HostAccountRecord;
+      }
+    } catch {}
+  }
+
+  // 2b. Check Cloud Firestore
   if (isFirebaseConfigured() && db) {
     try {
       const snap = await getDoc(doc(db, HOST_ACCOUNTS_COLLECTION, normalized));

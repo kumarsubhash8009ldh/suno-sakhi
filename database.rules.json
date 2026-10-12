@@ -1,0 +1,18 @@
+{
+  "rules": {
+    ".read": true,
+    ".write": true,
+    "calls": {
+      ".indexOn": ["status", "sakhiId", "sakhiPhone", "callerId", "createdAt"]
+    },
+    "conversations": {
+      ".indexOn": ["hostPhone", "callerPhone", "sakhiId", "callerId", "updatedAt"]
+    },
+    "hosts": {
+      ".indexOn": ["status", "phone", "email"]
+    },
+    "user_accounts": {
+      ".indexOn": ["status", "phone", "email"]
+    }
+  }
+}

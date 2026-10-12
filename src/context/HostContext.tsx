@@ -91,7 +91,12 @@ interface HostContextType {
   }) => Promise<{ success: boolean; message: string; record?: HostPayoutRecord }>;
   // Chat & Messaging
   messages: Record<string, ChatMessage[]>;
-  sendMessage: (sakhiId: string, sakhiName: string, text: string, companionPhone?: string) => { success: boolean; error?: string };
+  sendMessage: (
+    sakhiId: string,
+    sakhiName: string,
+    text: string,
+    companionPhone?: string
+  ) => { success: boolean; error?: string; message?: ChatMessage };
   sendHostManualReply: (
     threadId: string,
     callerId: string,
@@ -499,7 +504,18 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
     ) {
       saveHostProfileToCloud(hostProfile);
     }
-  }, [hostProfile, isHostLoggedIn, userRole]);
+  }, [
+    hostProfile.id,
+    hostProfile.name,
+    hostProfile.phone,
+    (hostProfile as any).email,
+    hostProfile.avatar,
+    hostProfile.status,
+    hostProfile.city,
+    hostProfile.bio,
+    isHostLoggedIn,
+    userRole
+  ]);
 
   useEffect(() => {
     localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages));
@@ -536,6 +552,35 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         if (cloudData.referredCallers && Array.isArray(cloudData.referredCallers)) {
           merged.referredCallers = cloudData.referredCallers;
+        }
+        const prevSnap = JSON.stringify({
+          id: prev.id,
+          name: prev.name,
+          status: prev.status,
+          avatar: prev.avatar,
+          pendingPayout: prev.pendingPayout,
+          netIncome: prev.netIncome,
+          grossRevenue: prev.grossRevenue,
+          referralIncome: prev.referralIncome,
+          totalCalls: prev.totalCalls,
+          totalMessagesReceived: prev.totalMessagesReceived,
+          historyLen: prev.incomeHistory?.length || 0
+        });
+        const nextSnap = JSON.stringify({
+          id: merged.id,
+          name: merged.name,
+          status: merged.status,
+          avatar: merged.avatar,
+          pendingPayout: merged.pendingPayout,
+          netIncome: merged.netIncome,
+          grossRevenue: merged.grossRevenue,
+          referralIncome: merged.referralIncome,
+          totalCalls: merged.totalCalls,
+          totalMessagesReceived: merged.totalMessagesReceived,
+          historyLen: merged.incomeHistory?.length || 0
+        });
+        if (prevSnap === nextSnap) {
+          return prev;
         }
         localStorage.setItem(HOST_STORAGE_KEY, JSON.stringify(merged));
         return merged;
@@ -911,7 +956,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
     sakhiName: string,
     text: string,
     companionPhoneArg?: string
-  ): { success: boolean; error?: string } => {
+  ): { success: boolean; error?: string; message?: ChatMessage } => {
     const trimmed = text.trim();
     if (!trimmed) {
       return { success: false, error: 'Message cannot be empty.' };
@@ -985,7 +1030,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const effectiveSakhiAvatar = isHost ? hostProfile.avatar : (directChatSakhi?.avatar || '');
 
     const newCallerMsg: ChatMessage = {
-      id: 'msg-' + Date.now(),
+      id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       sakhiId: effectiveSakhiId,
       callerId: effectiveCallerId,
       callerName: effectiveCallerName,
@@ -1001,8 +1046,8 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Update local state
     setMessages((prev) => ({
       ...prev,
-      [sakhiId]: [...(prev[sakhiId] || []), newCallerMsg],
-      [threadId]: [...(prev[threadId] || []), newCallerMsg]
+      [sakhiId]: [...(prev[sakhiId] || []).filter((m) => m.id !== newCallerMsg.id), newCallerMsg],
+      [threadId]: [...(prev[threadId] || []).filter((m) => m.id !== newCallerMsg.id), newCallerMsg]
     }));
 
     // Sync message to backend server conversation thread
@@ -1042,7 +1087,7 @@ export const HostProvider: React.FC<{ children: React.ReactNode }> = ({ children
       sounds.playCoinSound();
     }
 
-    return { success: true };
+    return { success: true, message: newCallerMsg };
   };
 
   /**

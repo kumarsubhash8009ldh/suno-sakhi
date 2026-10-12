@@ -1,6 +1,13 @@
 import { useState, useEffect } from 'react';
 import { doc, getDoc, setDoc, collection, onSnapshot } from 'firebase/firestore';
-import { db, isFirebaseConfigured } from './firebase';
+import {
+  ref as rtdbRef,
+  get as rtdbGet,
+  set as rtdbSet,
+  update as rtdbUpdate,
+  onValue as rtdbOnValue
+} from 'firebase/database';
+import { db, rtdb, isFirebaseConfigured } from './firebase';
 import { getApiBaseUrl, hasExternalApiBackend } from './apiConfig';
 import { isPhoneBanned } from './safetyService';
 import { HostProfile } from '../types';
@@ -11,6 +18,8 @@ const HOST_ACCOUNTS_COLLECTION = 'host_accounts';
 const CURRENT_USER_KEY = 'sunosakhi_current_user';
 const ALL_USERS_KEY = 'sunosakhi_registered_users';
 const STORAGE_KEY_USER_ID = 'sunosakhi_user_id';
+
+const lastFirestoreUserPresence: Record<string, { isOnline: boolean; time: number }> = {};
 
 // Automatic purge of all old user and host IDs (Strict real accounts only)
 if (typeof window !== 'undefined') {
@@ -87,22 +96,33 @@ export const saveUserToCloud = async (user: UserAccount): Promise<boolean> => {
 
   saveUserToLocalRegistry(sanitizedUser);
 
+  const cloudPayload = {
+    ...sanitizedUser,
+    status: sanitizedUser.status,
+    isOnline: true,
+    lastActiveAt: Date.now(),
+    lastLoginAt: Date.now()
+  };
+
+  // 1. Save to Firebase Realtime Database (RTDB) immediately (<25ms)
+  if (rtdb) {
+    try {
+      await rtdbUpdate(rtdbRef(rtdb, `${USER_ACCOUNTS_COLLECTION}/${docKey}`), cloudPayload);
+    } catch (e) {
+      console.warn('Could not save user to RTDB:', e);
+    }
+  }
+
+  // 2. Save to Cloud Firestore
   if (isFirebaseConfigured() && db) {
     try {
-      await setDoc(doc(db, USER_ACCOUNTS_COLLECTION, docKey), {
-        ...sanitizedUser,
-        status: sanitizedUser.status,
-        isOnline: true,
-        lastActiveAt: Date.now(),
-        lastLoginAt: Date.now()
-      }, { merge: true });
-      console.log('✅ Caller profile saved to Cloud Firestore:', docKey);
+      await setDoc(doc(db, USER_ACCOUNTS_COLLECTION, docKey), cloudPayload, { merge: true });
       return true;
     } catch (err) {
       console.warn('Could not save user to Firestore:', err);
     }
   }
-  return false;
+  return Boolean(rtdb);
 };
 
 export const updateUserOnlinePresence = async (isOnline: boolean): Promise<boolean> => {
@@ -150,28 +170,41 @@ export const updateUserOnlinePresence = async (isOnline: boolean): Promise<boole
     }
   } catch {}
 
-  if (isFirebaseConfigured() && db) {
+  const presencePayload = {
+    id: current.id || `caller-${docKey}`,
+    phone: cleanPhone,
+    email: em || '',
+    name: current.name || 'Caller',
+    avatar: current.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
+    isOnline,
+    status: isOnline ? 'online' : 'offline',
+    lastActiveAt: Date.now()
+  };
+
+  // 1. Update Firebase Realtime Database immediately (<25ms, unlimited heartbeats)
+  if (rtdb) {
     try {
-      await setDoc(
-        doc(db, USER_ACCOUNTS_COLLECTION, docKey),
-        {
-          id: current.id || `caller-${docKey}`,
-          phone: cleanPhone,
-          email: em || '',
-          name: current.name || 'Caller',
-          avatar: current.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
-          isOnline,
-          status: isOnline ? 'online' : 'offline',
-          lastActiveAt: Date.now()
-        },
-        { merge: true }
-      );
-      return true;
-    } catch (err) {
-      console.warn('Could not update user presence:', err);
+      await rtdbUpdate(rtdbRef(rtdb, `${USER_ACCOUNTS_COLLECTION}/${docKey}`), presencePayload);
+    } catch (e) {
+      console.warn('Could not update user presence in RTDB:', e);
     }
   }
-  return false;
+
+  // 2. Update Cloud Firestore (Throttled: only on status change or every 5 minutes)
+  if (isFirebaseConfigured() && db) {
+    const prev = lastFirestoreUserPresence[docKey];
+    const shouldWriteFs = !prev || prev.isOnline !== isOnline || Date.now() - prev.time > 5 * 60 * 1000;
+    if (shouldWriteFs) {
+      lastFirestoreUserPresence[docKey] = { isOnline, time: Date.now() };
+      try {
+        await setDoc(doc(db, USER_ACCOUNTS_COLLECTION, docKey), presencePayload, { merge: true });
+        return true;
+      } catch (err) {
+        console.warn('Could not update user presence:', err);
+      }
+    }
+  }
+  return true;
 };
 
 export const syncUserToServer = async (user: UserAccount): Promise<boolean> => {
@@ -282,10 +315,23 @@ export const checkUserPhoneExists = async (identifier: string): Promise<boolean>
     } catch (err) {}
   }
 
+  const docId = parsed.type === 'email' ? parsed.value.replace(/[^a-z0-9]/g, '_') : parsed.value;
+
+  // 2a. Check Firebase Realtime Database (RTDB) first
+  if (rtdb) {
+    try {
+      const rtdbSnap = await rtdbGet(rtdbRef(rtdb, `${USER_ACCOUNTS_COLLECTION}/${docId}`));
+      if (rtdbSnap.exists()) {
+        const cloudUser = rtdbSnap.val() as UserAccount;
+        saveUserToLocalRegistry(cloudUser);
+        return true;
+      }
+    } catch {}
+  }
+
   // 3. Check Cloud Firestore if configured
   if (isFirebaseConfigured() && db) {
     try {
-      const docId = parsed.type === 'email' ? parsed.value.replace(/[^a-z0-9]/g, '_') : parsed.value;
       const snap = await getDoc(doc(db, USER_ACCOUNTS_COLLECTION, docId));
       if (snap.exists()) {
         const cloudUser = snap.data() as UserAccount;
@@ -396,6 +442,18 @@ export const getUserAccount = async (phone: string): Promise<UserAccount | null>
         }
       }
     } catch (err) {}
+  }
+
+  // 2b. Check Firebase Realtime Database (RTDB)
+  if (rtdb) {
+    try {
+      const rtdbSnap = await rtdbGet(rtdbRef(rtdb, `${USER_ACCOUNTS_COLLECTION}/${normalized}`));
+      if (rtdbSnap.exists()) {
+        const cloudUser = rtdbSnap.val() as UserAccount;
+        saveUserToLocalRegistry(cloudUser);
+        return cloudUser;
+      }
+    } catch {}
   }
 
   // 3. Check Firestore
@@ -525,10 +583,18 @@ export const registerNewUser = async (
     } catch (err) {}
   }
 
-  // 2. Save to Firestore
+  const docKey = cleanPhone || cleanEmail.replace(/[^a-z0-9]/g, '_');
+
+  // 2a. Save to Firebase Realtime Database (RTDB)
+  if (rtdb) {
+    try {
+      await rtdbSet(rtdbRef(rtdb, `${USER_ACCOUNTS_COLLECTION}/${docKey}`), newAccount);
+    } catch {}
+  }
+
+  // 2b. Save to Firestore
   if (isFirebaseConfigured() && db) {
     try {
-      const docKey = cleanPhone || cleanEmail.replace(/[^a-z0-9]/g, '_');
       await setDoc(doc(db, USER_ACCOUNTS_COLLECTION, docKey), newAccount);
     } catch (err) {}
   }
@@ -547,7 +613,7 @@ export const registerNewUser = async (
 };
 
 /**
- * Search and resolve Host account across Firestore, LocalStorage and Backend
+ * Search and resolve Host account across RTDB, Firestore, LocalStorage and Backend
  */
 export const findHostAccount = async (identifier: string): Promise<any | null> => {
   const parsed = parseUserIdentifier(identifier);
@@ -581,16 +647,41 @@ export const findHostAccount = async (identifier: string): Promise<any | null> =
     }
   } catch {}
 
+  const candidates = [
+    cleanPhone ? `sakhi-user-${cleanPhone}` : '',
+    cleanPhone,
+    cleanEmail ? `sakhi-host-${cleanEmail.replace(/[^a-z0-9]/g, '_')}` : '',
+    cleanEmail ? cleanEmail.replace(/[^a-z0-9]/g, '_') : ''
+  ].filter(Boolean);
+
+  // 2b. Check Firebase Realtime Database (RTDB) 'hosts' and 'host_accounts'
+  if (rtdb) {
+    try {
+      for (const docId of candidates) {
+        const snap = await rtdbGet(rtdbRef(rtdb, `${HOSTS_COLLECTION}/${docId}`));
+        if (snap.exists()) {
+          return { id: docId, ...snap.val() };
+        }
+      }
+      for (const docId of candidates) {
+        const snap = await rtdbGet(rtdbRef(rtdb, `${HOST_ACCOUNTS_COLLECTION}/${docId}`));
+        if (snap.exists()) {
+          const acc = snap.val() as any;
+          if (acc.hostId) {
+            const hSnap = await rtdbGet(rtdbRef(rtdb, `${HOSTS_COLLECTION}/${acc.hostId}`));
+            if (hSnap.exists()) {
+              return { id: acc.hostId, ...hSnap.val() };
+            }
+          }
+          return acc;
+        }
+      }
+    } catch {}
+  }
+
   // 3. Check Firestore 'hosts' and 'host_accounts' collection
   if (isFirebaseConfigured() && db) {
     try {
-      const candidates = [
-        cleanPhone ? `sakhi-user-${cleanPhone}` : '',
-        cleanPhone,
-        cleanEmail ? `sakhi-host-${cleanEmail.replace(/[^a-z0-9]/g, '_')}` : '',
-        cleanEmail ? cleanEmail.replace(/[^a-z0-9]/g, '_') : ''
-      ].filter(Boolean);
-
       for (const docId of candidates) {
         const snap = await getDoc(doc(db, HOSTS_COLLECTION, docId));
         if (snap.exists()) {
@@ -1249,7 +1340,70 @@ export const subscribeToAllRealCallers = (
     window.addEventListener('storage', handleLocalCallerSync);
   }
 
-  // 2. Real-Time Cloud Firestore Listener on user_accounts
+  const parseRawCallerRecord = (docId: string, data: any): UserAccount | null => {
+    if (!data) return null;
+    const rawDocDigits = String(docId || '').replace(/\D/g, '');
+    const phoneDigits = rawDocDigits.length === 10 ? rawDocDigits : '';
+    const rawDataPhone = data.phone ? String(data.phone).replace(/\D/g, '') : '';
+    const phone = rawDataPhone.length >= 10 ? rawDataPhone.slice(-10) : phoneDigits;
+    const email = data.email || (docId.includes('@') ? docId : '');
+    const cleanPhone = phone;
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    if (cleanPhone.length !== 10 && !(cleanEmail && cleanEmail.includes('@'))) {
+      return null;
+    }
+    const lastActive = Number(data.lastActiveAt || data.lastLoginAt || 0);
+    const isUserOnline = data.status !== 'blocked' && data.status !== 'offline' && data.isOnline !== false;
+    const normalizedCallerId =
+      data.id && !String(data.id).startsWith('sakhi-') && !String(data.id).startsWith('host_')
+        ? data.id
+        : 'caller-' + (cleanPhone || cleanEmail.replace(/[^a-z0-9]/g, '_'));
+
+    return {
+      id: normalizedCallerId,
+      phone: cleanPhone,
+      email: cleanEmail,
+      name: data.name && data.name.trim() ? data.name.trim() : 'Caller',
+      avatar: data.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
+      createdAt: data.createdAt || Date.now(),
+      lastLoginAt: data.lastLoginAt || lastActive || Date.now(),
+      referredBy: data.referredBy || '',
+      status: data.status === 'blocked' ? 'blocked' : (isUserOnline ? 'online' : 'offline'),
+      isOnline: isUserOnline,
+      balance: typeof data.balance === 'number' ? data.balance : 20.0
+    };
+  };
+
+  // 2a. Real-Time Firebase Realtime Database (RTDB) Listener on user_accounts (<25ms)
+  let rtdbUnsub: (() => void) | null = null;
+  if (rtdb) {
+    try {
+      const usersRef = rtdbRef(rtdb, USER_ACCOUNTS_COLLECTION);
+      rtdbUnsub = rtdbOnValue(
+        usersRef,
+        (snapshot) => {
+          const val = snapshot.val();
+          if (val && typeof val === 'object') {
+            Object.entries(val).forEach(([docId, data]: [string, any]) => {
+              const user = parseRawCallerRecord(docId, data);
+              if (user) {
+                const key = user.phone || user.email || user.id;
+                callersMap.set(key, user);
+              }
+            });
+          }
+          publish();
+        },
+        (err) => {
+          console.warn('RTDB user_accounts snapshot note:', err);
+        }
+      );
+    } catch (e) {
+      console.warn('Could not listen to RTDB user_accounts:', e);
+    }
+  }
+
+  // 2b. Real-Time Cloud Firestore Listener on user_accounts
   let firestoreUnsub: (() => void) | null = null;
   if (isFirebaseConfigured() && db) {
     try {
@@ -1257,102 +1411,16 @@ export const subscribeToAllRealCallers = (
       firestoreUnsub = onSnapshot(
         colRef,
         (snapshot) => {
-          const currentSnapshotMap = new Map<string, UserAccount>();
           snapshot.forEach((docSnap) => {
-            const data = docSnap.data() as any;
-            if (data) {
-              const docId = docSnap.id;
-              const rawDocDigits = docId.replace(/\D/g, '');
-              const phoneDigits = rawDocDigits.length === 10 ? rawDocDigits : '';
-              const rawDataPhone = data.phone ? String(data.phone).replace(/\D/g, '') : '';
-              const phone = rawDataPhone.length >= 10 ? rawDataPhone.slice(-10) : phoneDigits;
-              const email = data.email || (docId.includes('@') ? docId : '');
-              const cleanPhone = phone;
-              const cleanEmail = String(email || '').trim().toLowerCase();
-              if (cleanPhone.length === 10 || (cleanEmail && cleanEmail.includes('@'))) {
-                const lastActive = Number(data.lastActiveAt || data.lastLoginAt || 0);
-                // Rule: Any logged-in ID shows as Online; only explicitly logged-out ID ('offline') shows as Offline.
-                const isUserOnline = data.status !== 'blocked' && data.status !== 'offline' && data.isOnline !== false;
-                const normalizedCallerId =
-                  data.id && !String(data.id).startsWith('sakhi-') && !String(data.id).startsWith('host_')
-                    ? data.id
-                    : 'caller-' + (cleanPhone || cleanEmail.replace(/[^a-z0-9]/g, '_'));
-
-                const user: UserAccount = {
-                  id: normalizedCallerId,
-                  phone: cleanPhone,
-                  email: cleanEmail,
-                  name: data.name && data.name.trim() ? data.name.trim() : 'Caller',
-                  avatar: data.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
-                  createdAt: data.createdAt || Date.now(),
-                  lastLoginAt: data.lastLoginAt || lastActive || Date.now(),
-                  referredBy: data.referredBy || '',
-                  status: data.status === 'blocked' ? 'blocked' : (isUserOnline ? 'online' : 'offline'),
-                  isOnline: isUserOnline,
-                  balance: typeof data.balance === 'number' ? data.balance : 20.0
-                };
-                const key = cleanPhone || cleanEmail || user.id;
-                currentSnapshotMap.set(key, user);
-              }
+            const user = parseRawCallerRecord(docSnap.id, docSnap.data());
+            if (user) {
+              const key = user.phone || user.email || user.id;
+              callersMap.set(key, user);
             }
           });
-
-          injectLoggedInCaller(currentSnapshotMap);
-
-          // Also merge any real caller from conversations cache in-memory
-          try {
-            const rawConvs = localStorage.getItem('sunosakhi_conversations_cache');
-            if (rawConvs) {
-              const cList = JSON.parse(rawConvs);
-              if (Array.isArray(cList)) {
-                cList.forEach((c: any) => {
-                  const cp = String(c.callerPhone || c.callerId || '').replace(/\D/g, '').slice(-10);
-                  if (cp.length === 10 && !currentSnapshotMap.has(cp)) {
-                    currentSnapshotMap.set(cp, {
-                      id: `caller-${cp}`,
-                      phone: cp,
-                      name: c.callerName && c.callerName !== 'Caller' ? c.callerName : 'Caller',
-                      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
-                      createdAt: c.updatedAt || Date.now(),
-                      lastLoginAt: c.updatedAt || Date.now(),
-                      status: 'online',
-                      isOnline: true,
-                      balance: 20.0
-                    });
-                  }
-                });
-              }
-            }
-          } catch {}
-
-          callersMap.clear();
-          currentSnapshotMap.forEach((v, k) => callersMap.set(k, v));
-
-          const cleanList = Array.from(currentSnapshotMap.values()).filter((u) => {
-            const p = (u.phone || '').replace(/\D/g, '');
-            const em = (u.email || '').trim().toLowerCase();
-            const hasPhone = p.length >= 10;
-            const hasEmail = Boolean(em && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em));
-            if (!hasPhone && !hasEmail) return false;
-            if ((u as any).role === 'host') {
-              return false;
-            }
-            return true;
-          });
-
-          try {
-            const cacheObj: Record<string, UserAccount> = {};
-            cleanList.forEach((u) => { cacheObj[u.id] = u; });
-            localStorage.setItem(ALL_USERS_KEY, JSON.stringify(cacheObj));
-          } catch {}
-
-          if (!isUnsubscribed) {
-            onUpdate(cleanList);
-          }
+          publish();
         },
-        (err) => {
-          console.warn('Firestore user_accounts snapshot note:', err);
-        }
+        () => {}
       );
     } catch (err) {
       console.warn('Could not listen to Firestore user_accounts:', err);
@@ -1388,6 +1456,7 @@ export const subscribeToAllRealCallers = (
 
   return () => {
     isUnsubscribed = true;
+    if (rtdbUnsub) rtdbUnsub();
     if (firestoreUnsub) firestoreUnsub();
     if (intervalId !== null) clearInterval(intervalId);
     if (typeof window !== 'undefined') {

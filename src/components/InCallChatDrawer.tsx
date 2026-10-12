@@ -128,20 +128,10 @@ export const InCallChatDrawer: React.FC<InCallChatDrawerProps> = ({ sakhi, isOpe
 
     const res = sendMessage(sakhi.id, sakhi.name, inputText, sakhi.phone);
     if (res.success) {
-      const optimisticMsg: ChatMessage = {
-        id: 'msg-' + Date.now(),
-        sakhiId: isHostViewer ? (hostProfile?.id || `sakhi-user-${hostPhone}`) : sakhi.id,
-        callerId: isHostViewer ? sakhi.id : `caller_${callerPhone}`,
-        callerName: isHostViewer ? sakhi.name : (session.name || 'You'),
-        sender: isHostViewer ? 'sakhi' : 'user',
-        senderId: myClientId,
-        text: inputText.trim(),
-        wordCount,
-        cost: isHostViewer ? 0 : MESSAGE_RATE,
-        timestamp: Date.now(),
-        status: 'sent'
-      };
-      setLiveMessages((prev) => [...prev, optimisticMsg]);
+      if (res.message) {
+        const sentMsg = res.message;
+        setLiveMessages((prev) => (prev.some((m) => m.id === sentMsg.id) ? prev : [...prev, sentMsg]));
+      }
       setInputText('');
     } else if (res.error) {
       setErrorMsg(res.error);

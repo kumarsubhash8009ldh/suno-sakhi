@@ -7,7 +7,14 @@ import {
   onSnapshot,
   arrayUnion
 } from 'firebase/firestore';
-import { db, isFirebaseConfigured } from './firebase';
+import {
+  ref as dbRef,
+  set as dbSet,
+  update as dbUpdate,
+  get as dbGet,
+  onValue as dbOnValue
+} from 'firebase/database';
+import { db, rtdb, isFirebaseConfigured } from './firebase';
 import { CallType, Sakhi } from '../types';
 
 export interface CallSessionDoc {
@@ -15,6 +22,8 @@ export interface CallSessionDoc {
   callerId: string;
   callerName: string;
   callerPhone?: string;
+  callerEmail?: string;
+  callerClientId?: string;
   sakhiId: string;
   sakhiPhone?: string;
   sakhiEmail?: string;
@@ -24,8 +33,8 @@ export interface CallSessionDoc {
   status: 'ringing' | 'connected' | 'rejected' | 'ended' | 'busy';
   offer?: any;
   answer?: any;
-  callerCandidates?: any[];
-  calleeCandidates?: any[];
+  callerCandidates?: any[] | Record<string, any>;
+  calleeCandidates?: any[] | Record<string, any>;
   createdAt: number;
   connectedAt?: number;
   endedAt?: number;
@@ -56,6 +65,76 @@ const ICE_SERVERS: RTCConfiguration = {
 };
 
 /**
+ * Unique per-tab/per-window client ID so a tab never rings for its own outbound call,
+ * while other tabs or devices ring immediately.
+ */
+const MY_SIGNALING_CLIENT_ID =
+  typeof window !== 'undefined'
+    ? (() => {
+        let cid = sessionStorage.getItem('sunosakhi_call_client_id');
+        if (!cid) {
+          cid = 'call_client_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now().toString(36);
+          sessionStorage.setItem('sunosakhi_call_client_id', cid);
+        }
+        return cid;
+      })()
+    : 'server_client';
+
+/**
+ * Instant 0ms local BroadcastChannel for multi-tab / same-device signaling alongside Cloud RTDB
+ */
+const callBroadcastChannel: BroadcastChannel | null =
+  typeof window !== 'undefined' && 'BroadcastChannel' in window
+    ? new BroadcastChannel('sunosakhi_realtime_calls_v2')
+    : null;
+
+const localCallSessionsCache = new Map<string, CallSessionDoc>();
+const localCallSubscribers = new Set<(callsMap: Map<string, CallSessionDoc>) => void>();
+
+function notifyLocalCallSubscribers(updatedDoc?: CallSessionDoc) {
+  if (updatedDoc && updatedDoc.id) {
+    const prev = localCallSessionsCache.get(updatedDoc.id) || ({} as CallSessionDoc);
+    const merged: CallSessionDoc = {
+      ...prev,
+      ...updatedDoc,
+      callerCandidates: {
+        ...(normalizeCandidatesMap(prev.callerCandidates)),
+        ...(normalizeCandidatesMap(updatedDoc.callerCandidates))
+      },
+      calleeCandidates: {
+        ...(normalizeCandidatesMap(prev.calleeCandidates)),
+        ...(normalizeCandidatesMap(updatedDoc.calleeCandidates))
+      }
+    };
+    localCallSessionsCache.set(updatedDoc.id, merged);
+  }
+  localCallSubscribers.forEach((cb) => {
+    try {
+      cb(localCallSessionsCache);
+    } catch {}
+  });
+}
+
+function broadcastCallUpdate(partialDoc: Partial<CallSessionDoc> & { id: string }) {
+  try {
+    const prev = localCallSessionsCache.get(partialDoc.id) || ({ id: partialDoc.id } as CallSessionDoc);
+    const merged = { ...prev, ...partialDoc } as CallSessionDoc;
+    notifyLocalCallSubscribers(merged);
+    if (callBroadcastChannel) {
+      callBroadcastChannel.postMessage({ type: 'CALL_UPDATE', doc: merged });
+    }
+  } catch {}
+}
+
+if (callBroadcastChannel) {
+  callBroadcastChannel.onmessage = (ev) => {
+    if (ev.data && ev.data.type === 'CALL_UPDATE' && ev.data.doc?.id) {
+      notifyLocalCallSubscribers(ev.data.doc as CallSessionDoc);
+    }
+  };
+}
+
+/**
  * Tracks all call IDs that this client has initiated, answered, rejected, or ended
  * so they can NEVER reappear as ghost incoming calls.
  */
@@ -79,6 +158,27 @@ function sanitizeCandidate(cand: RTCIceCandidate): Record<string, any> {
     sdpMLineIndex: cand.sdpMLineIndex ?? null,
     usernameFragment: cand.usernameFragment ?? null
   };
+}
+
+function extractCandidatesList(raw?: any[] | Record<string, any> | null): any[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.filter((c) => c && c.candidate);
+  if (typeof raw === 'object') {
+    return Object.values(raw).filter((c: any) => c && c.candidate);
+  }
+  return [];
+}
+
+function normalizeCandidatesMap(raw?: any[] | Record<string, any> | null): Record<string, any> {
+  const map: Record<string, any> = {};
+  const list = extractCandidatesList(raw);
+  list.forEach((c, idx) => {
+    if (c && c.candidate) {
+      const safeKey = 'c_' + idx + '_' + String(c.candidate).replace(/[^a-zA-Z0-9]/g, '').slice(-24);
+      map[safeKey] = c;
+    }
+  });
+  return map;
 }
 
 function stripUndefined<T extends Record<string, any>>(obj: T): Record<string, any> {
@@ -118,6 +218,130 @@ function setNativeCallAudioMode(inCall: boolean, speakerOn: boolean = true) {
     }
   } catch {}
 }
+
+const CALL_STATUS_RANK: Record<string, number> = {
+  ringing: 1,
+  connected: 2,
+  rejected: 3,
+  busy: 3,
+  ended: 3
+};
+
+const mergeCandidates = (
+  prev?: any[] | Record<string, any>,
+  next?: any[] | Record<string, any>
+): any[] => {
+  const map = new Map<string, any>();
+  for (const c of extractCandidatesList(prev)) {
+    if (c && c.candidate) map.set(c.candidate, c);
+  }
+  for (const c of extractCandidatesList(next)) {
+    if (c && c.candidate) map.set(c.candidate, c);
+  }
+  return Array.from(map.values());
+};
+
+const mergeCallSessionMonotonic = (
+  prev: CallSessionDoc | null | undefined,
+  next: CallSessionDoc
+): CallSessionDoc => {
+  if (!prev) return next;
+  const prevRank = CALL_STATUS_RANK[prev.status] || 0;
+  const nextRank = CALL_STATUS_RANK[next.status] || 0;
+  const status = nextRank >= prevRank ? next.status : prev.status;
+
+  return {
+    ...prev,
+    ...next,
+    status,
+    offer: next.offer || prev.offer,
+    answer: next.answer || prev.answer,
+    callerCandidates: mergeCandidates(prev.callerCandidates, next.callerCandidates),
+    calleeCandidates: mergeCandidates(prev.calleeCandidates, next.calleeCandidates),
+    connectedAt: next.connectedAt || prev.connectedAt,
+    endedAt: next.endedAt || prev.endedAt
+  };
+};
+
+/**
+ * Subscribe to a single CallSessionDoc in real time across RTDB, BroadcastChannel, and Firestore.
+ */
+export const subscribeToCallSession = (
+  callId: string,
+  onUpdate: (session: CallSessionDoc | null) => void
+): (() => void) => {
+  if (!callId) return () => {};
+  const unsubs: (() => void)[] = [];
+  let mergedDoc: CallSessionDoc | null = null;
+
+  const publish = (data: CallSessionDoc | null) => {
+    if (data) {
+      mergedDoc = mergeCallSessionMonotonic(mergedDoc, data);
+      onUpdate(mergedDoc);
+    } else if (mergedDoc) {
+      onUpdate(null);
+    }
+  };
+
+  // 1. Firebase Realtime Database (Primary <20ms WebSocket listener)
+  if (isFirebaseConfigured() && rtdb) {
+    try {
+      const callRef = dbRef(rtdb, `calls/${callId}`);
+      const unsubRtdb = dbOnValue(
+        callRef,
+        (snap) => {
+          if (snap.exists()) {
+            const val = snap.val() as CallSessionDoc;
+            publish({ ...val, id: callId });
+          } else if (mergedDoc) {
+            onUpdate(null);
+          }
+        },
+        (err) => {
+          console.warn('RTDB call session listener note:', err);
+        }
+      );
+      unsubs.push(unsubRtdb);
+    } catch (e) {
+      console.warn('RTDB subscribeToCallSession error:', e);
+    }
+  }
+
+  // 2. Local BroadcastChannel listener
+  const localHandler = (map: Map<string, CallSessionDoc>) => {
+    const docData = map.get(callId);
+    if (docData) {
+      publish(docData);
+    }
+  };
+  localCallSubscribers.add(localHandler);
+  unsubs.push(() => localCallSubscribers.delete(localHandler));
+
+  // 3. Secondary Cloud Firestore listener (only if available)
+  if (isFirebaseConfigured() && db) {
+    try {
+      const unsubFs = onSnapshot(
+        doc(db, 'calls', callId),
+        (docSnap) => {
+          if (docSnap.exists()) {
+            const fsData = docSnap.data() as CallSessionDoc;
+            publish({ ...fsData, id: callId });
+          }
+        },
+        () => {}
+      );
+      unsubs.push(unsubFs);
+    } catch {}
+  }
+
+  return () => {
+    unsubs.forEach((u) => {
+      try {
+        u();
+      } catch {}
+    });
+  };
+};
 
 export class WebRTCService {
   private peerConnection: RTCPeerConnection | null = null;
@@ -199,7 +423,6 @@ export class WebRTCService {
    * so outbound & inbound calls never hang waiting for busy camera hardware.
    */
   public async getMediaStream(callType: CallType): Promise<MediaStream> {
-    // Stop any previous leftover tracks before acquiring fresh stream for this call
     if (this.localStream) {
       try {
         this.localStream.getTracks().forEach((t) => t.stop());
@@ -234,7 +457,6 @@ export class WebRTCService {
         return stream;
       } catch (firstErr) {
         console.warn('Primary getUserMedia failed, falling back to audio / basic constraints:', firstErr);
-        // Immediately try audio-only (+ synthetic video if video call) so mic works even when camera is busy/missing
         try {
           const audioOnlyStream = await withTimeout(
             navigator.mediaDevices.getUserMedia({ audio: true, video: false }),
@@ -317,7 +539,6 @@ export class WebRTCService {
     const publishRemoteStream = () => {
       if (this.activeCallId !== callId) return;
 
-      // Also collect all receiver tracks from peerConnection
       pc.getReceivers().forEach((receiver) => {
         if (receiver.track && receiver.track.readyState !== 'ended') {
           receiver.track.enabled = true;
@@ -333,7 +554,6 @@ export class WebRTCService {
         activeTracks.forEach((t) => {
           t.enabled = true;
         });
-        // Always instantiate a new MediaStream so React state updates when 2nd track (video) arrives
         const freshStream = new MediaStream(activeTracks);
         this.remoteStream = freshStream;
         if (this.onRemoteStreamAvailable) {
@@ -420,7 +640,7 @@ export class WebRTCService {
   }
 
   /**
-   * Start Outbound Call as Caller (Cloud Firestore Signaling)
+   * Start Outbound Call as Caller or Host (Real-Time RTDB + BroadcastChannel + Firestore)
    */
   public async startOutboundCall(
     caller: { id: string; name: string; phone?: string; email?: string },
@@ -457,6 +677,8 @@ export class WebRTCService {
       callerId: caller.id,
       callerName: caller.name,
       callerPhone: cleanCallerPhone,
+      callerEmail: (caller.email || '').toLowerCase().trim(),
+      callerClientId: MY_SIGNALING_CLIENT_ID,
       sakhiId: sakhi.id,
       sakhiPhone: cleanHostPhone,
       sakhiEmail: (sakhi.email || '').toLowerCase().trim(),
@@ -464,36 +686,49 @@ export class WebRTCService {
       sakhiAvatar: sakhi.avatar || '',
       callType,
       status: 'ringing',
-      callerCandidates: [],
-      calleeCandidates: [],
+      callerCandidates: {},
+      calleeCandidates: {},
       createdAt: Date.now()
     };
 
     let isDocCreated = false;
+    let candSeq = 0;
     const queuedCandidates: Record<string, any>[] = [];
     let candidateBatchTimer: any = null;
     const addedCalleeCandidates = new Set<string>();
     const pendingCalleeCandidates: any[] = [];
     let isRemoteDescSet = false;
+    let isSettingRemoteAnswer = false;
     let pendingRemoteAnswer: RTCSessionDescriptionInit | null = null;
 
     const flushCandidates = async () => {
-      if (
-        queuedCandidates.length === 0 ||
-        !isDocCreated ||
-        this.activeCallId !== callId ||
-        !isFirebaseConfigured() ||
-        !db
-      ) {
+      if (queuedCandidates.length === 0 || !isDocCreated || this.activeCallId !== callId) {
         return;
       }
       const toSend = queuedCandidates.splice(0, queuedCandidates.length);
-      try {
-        await updateDoc(doc(db, 'calls', callId), {
+      const candMapUpdate: Record<string, any> = {};
+      toSend.forEach((c) => {
+        candSeq += 1;
+        candMapUpdate[`cand_${Date.now()}_${candSeq}`] = c;
+      });
+
+      broadcastCallUpdate({
+        id: callId,
+        callerCandidates: candMapUpdate
+      });
+
+      if (isFirebaseConfigured() && rtdb) {
+        try {
+          await dbUpdate(dbRef(rtdb, `calls/${callId}/callerCandidates`), candMapUpdate);
+        } catch (e) {
+          console.warn('RTDB Caller ICE candidate flush error:', e);
+        }
+      }
+
+      if (isFirebaseConfigured() && db) {
+        updateDoc(doc(db, 'calls', callId), {
           callerCandidates: arrayUnion(...toSend)
-        });
-      } catch (e) {
-        console.warn('Caller ICE candidate flush error:', e);
+        }).catch(() => {});
       }
     };
 
@@ -510,11 +745,12 @@ export class WebRTCService {
 
     const applyRemoteAnswerIfReady = async (answerSdp: RTCSessionDescriptionInit) => {
       const pc = this.peerConnection;
-      if (!pc || isRemoteDescSet || this.activeCallId !== callId) return;
+      if (!pc || isRemoteDescSet || isSettingRemoteAnswer || this.activeCallId !== callId) return;
       if (pc.signalingState !== 'have-local-offer') {
         pendingRemoteAnswer = answerSdp;
         return;
       }
+      isSettingRemoteAnswer = true;
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(answerSdp));
         isRemoteDescSet = true;
@@ -522,84 +758,98 @@ export class WebRTCService {
         await drainCalleeCandidates();
       } catch (sdpErr) {
         console.warn('Caller set remote description error:', sdpErr);
+      } finally {
+        isSettingRemoteAnswer = false;
       }
     };
 
-    // 1. Write 'ringing' call session to Cloud Firestore IMMEDIATELY (<100ms) so Receiver's phone rings right away!
-    if (isFirebaseConfigured() && db) {
-      try {
-        await setDoc(doc(db, 'calls', callId), stripUndefined(initialCallDoc));
-        if (this.activeCallId !== callId) {
-          await setDoc(
-            doc(db, 'calls', callId),
-            { status: 'ended', endedAt: Date.now() },
-            { merge: true }
-          );
-          this.cleanup();
-          return callId;
+    const handleSessionUpdate = async (session: CallSessionDoc | null) => {
+      if (!session || this.activeCallId !== callId) return;
+
+      // Rejected or Busy
+      if (session.status === 'rejected' || session.status === 'busy') {
+        const cb = this.onCallRejected;
+        this.cleanup();
+        if (cb) {
+          cb('Sakhi ne call decline kar di ya wo abhi busy hain.');
         }
-        isDocCreated = true;
-      } catch (err) {
-        console.warn('Error saving initial call session in Firestore:', err);
+        return;
       }
 
-      // Attach listener right away so fast reject / answer is never missed
-      const unsub = onSnapshot(doc(db, 'calls', callId), async (docSnap) => {
-        if (!docSnap.exists() || this.activeCallId !== callId) return;
-        const session = docSnap.data() as CallSessionDoc;
-
-        // Rejected or Busy
-        if (session.status === 'rejected' || session.status === 'busy') {
-          const cb = this.onCallRejected;
-          this.cleanup();
-          if (cb) {
-            cb('Sakhi ne call decline kar di ya wo abhi busy hain.');
-          }
-          return;
+      // Ended by remote party
+      if (session.status === 'ended') {
+        const cb = this.onCallEnded;
+        this.cleanup();
+        if (cb) {
+          cb();
         }
+        return;
+      }
 
-        // Ended by remote party
-        if (session.status === 'ended') {
-          const cb = this.onCallEnded;
-          this.cleanup();
-          if (cb) {
-            cb();
-          }
-          return;
-        }
+      // Callee Picked Up (Connected)
+      if (session.status === 'connected') {
+        this.notifyConnectedOnce();
+      }
 
-        // Callee Picked Up (Connected)
-        if (session.status === 'connected') {
-          this.notifyConnectedOnce();
-        }
+      if (session.answer && !isRemoteDescSet && !isSettingRemoteAnswer) {
+        await applyRemoteAnswerIfReady(session.answer);
+      }
 
-        if (session.answer && !isRemoteDescSet) {
-          await applyRemoteAnswerIfReady(session.answer);
-        }
-
-        // Callee ICE Candidates
-        if (Array.isArray(session.calleeCandidates)) {
-          for (const c of session.calleeCandidates) {
-            if (!c || !c.candidate) continue;
-            const key = c.candidate;
-            if (!addedCalleeCandidates.has(key)) {
-              addedCalleeCandidates.add(key);
-              if (isRemoteDescSet && this.peerConnection?.currentRemoteDescription) {
-                try {
-                  await this.peerConnection.addIceCandidate(new RTCIceCandidate(c));
-                } catch {}
-              } else {
-                pendingCalleeCandidates.push(c);
-              }
-            }
+      // Callee ICE Candidates (supports both Array and RTDB Object map)
+      const calleeCands = extractCandidatesList(session.calleeCandidates);
+      for (const c of calleeCands) {
+        if (!c || !c.candidate) continue;
+        const key = c.candidate;
+        if (!addedCalleeCandidates.has(key)) {
+          addedCalleeCandidates.add(key);
+          if (isRemoteDescSet && this.peerConnection?.currentRemoteDescription) {
+            try {
+              await this.peerConnection.addIceCandidate(new RTCIceCandidate(c));
+            } catch {}
+          } else {
+            pendingCalleeCandidates.push(c);
           }
         }
-      });
+      }
+    };
 
-      this.unsubscribers.push(unsub);
+    // 1. Attach real-time session listener BEFORE writing so ultra-fast responses are never missed
+    const unsubSession = subscribeToCallSession(callId, handleSessionUpdate);
+    this.unsubscribers.push(unsubSession);
+
+    // 2. Publish 'ringing' call session IMMEDIATELY (<25ms via RTDB + BroadcastChannel)
+    const cleanInitial = stripUndefined(initialCallDoc) as CallSessionDoc;
+    broadcastCallUpdate(cleanInitial);
+
+    if (isFirebaseConfigured() && rtdb) {
+      try {
+        await dbSet(dbRef(rtdb, `calls/${callId}`), cleanInitial);
+        isDocCreated = true;
+      } catch (err) {
+        console.warn('Error saving initial call session in RTDB:', err);
+      }
     }
 
-    // 2. Acquire local camera & microphone stream
+    if (isFirebaseConfigured() && db) {
+      setDoc(doc(db, 'calls', callId), {
+        ...cleanInitial,
+        callerCandidates: [],
+        calleeCandidates: []
+      })
+        .then(() => {
+          isDocCreated = true;
+        })
+        .catch(() => {});
+    }
+
+    isDocCreated = true;
+
+    if (this.activeCallId !== callId) {
+      this.endActiveCall(callId);
+      return callId;
+    }
+
+    // 3. Acquire local camera & microphone stream
     const localStream = await this.getMediaStream(callType);
 
     if (this.activeCallId !== callId) {
@@ -611,12 +861,9 @@ export class WebRTCService {
       this.onLocalStreamUpdated(localStream);
     }
 
-    // 3. Setup RTCPeerConnection
+    // 4. Setup RTCPeerConnection
     const pc = new RTCPeerConnection(ICE_SERVERS);
     this.peerConnection = pc;
-
-    const hasAudioTrack = Boolean(localStream && localStream.getAudioTracks().length > 0);
-    const hasVideoTrack = Boolean(localStream && localStream.getVideoTracks().length > 0);
 
     if (localStream) {
       localStream.getTracks().forEach((track) => {
@@ -624,15 +871,6 @@ export class WebRTCService {
         pc.addTrack(track, localStream);
       });
     }
-
-    try {
-      if (!hasAudioTrack) {
-        pc.addTransceiver('audio', { direction: 'recvonly' });
-      }
-      if (callType === 'video' && !hasVideoTrack) {
-        pc.addTransceiver('video', { direction: 'recvonly' });
-      }
-    } catch {}
 
     this.attachTrackReceiver(pc, callId);
 
@@ -642,12 +880,12 @@ export class WebRTCService {
         queuedCandidates.push(sanitizeCandidate(event.candidate));
         if (isDocCreated) {
           if (candidateBatchTimer) clearTimeout(candidateBatchTimer);
-          candidateBatchTimer = setTimeout(flushCandidates, 80);
+          candidateBatchTimer = setTimeout(flushCandidates, 60);
         }
       }
     };
 
-    // 4. Create Offer SDP & publish to Firestore
+    // 5. Create Offer SDP & publish to RTDB + Firestore
     const offer = await pc.createOffer({
       offerToReceiveAudio: true,
       offerToReceiveVideo: callType === 'video'
@@ -665,24 +903,28 @@ export class WebRTCService {
       return callId;
     }
 
-    if (isFirebaseConfigured() && db) {
+    const offerPayload = {
+      type: offer.type,
+      sdp: offer.sdp
+    };
+
+    broadcastCallUpdate({ id: callId, offer: offerPayload });
+
+    if (isFirebaseConfigured() && rtdb) {
       try {
-        await setDoc(
-          doc(db, 'calls', callId),
-          {
-            offer: {
-              type: offer.type,
-              sdp: offer.sdp
-            }
-          },
-          { merge: true }
-        );
-        isDocCreated = true;
-        flushCandidates();
+        await dbUpdate(dbRef(rtdb, `calls/${callId}`), {
+          offer: offerPayload
+        });
       } catch (err) {
-        console.warn('Error updating offer SDP in Firestore:', err);
+        console.warn('Error updating offer SDP in RTDB:', err);
       }
     }
+
+    if (isFirebaseConfigured() && db) {
+      setDoc(doc(db, 'calls', callId), { offer: offerPayload }, { merge: true }).catch(() => {});
+    }
+
+    flushCandidates();
 
     if (pendingRemoteAnswer && !isRemoteDescSet) {
       await applyRemoteAnswerIfReady(pendingRemoteAnswer);
@@ -706,10 +948,11 @@ export class WebRTCService {
     let isRemoteDescSet = false;
     let isNegotiatingAnswer = false;
     let latestOffer = callSession.offer;
+    let calleeCandSeq = 0;
 
-    const queueCallerCandidates = (candidates?: any[]) => {
-      if (!Array.isArray(candidates)) return;
-      for (const c of candidates) {
+    const queueCallerCandidates = (candidates?: any[] | Record<string, any>) => {
+      const list = extractCandidatesList(candidates);
+      for (const c of list) {
         if (!c || !c.candidate) continue;
         const cKey = c.candidate;
         if (!addedCallerCandidates.has(cKey)) {
@@ -721,12 +964,19 @@ export class WebRTCService {
 
     queueCallerCandidates(callSession.callerCandidates);
 
-    // 1. Immediately check Firestore & mark call 'connected' so Caller knows Receiver picked up right away
-    if (isFirebaseConfigured() && db) {
+    const connectedUpdate = {
+      status: 'connected' as const,
+      connectedAt: Date.now()
+    };
+
+    broadcastCallUpdate({ id: callId, ...connectedUpdate });
+
+    // 1. Immediately check RTDB & mark call 'connected' so Caller knows Receiver picked up right away (<25ms)
+    if (isFirebaseConfigured() && rtdb) {
       try {
-        const snap = await getDoc(doc(db, 'calls', callId));
+        const snap = await dbGet(dbRef(rtdb, `calls/${callId}`));
         if (snap.exists()) {
-          const freshData = snap.data() as CallSessionDoc;
+          const freshData = snap.val() as CallSessionDoc;
           if (freshData.status === 'ended' || freshData.status === 'rejected') {
             const cb = this.onCallEnded;
             this.cleanup();
@@ -744,18 +994,14 @@ export class WebRTCService {
           return false;
         }
 
-        // Notify caller immediately that call is picked up
-        await setDoc(
-          doc(db, 'calls', callId),
-          {
-            status: 'connected',
-            connectedAt: Date.now()
-          },
-          { merge: true }
-        );
+        await dbUpdate(dbRef(rtdb, `calls/${callId}`), connectedUpdate);
       } catch (err) {
-        console.warn('Initial answer status update note:', err);
+        console.warn('RTDB initial answer status update note:', err);
       }
+    }
+
+    if (isFirebaseConfigured() && db) {
+      setDoc(doc(db, 'calls', callId), connectedUpdate, { merge: true }).catch(() => {});
     }
 
     if (this.activeCallId !== callId) {
@@ -780,9 +1026,6 @@ export class WebRTCService {
     const pc = new RTCPeerConnection(ICE_SERVERS);
     this.peerConnection = pc;
 
-    const hasAudioTrack = Boolean(localStream && localStream.getAudioTracks().length > 0);
-    const hasVideoTrack = Boolean(localStream && localStream.getVideoTracks().length > 0);
-
     if (localStream) {
       localStream.getTracks().forEach((track) => {
         track.enabled = true;
@@ -790,37 +1033,40 @@ export class WebRTCService {
       });
     }
 
-    try {
-      if (!hasAudioTrack) {
-        pc.addTransceiver('audio', { direction: 'recvonly' });
-      }
-      if (callType === 'video' && !hasVideoTrack) {
-        pc.addTransceiver('video', { direction: 'recvonly' });
-      }
-    } catch {}
-
     this.attachTrackReceiver(pc, callId);
 
-    // Capture Callee ICE Candidates and batch push to Firestore
+    // Capture Callee ICE Candidates and batch push to RTDB + Firestore
     const calleeQueuedCandidates: Record<string, any>[] = [];
     let calleeBatchTimer: any = null;
 
     const flushCalleeCandidates = async () => {
-      if (
-        calleeQueuedCandidates.length === 0 ||
-        this.activeCallId !== callId ||
-        !isFirebaseConfigured() ||
-        !db
-      ) {
+      if (calleeQueuedCandidates.length === 0 || this.activeCallId !== callId) {
         return;
       }
       const toSend = calleeQueuedCandidates.splice(0, calleeQueuedCandidates.length);
-      try {
-        await updateDoc(doc(db, 'calls', callId), {
+      const candMapUpdate: Record<string, any> = {};
+      toSend.forEach((c) => {
+        calleeCandSeq += 1;
+        candMapUpdate[`cand_${Date.now()}_${calleeCandSeq}`] = c;
+      });
+
+      broadcastCallUpdate({
+        id: callId,
+        calleeCandidates: candMapUpdate
+      });
+
+      if (isFirebaseConfigured() && rtdb) {
+        try {
+          await dbUpdate(dbRef(rtdb, `calls/${callId}/calleeCandidates`), candMapUpdate);
+        } catch (e) {
+          console.warn('RTDB Callee ICE candidate flush error:', e);
+        }
+      }
+
+      if (isFirebaseConfigured() && db) {
+        updateDoc(doc(db, 'calls', callId), {
           calleeCandidates: arrayUnion(...toSend)
-        });
-      } catch (e) {
-        console.warn('Callee ICE candidate flush error:', e);
+        }).catch(() => {});
       }
     };
 
@@ -829,7 +1075,7 @@ export class WebRTCService {
       if (event.candidate && event.candidate.candidate) {
         calleeQueuedCandidates.push(sanitizeCandidate(event.candidate));
         if (calleeBatchTimer) clearTimeout(calleeBatchTimer);
-        calleeBatchTimer = setTimeout(flushCalleeCandidates, 80);
+        calleeBatchTimer = setTimeout(flushCalleeCandidates, 60);
       }
     };
 
@@ -856,66 +1102,67 @@ export class WebRTCService {
         if (this.activeCallId !== callId) return;
         await pc.setLocalDescription(answer);
 
-        if (isFirebaseConfigured() && db && this.activeCallId === callId) {
-          await setDoc(
-            doc(db, 'calls', callId),
-            {
-              status: 'connected',
-              answer: { type: answer.type, sdp: answer.sdp },
-              connectedAt: Date.now()
-            },
-            { merge: true }
-          );
-          flushCalleeCandidates();
+        const answerPayload = {
+          status: 'connected' as const,
+          answer: { type: answer.type, sdp: answer.sdp },
+          connectedAt: Date.now()
+        };
+
+        broadcastCallUpdate({ id: callId, ...answerPayload });
+
+        if (isFirebaseConfigured() && rtdb && this.activeCallId === callId) {
+          await dbUpdate(dbRef(rtdb, `calls/${callId}`), answerPayload);
         }
+
+        if (isFirebaseConfigured() && db && this.activeCallId === callId) {
+          setDoc(doc(db, 'calls', callId), answerPayload, { merge: true }).catch(() => {});
+        }
+
+        flushCalleeCandidates();
       } catch (err) {
-        console.warn('Error negotiating remote offer / answer on Firestore:', err);
+        console.warn('Error negotiating remote offer / answer:', err);
       } finally {
         isNegotiatingAnswer = false;
       }
     };
 
-    // 4. Attach real-time listener for Caller offer (if arriving right after pickup), Caller ICE candidates & hangup
-    if (isFirebaseConfigured() && db) {
-      const unsub = onSnapshot(doc(db, 'calls', callId), async (docSnap) => {
-        if (!docSnap.exists() || this.activeCallId !== callId) return;
-        const data = docSnap.data() as CallSessionDoc;
+    // 4. Attach real-time listener for Caller offer, Caller ICE candidates & hangup
+    const unsubSession = subscribeToCallSession(callId, async (data) => {
+      if (!data || this.activeCallId !== callId) return;
 
-        if (data.status === 'ended' || data.status === 'rejected') {
-          const cb = this.onCallEnded;
-          this.cleanup();
-          if (cb) cb();
-          return;
-        }
+      if (data.status === 'ended' || data.status === 'rejected') {
+        const cb = this.onCallEnded;
+        this.cleanup();
+        if (cb) cb();
+        return;
+      }
 
-        if (data.offer && !isRemoteDescSet) {
-          latestOffer = data.offer;
-          await handleRemoteOfferAndCreateAnswer(data.offer);
-        }
+      if (data.offer && !isRemoteDescSet && !isNegotiatingAnswer) {
+        latestOffer = data.offer;
+        await handleRemoteOfferAndCreateAnswer(data.offer);
+      }
 
-        if (Array.isArray(data.callerCandidates)) {
-          for (const c of data.callerCandidates) {
-            if (!c || !c.candidate) continue;
-            const cKey = c.candidate;
-            if (!addedCallerCandidates.has(cKey)) {
-              addedCallerCandidates.add(cKey);
-              if (isRemoteDescSet && pc.currentRemoteDescription) {
-                try {
-                  await pc.addIceCandidate(new RTCIceCandidate(c));
-                } catch {}
-              } else {
-                pendingCallerCandidates.push(c);
-              }
-            }
+      const callerCands = extractCandidatesList(data.callerCandidates);
+      for (const c of callerCands) {
+        if (!c || !c.candidate) continue;
+        const cKey = c.candidate;
+        if (!addedCallerCandidates.has(cKey)) {
+          addedCallerCandidates.add(cKey);
+          if (isRemoteDescSet && pc.currentRemoteDescription) {
+            try {
+              await pc.addIceCandidate(new RTCIceCandidate(c));
+            } catch {}
+          } else {
+            pendingCallerCandidates.push(c);
           }
         }
-      });
+      }
+    });
 
-      this.unsubscribers.push(unsub);
-    }
+    this.unsubscribers.push(unsubSession);
 
     // 5. If Offer SDP is already present, set Remote Offer & Create Answer immediately
-    if (latestOffer && !isRemoteDescSet) {
+    if (latestOffer && !isRemoteDescSet && !isNegotiatingAnswer) {
       await handleRemoteOfferAndCreateAnswer(latestOffer);
     }
 
@@ -935,19 +1182,22 @@ export class WebRTCService {
     if (this.activeCallId === callId) {
       this.cleanup();
     }
-    if (isFirebaseConfigured() && db) {
+    const rejectPayload = {
+      status: 'rejected' as const,
+      endedAt: Date.now()
+    };
+    broadcastCallUpdate({ id: callId, ...rejectPayload });
+
+    if (isFirebaseConfigured() && rtdb) {
       try {
-        await setDoc(
-          doc(db, 'calls', callId),
-          {
-            status: 'rejected',
-            endedAt: Date.now()
-          },
-          { merge: true }
-        );
+        await dbUpdate(dbRef(rtdb, `calls/${callId}`), rejectPayload);
       } catch (err) {
-        console.warn('Error rejecting incoming call:', err);
+        console.warn('Error rejecting incoming call in RTDB:', err);
       }
+    }
+
+    if (isFirebaseConfigured() && db) {
+      setDoc(doc(db, 'calls', callId), rejectPayload, { merge: true }).catch(() => {});
     }
   }
 
@@ -971,21 +1221,26 @@ export class WebRTCService {
       markCallAsHandled(id);
     }
     this.cleanup();
-    if (id && !details?.skipStatusUpdate && isFirebaseConfigured() && db) {
-      try {
-        const cleanDetails = details ? stripUndefined(details) : {};
-        delete cleanDetails.skipStatusUpdate;
-        await setDoc(
-          doc(db, 'calls', id),
-          {
-            status: 'ended',
-            endedAt: Date.now(),
-            ...cleanDetails
-          },
-          { merge: true }
-        );
-      } catch (err) {
-        console.warn('Error marking call ended in Firestore:', err);
+    if (id && !details?.skipStatusUpdate) {
+      const cleanDetails = details ? stripUndefined(details) : {};
+      delete cleanDetails.skipStatusUpdate;
+      const endedPayload = {
+        status: 'ended' as const,
+        endedAt: Date.now(),
+        ...cleanDetails
+      };
+      broadcastCallUpdate({ id, ...endedPayload });
+
+      if (isFirebaseConfigured() && rtdb) {
+        try {
+          await dbUpdate(dbRef(rtdb, `calls/${id}`), endedPayload);
+        } catch (err) {
+          console.warn('Error marking call ended in RTDB:', err);
+        }
+      }
+
+      if (isFirebaseConfigured() && db) {
+        setDoc(doc(db, 'calls', id), endedPayload, { merge: true }).catch(() => {});
       }
     }
   }
@@ -1092,8 +1347,7 @@ const stripIdentityPrefix = (raw: string): string => {
 
 /**
  * Real-time listener for incoming calls for a logged-in Host or Caller.
- * Supports multiple receiver identifiers (phone, hostId, callerId, email),
- * is 100% immune to clock skew between devices, and filters out handled, stale, or cancelled calls immediately.
+ * Listens simultaneously to Firebase Realtime Database (`rtdb`), BroadcastChannel, and Cloud Firestore.
  */
 export const subscribeToIncomingCallsForHost = (
   receiverInput: string | string[],
@@ -1156,161 +1410,192 @@ export const subscribeToIncomingCallsForHost = (
     return () => {};
   }
 
-  if (isFirebaseConfigured() && db) {
-    try {
-      const callsCol = collection(db, 'calls');
-      let currentCallId = '';
-      let isInitialSnapshot = true;
-      const firstSeenAtMap = new Map<string, number>();
-      const expiryTimers = new Map<string, number>();
+  let currentCallId = '';
+  const allCallsMap = new Map<string, CallSessionDoc>();
+  const firstSeenAtMap = new Map<string, number>();
+  const expiryTimers = new Map<string, number>();
+  const unsubs: (() => void)[] = [];
 
-      const clearAllExpiryTimers = () => {
-        expiryTimers.forEach((timerId) => clearTimeout(timerId));
-        expiryTimers.clear();
-      };
+  const clearAllExpiryTimers = () => {
+    expiryTimers.forEach((timerId) => clearTimeout(timerId));
+    expiryTimers.clear();
+  };
 
-      const unsub = onSnapshot(
-        callsCol,
-        (snapshot) => {
-          const now = Date.now();
-          const matchingCalls: CallSessionDoc[] = [];
+  const evaluateCalls = (isInitialLoad: boolean = false) => {
+    const now = Date.now();
+    const matchingCalls: CallSessionDoc[] = [];
 
-          // Track newly added/modified ringing calls on receiver's own clock (100% immune to sender clock skew)
-          snapshot.docChanges().forEach((change) => {
-            if (change.type === 'added' || change.type === 'modified') {
-              const cData = change.doc.data() as CallSessionDoc;
-              if (cData && cData.status === 'ringing' && !firstSeenAtMap.has(change.doc.id)) {
-                if (isInitialSnapshot) {
-                  // On initial page load, only accept pre-existing ringing calls created within 60s of local clock;
-                  // auto-clean old abandoned 'ringing' docs so they never block future calls
-                  const ageDiff = Math.abs(now - (cData.createdAt || 0));
-                  if (ageDiff <= 60000) {
-                    firstSeenAtMap.set(change.doc.id, now);
-                  } else {
-                    markCallAsHandled(change.doc.id);
-                    if (db) {
-                      setDoc(
-                        doc(db, 'calls', change.doc.id),
-                        { status: 'ended', endedAt: now },
-                        { merge: true }
-                      ).catch(() => {});
-                    }
-                  }
-                } else {
-                  // Real-time incoming call event while app is open -> always record current receiver timestamp!
-                  firstSeenAtMap.set(change.doc.id, now);
-                }
-              }
-            }
-          });
-          isInitialSnapshot = false;
+    allCallsMap.forEach((call, callId) => {
+      if (!call || call.status !== 'ringing') return;
 
-          snapshot.forEach((docSnap) => {
-            const call = docSnap.data() as CallSessionDoc;
-            if (!call || call.status !== 'ringing') return;
+      // Never ring on the exact same browser tab/client that initiated the outbound call
+      if (call.callerClientId && call.callerClientId === MY_SIGNALING_CLIENT_ID) {
+        return;
+      }
 
-            if (isCallHandled(docSnap.id)) {
-              return;
-            }
+      if (isCallHandled(callId)) {
+        return;
+      }
 
-            if (webrtcService.getActiveCallId() && webrtcService.getActiveCallId() === docSnap.id) {
-              return;
-            }
+      if (webrtcService.getActiveCallId() && webrtcService.getActiveCallId() === callId) {
+        return;
+      }
 
-            const firstSeenAt = firstSeenAtMap.get(docSnap.id) ?? now;
-            if (!firstSeenAtMap.has(docSnap.id)) {
-              firstSeenAtMap.set(docSnap.id, firstSeenAt);
-            }
+      if (!firstSeenAtMap.has(callId)) {
+        const ageDiff = Math.abs(now - (call.createdAt || 0));
+        if (isInitialLoad && ageDiff > 55000) {
+          markCallAsHandled(callId);
+          if (rtdb) {
+            dbUpdate(dbRef(rtdb, `calls/${callId}`), { status: 'ended', endedAt: now }).catch(() => {});
+          }
+          return;
+        }
+        firstSeenAtMap.set(callId, now);
+      }
 
-            // Expire ringing call after 50 seconds measured on receiver's own local clock
-            if (now - firstSeenAt > 50000) {
-              markCallAsHandled(docSnap.id);
-              if (db) {
-                setDoc(
-                  doc(db, 'calls', docSnap.id),
-                  { status: 'ended', endedAt: now },
-                  { merge: true }
-                ).catch(() => {});
-              }
-              return;
-            }
+      const firstSeenAt = firstSeenAtMap.get(callId) ?? now;
 
-            const callSakhiId = String(call.sakhiId || '').trim();
-            const callSakhiSlug = stripIdentityPrefix(callSakhiId).replace(/[^a-z0-9_]/g, '_');
-            const callSakhiEmail = String(call.sakhiEmail || '').trim().toLowerCase();
-            const callSakhiEmailSlug = callSakhiEmail ? callSakhiEmail.replace(/[^a-z0-9]/g, '_') : '';
-            const rawCallHostDigits = String(call.sakhiPhone || '').replace(/\D/g, '');
-            const idCallHostDigits = callSakhiId.toLowerCase().startsWith('user_')
-              ? ''
-              : callSakhiId.replace(/\D/g, '');
-            const callHostPhone =
-              rawCallHostDigits.length >= 10
-                ? rawCallHostDigits.slice(-10)
-                : idCallHostDigits.length >= 10
-                ? idCallHostDigits.slice(-10)
-                : '';
+      // Expire ringing call after 50 seconds measured on receiver's own local clock
+      if (now - firstSeenAt > 50000) {
+        markCallAsHandled(callId);
+        if (rtdb) {
+          dbUpdate(dbRef(rtdb, `calls/${callId}`), { status: 'ended', endedAt: now }).catch(() => {});
+        }
+        return;
+      }
 
-            const isCalleeMatch =
-              (callSakhiId &&
-                (receiverIds.has(callSakhiId) || receiverIds.has(callSakhiId.toLowerCase()))) ||
-              (callSakhiSlug && receiverCoreSlugs.has(callSakhiSlug)) ||
-              (callSakhiEmailSlug && receiverCoreSlugs.has(callSakhiEmailSlug)) ||
-              (callHostPhone && receiverPhones.has(callHostPhone)) ||
-              (callSakhiEmail && receiverEmails.has(callSakhiEmail));
+      const callSakhiId = String(call.sakhiId || '').trim();
+      const callSakhiSlug = stripIdentityPrefix(callSakhiId).replace(/[^a-z0-9_]/g, '_');
+      const callSakhiEmail = String(call.sakhiEmail || '').trim().toLowerCase();
+      const callSakhiEmailSlug = callSakhiEmail ? callSakhiEmail.replace(/[^a-z0-9]/g, '_') : '';
+      const rawCallHostDigits = String(call.sakhiPhone || '').replace(/\D/g, '');
+      const idCallHostDigits = callSakhiId.toLowerCase().startsWith('user_')
+        ? ''
+        : callSakhiId.replace(/\D/g, '');
+      const callHostPhone =
+        rawCallHostDigits.length >= 10
+          ? rawCallHostDigits.slice(-10)
+          : idCallHostDigits.length >= 10
+          ? idCallHostDigits.slice(-10)
+          : '';
 
-            if (isCalleeMatch) {
-              matchingCalls.push({ ...call, id: docSnap.id });
+      const isCalleeMatch =
+        (callSakhiId &&
+          (receiverIds.has(callSakhiId) || receiverIds.has(callSakhiId.toLowerCase()))) ||
+        (callSakhiSlug && receiverCoreSlugs.has(callSakhiSlug)) ||
+        (callSakhiEmailSlug && receiverCoreSlugs.has(callSakhiEmailSlug)) ||
+        (callHostPhone && receiverPhones.has(callHostPhone)) ||
+        (callSakhiEmail && receiverEmails.has(callSakhiEmail));
 
-              // Arm a local timeout so the modal closes automatically after 50s if unanswered
-              if (!expiryTimers.has(docSnap.id)) {
-                const remainingMs = Math.max(1000, 50500 - (now - firstSeenAt));
-                const timerId = window.setTimeout(() => {
-                  expiryTimers.delete(docSnap.id);
-                  markCallAsHandled(docSnap.id);
-                  if (currentCallId === docSnap.id) {
-                    currentCallId = '';
-                    onIncomingCall(null);
-                  }
-                }, remainingMs);
-                expiryTimers.set(docSnap.id, timerId);
-              }
-            }
-          });
+      if (isCalleeMatch) {
+        matchingCalls.push({ ...call, id: callId });
 
-          // Sort by most recently seen on receiver's own clock (tie-break by createdAt)
-          matchingCalls.sort((a, b) => {
-            const seenDiff = (firstSeenAtMap.get(b.id) || 0) - (firstSeenAtMap.get(a.id) || 0);
-            if (seenDiff !== 0) return seenDiff;
-            return (b.createdAt || 0) - (a.createdAt || 0);
-          });
-
-          const activeIncoming = matchingCalls[0] || null;
-
-          if (activeIncoming) {
-            if (currentCallId !== activeIncoming.id) {
-              currentCallId = activeIncoming.id;
-              onIncomingCall(activeIncoming);
-            }
-          } else {
-            if (currentCallId) {
+        if (!expiryTimers.has(callId)) {
+          const remainingMs = Math.max(1000, 50500 - (now - firstSeenAt));
+          const timerId = window.setTimeout(() => {
+            expiryTimers.delete(callId);
+            markCallAsHandled(callId);
+            if (currentCallId === callId) {
               currentCallId = '';
               onIncomingCall(null);
             }
+          }, remainingMs);
+          expiryTimers.set(callId, timerId);
+        }
+      }
+    });
+
+    matchingCalls.sort((a, b) => {
+      const seenDiff = (firstSeenAtMap.get(b.id) || 0) - (firstSeenAtMap.get(a.id) || 0);
+      if (seenDiff !== 0) return seenDiff;
+      return (b.createdAt || 0) - (a.createdAt || 0);
+    });
+
+    const activeIncoming = matchingCalls[0] || null;
+
+    if (activeIncoming) {
+      if (currentCallId !== activeIncoming.id) {
+        currentCallId = activeIncoming.id;
+        onIncomingCall(activeIncoming);
+      }
+    } else {
+      if (currentCallId) {
+        currentCallId = '';
+        onIncomingCall(null);
+      }
+    }
+  };
+
+  // 1. Primary Listener: Firebase Realtime Database (`calls`)
+  if (isFirebaseConfigured() && rtdb) {
+    try {
+      let isInitialRtdb = true;
+      const callsRef = dbRef(rtdb, 'calls');
+      const unsubRtdb = dbOnValue(
+        callsRef,
+        (snapshot) => {
+          if (snapshot.exists()) {
+            const val = snapshot.val() as Record<string, CallSessionDoc>;
+            Object.entries(val || {}).forEach(([id, cData]) => {
+              if (cData && typeof cData === 'object') {
+                const prev = allCallsMap.get(id);
+                allCallsMap.set(id, mergeCallSessionMonotonic(prev, { ...cData, id }));
+              }
+            });
           }
+          evaluateCalls(isInitialRtdb);
+          isInitialRtdb = false;
         },
         (err) => {
-          console.warn('Firestore incoming calls listener notice:', err);
+          console.warn('RTDB incoming calls listener note:', err);
         }
       );
-
-      return () => {
-        clearAllExpiryTimers();
-        unsub();
-      };
+      unsubs.push(unsubRtdb);
     } catch (err) {
-      console.warn('Error subscribing to incoming calls in Firestore:', err);
+      console.warn('Error subscribing to incoming calls in RTDB:', err);
     }
   }
 
-  return () => {};
+  // 2. Local BroadcastChannel listener for 0ms same-browser multi-tab testing
+  const localHandler = (cacheMap: Map<string, CallSessionDoc>) => {
+    cacheMap.forEach((docData, id) => {
+      const prev = allCallsMap.get(id);
+      allCallsMap.set(id, mergeCallSessionMonotonic(prev, docData));
+    });
+    evaluateCalls(false);
+  };
+  localCallSubscribers.add(localHandler);
+  unsubs.push(() => localCallSubscribers.delete(localHandler));
+
+  // 3. Secondary Listener: Cloud Firestore (`calls`)
+  if (isFirebaseConfigured() && db) {
+    try {
+      let isInitialFs = true;
+      const unsubFs = onSnapshot(
+        collection(db, 'calls'),
+        (snapshot) => {
+          snapshot.forEach((docSnap) => {
+            const cData = docSnap.data() as CallSessionDoc;
+            if (cData) {
+              const prev = allCallsMap.get(docSnap.id);
+              allCallsMap.set(docSnap.id, mergeCallSessionMonotonic(prev, { ...cData, id: docSnap.id }));
+            }
+          });
+          evaluateCalls(isInitialFs);
+          isInitialFs = false;
+        },
+        () => {}
+      );
+      unsubs.push(unsubFs);
+    } catch {}
+  }
+
+  return () => {
+    clearAllExpiryTimers();
+    unsubs.forEach((u) => {
+      try {
+        u();
+      } catch {}
+    });
+  };
 };

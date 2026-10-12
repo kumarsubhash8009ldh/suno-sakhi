@@ -1,6 +1,4 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { db, isFirebaseConfigured } from '../services/firebase';
 import { Sakhi, CallType, CallStatus, CallSession } from '../types';
 import { useWallet } from './WalletContext';
 import { useHost } from './HostContext';
@@ -13,6 +11,7 @@ import {
   webrtcService,
   CallSessionDoc,
   subscribeToIncomingCallsForHost,
+  subscribeToCallSession,
   markCallAsHandled
 } from '../services/webrtcService';
 import { recordHostIncomeToCloud, getLocalRegisteredHosts } from '../services/hostSync';
@@ -248,16 +247,30 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const session = getActiveSession();
     const currentUser = getCurrentUser();
+    let storedHostPhone = '';
+    let storedHostId = '';
+    try {
+      const savedHost = localStorage.getItem('sunosakhi_host_profile');
+      if (savedHost) {
+        const parsed = JSON.parse(savedHost);
+        storedHostPhone = parsed?.phone || '';
+        storedHostId = parsed?.id || '';
+      }
+    } catch {}
+
     const receiverTargets = [
       hostProfile?.id,
       hostProfile?.phone,
       (hostProfile as any)?.email,
+      storedHostId,
+      storedHostPhone,
       session.id,
       session.phone,
       session.email,
       currentUser?.id,
       currentUser?.phone,
-      currentUser?.email
+      currentUser?.email,
+      localStorage.getItem('sunosakhi_user_id')
     ].filter(Boolean) as string[];
 
     if (receiverTargets.length === 0) return;
@@ -287,29 +300,22 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Direct watcher on the active incomingCall document so if Caller cuts while ringing, IncomingCallModal closes immediately
   useEffect(() => {
-    if (!incomingCall?.id || !isFirebaseConfigured() || !db) return;
+    if (!incomingCall?.id) return;
     const callId = incomingCall.id;
 
-    const unsub = onSnapshot(
-      doc(db, 'calls', callId),
-      (docSnap) => {
-        if (!docSnap.exists()) {
-          if (incomingCallRef.current?.id === callId) {
-            sounds.stopRingtone();
-            setIncomingCall(null);
-          }
-          return;
+    const unsub = subscribeToCallSession(callId, (data) => {
+      if (!data || data.status !== 'ringing') {
+        if (incomingCallRef.current?.id === callId) {
+          sounds.stopRingtone();
+          setIncomingCall(null);
         }
-        const data = docSnap.data() as CallSessionDoc;
-        if (data.status !== 'ringing') {
-          if (incomingCallRef.current?.id === callId) {
-            sounds.stopRingtone();
-            setIncomingCall(null);
-          }
-        }
-      },
-      () => {}
-    );
+      } else if (incomingCallRef.current?.id === callId) {
+        incomingCallRef.current = {
+          ...incomingCallRef.current,
+          ...data
+        };
+      }
+    });
 
     return () => {
       unsub();
@@ -591,6 +597,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       id: callToAnswer.callerId,
       name: callToAnswer.callerName || 'Caller',
       phone: callToAnswer.callerPhone || '',
+      email: callToAnswer.callerEmail || '',
       age: 24,
       city: 'India',
       avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=300&auto=format&fit=crop&q=80',

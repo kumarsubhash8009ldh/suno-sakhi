@@ -138,21 +138,10 @@ export const DirectChatModal: React.FC = () => {
 
     const res = sendMessage(directChatSakhi.id, directChatSakhi.name, inputText, directChatSakhi.phone);
     if (res.success) {
-      const interlocutorUserLabel = `User ID: ${formatUserId(directChatSakhi.id, directChatSakhi.phone)}`;
-      const optimisticMsg: ChatMessage = {
-        id: 'msg-' + Date.now(),
-        sakhiId: isHostViewer ? (hostProfile?.id || `sakhi-user-${hostPhone}`) : directChatSakhi.id,
-        callerId: isHostViewer ? directChatSakhi.id : `caller_${callerPhone}`,
-        callerName: isHostViewer ? interlocutorUserLabel : (session.name || 'You'),
-        sender: isHostViewer ? 'sakhi' : 'user',
-        senderId: myClientId,
-        text: inputText.trim(),
-        wordCount,
-        cost: isHostViewer ? 0 : MESSAGE_RATE,
-        timestamp: Date.now(),
-        status: 'sent'
-      };
-      setLiveMessages((prev) => [...prev, optimisticMsg]);
+      if (res.message) {
+        const sentMsg = res.message;
+        setLiveMessages((prev) => (prev.some((m) => m.id === sentMsg.id) ? prev : [...prev, sentMsg]));
+      }
       setInputText('');
     } else if (res.error) {
       setErrorMsg(res.error);
